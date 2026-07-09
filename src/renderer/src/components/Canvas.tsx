@@ -2,10 +2,12 @@ import { ReactFlow, Background, Controls } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
+import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 
 const nodeTypes = { terminal: TerminalFlowNode }
 
 export function Canvas(): JSX.Element {
+  useCanvasPersistence()
   const nodes = useCanvasStore((s) => s.nodes)
   const onNodesChange = useCanvasStore((s) => s.onNodesChange)
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
