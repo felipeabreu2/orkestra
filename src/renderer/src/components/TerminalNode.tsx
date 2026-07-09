@@ -10,7 +10,11 @@ export function TerminalNode(): JSX.Element {
     const el = containerRef.current
     if (!el) return
 
-    const term = new XTerm({ cursorBlink: true, fontSize: 13, fontFamily: 'Menlo, monospace' })
+    const term = new XTerm({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace'
+    })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
@@ -29,6 +33,9 @@ export function TerminalNode(): JSX.Element {
       disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
       term.onData((data) => window.orkestra.pty.write(id, data))
       term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
+    })
+    .catch((err) => {
+      term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
     })
 
     const onResize = (): void => fit.fit()
