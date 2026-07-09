@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import { applyNodeChanges, type Node, type NodeChange } from '@xyflow/react'
 
-let idCounter = 1
-
 interface CanvasState {
   nodes: Node[]
   addTerminalNode: (position?: { x: number; y: number }) => void
@@ -17,7 +15,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       nodes: [
         ...state.nodes,
         {
-          id: `terminal-${idCounter++}`,
+          id: `terminal-${crypto.randomUUID()}`,
           type: 'terminal',
           position,
           data: {},
