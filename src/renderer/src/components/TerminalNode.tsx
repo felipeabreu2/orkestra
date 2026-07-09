@@ -38,12 +38,12 @@ export function TerminalNode(): JSX.Element {
       term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
     })
 
-    const onResize = (): void => fit.fit()
-    window.addEventListener('resize', onResize)
+    const ro = new ResizeObserver(() => fit.fit())
+    ro.observe(el)
 
     return () => {
       disposed = true
-      window.removeEventListener('resize', onResize)
+      ro.disconnect()
       disposeData()
       if (ptyId) window.orkestra.pty.kill(ptyId)
       term.dispose()
