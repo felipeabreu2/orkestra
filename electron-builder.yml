@@ -1,0 +1,14 @@
+appId: com.felipe.orkestra
+productName: Orkestra
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+npmRebuild: true
+mac:
+  target:
+    - target: dir
+      arch: x64
+  category: public.app-category.developer-tools
