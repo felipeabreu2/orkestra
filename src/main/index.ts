@@ -1,8 +1,13 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { PtyManager } from './pty/PtyManager'
+import { nodePtySpawner } from './pty/nodePtySpawner'
+import { registerPtyIpc } from './pty/registerPtyIpc'
 
-function createWindow(): BrowserWindow {
-  const win = new BrowserWindow({
+let mainWindow: BrowserWindow | null = null
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
@@ -13,16 +18,18 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false
     }
   })
-  win.on('ready-to-show', () => win.show())
+  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('closed', () => { mainWindow = null })
   if (process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
-  return win
 }
 
 app.whenReady().then(() => {
+  const ptyManager = new PtyManager(nodePtySpawner)
+  registerPtyIpc(ipcMain, ptyManager, () => mainWindow?.webContents ?? null)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

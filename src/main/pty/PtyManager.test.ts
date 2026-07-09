@@ -71,7 +71,7 @@ describe('PtyManager', () => {
   it('passa file/cwd/cols/rows ao spawner com defaults', () => {
     vi.stubEnv('SHELL', '/bin/zsh')
     vi.stubEnv('HOME', '/tmp/home')
-    const spawner = vi.fn(() => makeFakePty().pty)
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
     mgr.spawn({})
     const call = spawner.mock.calls[0]
@@ -84,7 +84,7 @@ describe('PtyManager', () => {
   })
 
   it('usa cols/rows explícitos em vez dos defaults', () => {
-    const spawner = vi.fn(() => makeFakePty().pty)
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
     mgr.spawn({ cols: 100, rows: 30 })
     const call = spawner.mock.calls[0]
@@ -95,7 +95,7 @@ describe('PtyManager', () => {
   it('usa file/cwd explícitos em vez dos defaults de ambiente', () => {
     vi.stubEnv('SHELL', '/bin/zsh')
     vi.stubEnv('HOME', '/tmp/home')
-    const spawner = vi.fn(() => makeFakePty().pty)
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
     mgr.spawn({ file: '/bin/fish', cwd: '/explicit/cwd' })
     const call = spawner.mock.calls[0]
