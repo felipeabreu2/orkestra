@@ -61,6 +61,18 @@ describe('canvasStore', () => {
     expect(n.height).toBe(320)
   })
 
+  it('conteúdo da nota sobrevive ao round-trip serialize→hydrate', () => {
+    useCanvasStore.getState().addNoteNode()
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().updateNoteContent(id, 'olá mundo')
+    const snap = useCanvasStore.getState().serialize()
+    useCanvasStore.getState().hydrate({ version: 1, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+    useCanvasStore.getState().hydrate(snap)
+    const restored = useCanvasStore.getState().nodes.find((n) => n.id === id)
+    expect(restored?.data).toEqual({ content: 'olá mundo' })
+  })
+
   it('gera ids únicos entre nós', () => {
     const s = useCanvasStore.getState()
     s.addTerminalNode()
@@ -79,6 +91,18 @@ describe('canvasStore', () => {
     const { nodes } = useCanvasStore.getState()
     expect(nodes).toHaveLength(1)
     expect(nodes[0].id).toBe(secondNodeId)
+  })
+
+  it('removeNode remove as edges conectadas ao nó removido', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    expect(useCanvasStore.getState().edges).toHaveLength(1)
+    useCanvasStore.getState().removeNode(a.id)
+    const { edges, nodes } = useCanvasStore.getState()
+    expect(edges).toHaveLength(0)
+    expect(nodes).toHaveLength(1)
   })
 
   it('onNodesChange aplica mudança de posição', () => {

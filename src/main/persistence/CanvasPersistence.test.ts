@@ -52,6 +52,21 @@ describe('CanvasPersistence', () => {
     expect(p.load()).toBeNull()
   })
 
+  it('load aceita um arquivo v1 real (sem chave edges) — contrato "valida só nodes"', () => {
+    const file = tmpFile()
+    const p = new CanvasPersistence(file)
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        nodes: [{ id: 'terminal-1', type: 'terminal', position: { x: 0, y: 0 }, width: 480, height: 320, data: {} }]
+      })
+    )
+    const result = p.load()
+    expect(result).not.toBeNull()
+    expect(result?.nodes).toHaveLength(1)
+  })
+
   it('save não lança quando a escrita falha (diretório pai inexistente)', () => {
     tmpFile() // popula `dir` (limpo no afterEach) sem usar o arquivo em si
     const p = new CanvasPersistence(join(dir, 'does-not-exist-subdir', 'canvas.json'))
