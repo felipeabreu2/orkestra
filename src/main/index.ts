@@ -27,6 +27,9 @@ function createWindow(): void {
   }
 }
 
+// Renderização por software: silencia os erros de driver EGL/GPU em Macs Intel (a UI é 2D, não precisa de aceleração).
+app.disableHardwareAcceleration()
+
 app.whenReady().then(() => {
   const ptyManager = new PtyManager(nodePtySpawner)
   registerPtyIpc(ipcMain, ptyManager, () => mainWindow?.webContents ?? null)
