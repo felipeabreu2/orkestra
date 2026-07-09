@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useCanvasStore } from './canvasStore'
+import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 
 beforeEach(() => {
-  useCanvasStore.setState({ nodes: [] })
+  useCanvasStore.setState({ nodes: [], edges: [] })
 })
 
 describe('canvasStore', () => {
@@ -20,7 +21,7 @@ describe('canvasStore', () => {
   it('serialize captura id/type/position/width/height/data de cada nó', () => {
     useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 })
     const snap = useCanvasStore.getState().serialize()
-    expect(snap.version).toBe(1)
+    expect(snap.version).toBe(2)
     expect(snap.nodes).toHaveLength(1)
     const n = snap.nodes[0]
     expect(n.type).toBe('terminal')
@@ -37,7 +38,8 @@ describe('canvasStore', () => {
       version: 1,
       nodes: [
         { id: 'terminal-x', type: 'terminal', position: { x: 1, y: 2 }, width: 300, height: 200, data: {} }
-      ]
+      ],
+      edges: []
     })
     const { nodes } = useCanvasStore.getState()
     expect(nodes).toHaveLength(1)
@@ -50,7 +52,7 @@ describe('canvasStore', () => {
   it('round-trip serialize→hydrate preserva o layout', () => {
     useCanvasStore.getState().addTerminalNode({ x: 7, y: 8 })
     const snap = useCanvasStore.getState().serialize()
-    useCanvasStore.getState().hydrate({ version: 1, nodes: [] })
+    useCanvasStore.getState().hydrate({ version: 1, nodes: [], edges: [] })
     expect(useCanvasStore.getState().nodes).toHaveLength(0)
     useCanvasStore.getState().hydrate(snap)
     const n = useCanvasStore.getState().nodes[0]
@@ -86,5 +88,62 @@ describe('canvasStore', () => {
       { id, type: 'position', position: { x: 50, y: 60 } }
     ])
     expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 50, y: 60 })
+  })
+
+  it('onConnect adiciona uma edge entre dois nós', () => {
+    const s = useCanvasStore.getState()
+    s.addTerminalNode({ x: 0, y: 0 })
+    s.addTerminalNode({ x: 100, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const { edges } = useCanvasStore.getState()
+    expect(edges).toHaveLength(1)
+    expect(edges[0].source).toBe(a.id)
+    expect(edges[0].target).toBe(b.id)
+  })
+
+  it('addNoteNode adiciona um nó note com content vazio', () => {
+    useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
+    const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!
+    expect(n).toBeTruthy()
+    expect(n.data).toEqual({ content: '' })
+    expect(n.width).toBe(240)
+    expect(n.height).toBe(180)
+  })
+
+  it('updateNoteContent atualiza o content de uma nota', () => {
+    useCanvasStore.getState().addNoteNode()
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().updateNoteContent(id, 'olá')
+    expect(useCanvasStore.getState().nodes[0].data).toEqual({ content: 'olá' })
+  })
+
+  it('serialize emite version 2 com nodes e edges', () => {
+    const s = useCanvasStore.getState()
+    s.addTerminalNode({ x: 0, y: 0 })
+    s.addTerminalNode({ x: 1, y: 1 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const snap = useCanvasStore.getState().serialize()
+    expect(snap.version).toBe(2)
+    expect(snap.nodes).toHaveLength(2)
+    expect(snap.edges).toHaveLength(1)
+    expect(snap.edges[0]).toMatchObject({ source: a.id, target: b.id })
+  })
+
+  it('hydrate restaura nodes e edges; snapshot v1 sem edges vira []', () => {
+    // v1 (sem edges) — simula um canvas.json da Fase 3. Requer, no topo do arquivo:
+    //   import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
+    useCanvasStore.getState().hydrate({
+      version: 1,
+      nodes: [{ id: 'terminal-1', type: 'terminal', position: { x: 0, y: 0 }, width: 480, height: 320, data: {} }]
+    } as unknown as CanvasSnapshot)
+    expect(useCanvasStore.getState().edges).toEqual([])
+    useCanvasStore.getState().hydrate({
+      version: 2,
+      nodes: [{ id: 'terminal-1', type: 'terminal', position: { x: 0, y: 0 }, width: 480, height: 320, data: {} }],
+      edges: [{ id: 'e1', source: 'terminal-1', target: 'terminal-1' }]
+    })
+    expect(useCanvasStore.getState().edges).toHaveLength(1)
   })
 })

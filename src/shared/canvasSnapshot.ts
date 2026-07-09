@@ -7,7 +7,14 @@ export interface PersistedNode {
   data: Record<string, unknown>
 }
 
+export interface PersistedEdge {
+  id: string
+  source: string
+  target: string
+}
+
 export interface CanvasSnapshot {
-  version: 1
+  version: number
   nodes: PersistedNode[]
+  edges: PersistedEdge[]
 }

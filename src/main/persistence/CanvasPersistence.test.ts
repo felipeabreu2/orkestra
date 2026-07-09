@@ -19,7 +19,7 @@ describe('CanvasPersistence', () => {
 
   it('save depois load faz round-trip do snapshot', () => {
     const p = new CanvasPersistence(tmpFile())
-    const snap = { version: 1 as const, nodes: [{ id: 'a', type: 'terminal', position: { x: 1, y: 2 }, width: 300, height: 200, data: {} }] }
+    const snap = { version: 1 as const, nodes: [{ id: 'a', type: 'terminal', position: { x: 1, y: 2 }, width: 300, height: 200, data: {} }], edges: [] }
     p.save(snap)
     expect(p.load()).toEqual(snap)
   })
@@ -55,6 +55,6 @@ describe('CanvasPersistence', () => {
   it('save não lança quando a escrita falha (diretório pai inexistente)', () => {
     tmpFile() // popula `dir` (limpo no afterEach) sem usar o arquivo em si
     const p = new CanvasPersistence(join(dir, 'does-not-exist-subdir', 'canvas.json'))
-    expect(() => p.save({ version: 1, nodes: [] })).not.toThrow()
+    expect(() => p.save({ version: 1, nodes: [], edges: [] })).not.toThrow()
   })
 })
