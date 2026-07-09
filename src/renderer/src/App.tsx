@@ -1,9 +1,10 @@
-import { TerminalNode } from './components/TerminalNode'
+import { ReactFlowProvider } from '@xyflow/react'
+import { Canvas } from './components/Canvas'
 
 export function App(): JSX.Element {
   return (
-    <div style={{ height: '100vh', background: '#1e1e1e', padding: 8, boxSizing: 'border-box' }}>
-      <TerminalNode />
-    </div>
+    <ReactFlowProvider>
+      <Canvas />
+    </ReactFlowProvider>
   )
 }
