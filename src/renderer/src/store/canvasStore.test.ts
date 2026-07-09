@@ -13,6 +13,8 @@ describe('canvasStore', () => {
     expect(nodes).toHaveLength(1)
     expect(nodes[0].type).toBe('terminal')
     expect(nodes[0].position).toEqual({ x: 10, y: 20 })
+    expect(nodes[0].data).toEqual({})
+    expect(nodes[0].style).toEqual({ width: 480, height: 320 })
   })
 
   it('gera ids únicos entre nós', () => {
@@ -25,9 +27,14 @@ describe('canvasStore', () => {
 
   it('removeNode remove o nó pelo id', () => {
     useCanvasStore.getState().addTerminalNode()
-    const id = useCanvasStore.getState().nodes[0].id
-    useCanvasStore.getState().removeNode(id)
-    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+    useCanvasStore.getState().addTerminalNode()
+    const { nodes: nodesAfterAdd } = useCanvasStore.getState()
+    const firstNodeId = nodesAfterAdd[0].id
+    const secondNodeId = nodesAfterAdd[1].id
+    useCanvasStore.getState().removeNode(firstNodeId)
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].id).toBe(secondNodeId)
   })
 
   it('onNodesChange aplica mudança de posição', () => {
