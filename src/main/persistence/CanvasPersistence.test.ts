@@ -30,4 +30,10 @@ describe('CanvasPersistence', () => {
     writeFileSync(file, '{ not valid json')
     expect(p.load()).toBeNull()
   })
+
+  it('save não lança quando a escrita falha (diretório pai inexistente)', () => {
+    tmpFile() // popula `dir` (limpo no afterEach) sem usar o arquivo em si
+    const p = new CanvasPersistence(join(dir, 'does-not-exist-subdir', 'canvas.json'))
+    expect(() => p.save({ version: 1, nodes: [] })).not.toThrow()
+  })
 })
