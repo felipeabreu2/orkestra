@@ -10,6 +10,9 @@ export function Canvas(): JSX.Element {
   useCanvasPersistence()
   const nodes = useCanvasStore((s) => s.nodes)
   const onNodesChange = useCanvasStore((s) => s.onNodesChange)
+  const edges = useCanvasStore((s) => s.edges)
+  const onEdgesChange = useCanvasStore((s) => s.onEdgesChange)
+  const onConnect = useCanvasStore((s) => s.onConnect)
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
 
   return (
@@ -35,6 +38,9 @@ export function Canvas(): JSX.Element {
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}
+        edges={edges}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         nodeTypes={nodeTypes}
         minZoom={0.2}
         maxZoom={2}

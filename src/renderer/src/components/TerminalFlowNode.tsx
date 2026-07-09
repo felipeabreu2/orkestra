@@ -1,4 +1,4 @@
-import { NodeResizer, type NodeProps } from '@xyflow/react'
+import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { TerminalNode } from './TerminalNode'
 import { useCanvasStore } from '../store/canvasStore'
 
@@ -7,6 +7,8 @@ export function TerminalFlowNode({ id, selected }: NodeProps): JSX.Element {
   return (
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
+      <Handle type="target" position={Position.Left} />
+      <Handle type="source" position={Position.Right} />
       <div
         style={{
           width: '100%',

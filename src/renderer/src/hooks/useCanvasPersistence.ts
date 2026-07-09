@@ -4,6 +4,7 @@ import { useCanvasStore } from '../store/canvasStore'
 export function useCanvasPersistence(): void {
   const hydrate = useCanvasStore((s) => s.hydrate)
   const nodes = useCanvasStore((s) => s.nodes)
+  const edges = useCanvasStore((s) => s.edges)
   const loaded = useRef(false)
 
   // Carrega o layout salvo uma vez, no mount.
@@ -28,7 +29,7 @@ export function useCanvasPersistence(): void {
       window.orkestra.persistence.save(useCanvasStore.getState().serialize())
     }, 500)
     return () => clearTimeout(t)
-  }, [nodes])
+  }, [nodes, edges])
 
   // Flush síncrono do último layout ao fechar o app (evita perder mudança <500ms antes do quit).
   useEffect(() => {
