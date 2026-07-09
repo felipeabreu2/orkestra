@@ -48,6 +48,9 @@ export class PtyManager {
       this.ptys.delete(id)
     }
   }
+  killAll(): void {
+    for (const id of [...this.ptys.keys()]) this.kill(id)
+  }
   has(id: string): boolean {
     return this.ptys.has(id)
   }

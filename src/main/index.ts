@@ -5,6 +5,7 @@ import { nodePtySpawner } from './pty/nodePtySpawner'
 import { registerPtyIpc } from './pty/registerPtyIpc'
 
 let mainWindow: BrowserWindow | null = null
+const ptyManager = new PtyManager(nodePtySpawner)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -19,7 +20,10 @@ function createWindow(): void {
     }
   })
   mainWindow.on('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.on('closed', () => {
+    ptyManager.killAll()
+    mainWindow = null
+  })
   if (process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -31,7 +35,6 @@ function createWindow(): void {
 app.disableHardwareAcceleration()
 
 app.whenReady().then(() => {
-  const ptyManager = new PtyManager(nodePtySpawner)
   registerPtyIpc(ipcMain, ptyManager, () => mainWindow?.webContents ?? null)
   createWindow()
   app.on('activate', () => {
@@ -42,3 +45,5 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('before-quit', () => ptyManager.killAll())

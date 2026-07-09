@@ -2,10 +2,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { PtyManager, type IPtyLike, type PtySpawner } from './PtyManager'
 
 function makeFakePty() {
-  let dataCb: (d: string) => void = () => {}
+  const dataCbs: Array<(d: string) => void> = []
   let exitCb: (e: { exitCode: number }) => void = () => {}
   const pty: IPtyLike = {
-    onData: (cb) => { dataCb = cb },
+    onData: (cb) => { dataCbs.push(cb) },
     onExit: (cb) => { exitCb = cb },
     write: vi.fn(),
     resize: vi.fn(),
@@ -13,7 +13,7 @@ function makeFakePty() {
   }
   return {
     pty,
-    emit: (d: string) => dataCb(d),
+    emit: (d: string) => { for (const cb of dataCbs) cb(d) },
     emitExit: (code: number) => exitCb({ exitCode: code })
   }
 }
@@ -57,6 +57,21 @@ describe('PtyManager', () => {
     mgr.kill(id)
     expect(fake.pty.kill).toHaveBeenCalled()
     expect(mgr.has(id)).toBe(false)
+  })
+
+  it('killAll mata todos os ptys e limpa o mapa', () => {
+    const fakeA = makeFakePty()
+    const fakeB = makeFakePty()
+    const fakes = [fakeA.pty, fakeB.pty]
+    const spawner: PtySpawner = () => fakes.shift()!
+    const mgr = new PtyManager(spawner)
+    const idA = mgr.spawn({})
+    const idB = mgr.spawn({})
+    mgr.killAll()
+    expect(fakeA.pty.kill).toHaveBeenCalled()
+    expect(fakeB.pty.kill).toHaveBeenCalled()
+    expect(mgr.has(idA)).toBe(false)
+    expect(mgr.has(idB)).toBe(false)
   })
 
   it('remove o pty do mapa quando ele sai sozinho (onExit)', () => {
