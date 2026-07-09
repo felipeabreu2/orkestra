@@ -3,6 +3,8 @@ import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
 import { registerPtyIpc } from './pty/registerPtyIpc'
+import { CanvasPersistence } from './persistence/CanvasPersistence'
+import { registerPersistenceIpc } from './persistence/registerPersistenceIpc'
 
 let mainWindow: BrowserWindow | null = null
 const ptyManager = new PtyManager(nodePtySpawner)
@@ -36,6 +38,8 @@ app.disableHardwareAcceleration()
 
 app.whenReady().then(() => {
   registerPtyIpc(ipcMain, ptyManager, () => mainWindow?.webContents ?? null)
+  const persistence = new CanvasPersistence(join(app.getPath('userData'), 'canvas.json'))
+  registerPersistenceIpc(ipcMain, persistence)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

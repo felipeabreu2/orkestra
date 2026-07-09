@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 
 const api = {
   pty: {
@@ -15,6 +16,10 @@ const api = {
       ipcRenderer.on('pty:data', listener)
       return () => ipcRenderer.removeListener('pty:data', listener)
     }
+  },
+  persistence: {
+    load: (): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('persistence:load'),
+    save: (snapshot: CanvasSnapshot): void => ipcRenderer.send('persistence:save', snapshot)
   }
 }
 
