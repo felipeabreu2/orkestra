@@ -13,6 +13,8 @@ export function useCanvasPersistence(): void {
       if (cancelled) return
       if (snap) hydrate(snap)
       loaded.current = true
+    }).catch(() => {
+      if (!cancelled) loaded.current = true
     })
     return () => {
       cancelled = true
@@ -27,4 +29,15 @@ export function useCanvasPersistence(): void {
     }, 500)
     return () => clearTimeout(t)
   }, [nodes])
+
+  // Flush síncrono do último layout ao fechar o app (evita perder mudança <500ms antes do quit).
+  useEffect(() => {
+    const flush = (): void => {
+      if (loaded.current) {
+        window.orkestra.persistence.save(useCanvasStore.getState().serialize())
+      }
+    }
+    window.addEventListener('beforeunload', flush)
+    return () => window.removeEventListener('beforeunload', flush)
+  }, [])
 }

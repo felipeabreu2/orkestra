@@ -8,7 +8,11 @@ export class CanvasPersistence {
     try {
       if (!existsSync(this.filePath)) return null
       const raw = readFileSync(this.filePath, 'utf-8')
-      return JSON.parse(raw) as CanvasSnapshot
+      const parsed = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as CanvasSnapshot).nodes)) {
+        return null
+      }
+      return parsed as CanvasSnapshot
     } catch {
       return null
     }

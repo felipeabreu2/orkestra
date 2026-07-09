@@ -31,6 +31,27 @@ describe('CanvasPersistence', () => {
     expect(p.load()).toBeNull()
   })
 
+  it('load retorna null quando o JSON é válido mas é um objeto vazio (sem nodes)', () => {
+    const file = tmpFile()
+    const p = new CanvasPersistence(file)
+    writeFileSync(file, '{}')
+    expect(p.load()).toBeNull()
+  })
+
+  it('load retorna null quando o JSON tem version mas não tem nodes', () => {
+    const file = tmpFile()
+    const p = new CanvasPersistence(file)
+    writeFileSync(file, '{"version":1}')
+    expect(p.load()).toBeNull()
+  })
+
+  it('load retorna null quando o JSON é válido mas de formato errado (número)', () => {
+    const file = tmpFile()
+    const p = new CanvasPersistence(file)
+    writeFileSync(file, '42')
+    expect(p.load()).toBeNull()
+  })
+
   it('save não lança quando a escrita falha (diretório pai inexistente)', () => {
     tmpFile() // popula `dir` (limpo no afterEach) sem usar o arquivo em si
     const p = new CanvasPersistence(join(dir, 'does-not-exist-subdir', 'canvas.json'))
