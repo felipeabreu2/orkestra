@@ -2,9 +2,10 @@ import { ReactFlow, Background, Controls } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
+import { NoteNode } from './NoteNode'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 
-const nodeTypes = { terminal: TerminalFlowNode }
+const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode }
 
 export function Canvas(): JSX.Element {
   useCanvasPersistence()
@@ -14,6 +15,7 @@ export function Canvas(): JSX.Element {
   const onEdgesChange = useCanvasStore((s) => s.onEdgesChange)
   const onConnect = useCanvasStore((s) => s.onConnect)
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
+  const addNoteNode = useCanvasStore((s) => s.addNoteNode)
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -34,6 +36,12 @@ export function Canvas(): JSX.Element {
         }}
       >
         + Terminal
+      </button>
+      <button
+        onClick={() => addNoteNode()}
+        style={{ position: 'absolute', top: 12, left: 110, zIndex: 10, padding: '6px 12px', background: '#eab308', color: '#3b3610', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+      >
+        + Nota
       </button>
       <ReactFlow
         nodes={nodes}
