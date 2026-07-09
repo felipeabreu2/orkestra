@@ -28,6 +28,7 @@ export class PtyManager {
       rows: opts.rows ?? 24
     })
     this.ptys.set(id, pty)
+    pty.onExit(() => { this.ptys.delete(id) })
     return id
   }
 
