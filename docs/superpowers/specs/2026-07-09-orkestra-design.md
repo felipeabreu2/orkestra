@@ -103,6 +103,7 @@ CLI injetado no PATH de cada terminal (via rcfile/env). Fala com `OrchestrationS
 
 ## 8. Segurança e confiabilidade
 - Renderer: `contextIsolation:true`, `sandbox:true`, `nodeIntegration:false`; toda a ponte via `preload` com API tipada e **validação de entrada** (zod).
+  > **Escopo Fase 0-1 (decisão rastreada no review final):** na Fase 1 o único emissor de IPC é o renderer sandboxed de 1ª parte, então a validação de entrada é mínima (confiança na origem). O schema formal com **zod** nos boundaries IPC entra na **Fase 5** (socket do `orq`, que traz input não-confiável de agentes) e na **Fase 9** (portais). Recomenda-se introduzir o *seam* de validação assim que a superfície de input não-confiável começar.
 - **OrchestrationServer autenticado por token** de sessão; socket restrito ao localhost/usuário. Sem token → sem controle do canvas.
 - `portal evaluate` (JS arbitrário) e execução de comandos: escopo mínimo, logs, e confirmação para ações destrutivas.
 - **Floors isolam via worktree** — nunca corrompem o repo principal; `land` usa merge com preview de conflitos.
