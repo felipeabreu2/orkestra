@@ -27,6 +27,9 @@ export class PtyManager {
     rows?: number
     env?: Record<string, string>
     nodeId?: string
+    // Comando de preset (ex.: "claude") a ser digitado no shell assim que ele emitir seu
+    // primeiro output (rc já carregado) — ver writer one-shot logo após o registro de exit.
+    initialCommand?: string
   }): string {
     const id = String(this.nextId++)
     const file = opts.file ?? process.env.SHELL ?? '/bin/bash'
@@ -48,6 +51,17 @@ export class PtyManager {
       this.exitSubs.delete(id)
       if (subs) for (const cb of subs) cb(e)
     })
+    if (opts.initialCommand) {
+      // One-shot: dispara no primeiro chunk de output do shell (prompt/rc já carregados) e
+      // nunca mais — assinado via this.onData (multi-subscriber), sem substituir o listener
+      // de streaming da renderer nem o do AgentBus.
+      let sent = false
+      this.onData(id, () => {
+        if (sent) return
+        sent = true
+        this.write(id, `${opts.initialCommand}\n`)
+      })
+    }
     return id
   }
 

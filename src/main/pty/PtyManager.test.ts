@@ -163,4 +163,15 @@ describe('PtyManager', () => {
     expect(call[2].env.ORKESTRA_PORT).toBe('1234')
     expect(call[2].env.PATH).toBe(process.env.PATH) // preserva o resto
   })
+
+  it('escreve o comando inicial uma unica vez apos o primeiro output', () => {
+    const f = makeFakePty() // fake com write: vi.fn(), emit(data)
+    const mgr = new PtyManager(() => f.pty)
+    mgr.spawn({ initialCommand: 'claude' })
+    expect(f.pty.write).not.toHaveBeenCalled() // ainda nao (sem output)
+    f.emit('user@host $ ') // primeiro output do shell
+    expect(f.pty.write).toHaveBeenCalledWith('claude\n')
+    f.emit('mais output') // nao repete
+    expect(f.pty.write).toHaveBeenCalledTimes(1)
+  })
 })
