@@ -147,6 +147,10 @@ export class OrchestrationServer {
       return
     }
     if (req.method === 'POST' && req.url === '/routines') {
+      if (!this.opts.routines) {
+        res.writeHead(404).end('not found')
+        return
+      }
       let body = ''
       req.on('data', (c) => { body += c })
       req.on('error', () => { res.writeHead(400).end('bad request') })
@@ -163,7 +167,7 @@ export class OrchestrationServer {
           // em 400 — nunca deixamos a validação derrubar a requisição. Uma rotina recém-criada
           // nasce habilitada (enabled não é um campo do contrato HTTP; desabilitar é um passo
           // explícito via POST /routines/remove... via routines.toggle no IPC do renderer).
-          this.opts.routines?.add({
+          this.opts.routines!.add({
             name: parsed.name as string,
             schedule: parsed.schedule as string,
             target: parsed.target as string,
@@ -178,6 +182,10 @@ export class OrchestrationServer {
       return
     }
     if (req.method === 'POST' && req.url === '/routines/remove') {
+      if (!this.opts.routines) {
+        res.writeHead(404).end('not found')
+        return
+      }
       let body = ''
       req.on('data', (c) => { body += c })
       req.on('error', () => { res.writeHead(400).end('bad request') })
@@ -188,7 +196,7 @@ export class OrchestrationServer {
             res.writeHead(400).end('bad request')
             return
           }
-          this.opts.routines?.remove(parsed.id)
+          this.opts.routines!.remove(parsed.id)
           res.writeHead(200).end('ok')
         } catch {
           res.writeHead(400).end('bad json')

@@ -52,6 +52,7 @@ export function RoutinesPanel(): JSX.Element {
     try {
       await window.orkestra.routines.toggle(r.id, !r.enabled)
       await refresh()
+      setStatus('')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
     }
@@ -61,6 +62,7 @@ export function RoutinesPanel(): JSX.Element {
     try {
       await window.orkestra.routines.remove(id)
       await refresh()
+      setStatus('')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
     }

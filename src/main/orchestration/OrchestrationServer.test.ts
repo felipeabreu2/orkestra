@@ -514,6 +514,17 @@ describe('OrchestrationServer', () => {
     expect(add).not.toHaveBeenCalled()
   })
 
+  it('POST /routines sem opts.routines configuradas retorna 404', async () => {
+    const s = makeServer({ nodes: [] }, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/routines`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'R', schedule: '* * * * *', target: 'Dev', command: 'echo oi' })
+    })
+    expect(res.status).toBe(404)
+  })
+
   it('POST /routines/remove com {id} chama routines.remove e responde 200', async () => {
     const remove = vi.fn()
     const s = makeServer({ nodes: [] }, [], { routines: { list: vi.fn(), add: vi.fn(), remove } })
@@ -551,5 +562,16 @@ describe('OrchestrationServer', () => {
     })
     expect(res.status).toBe(401)
     expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('POST /routines/remove sem opts.routines configuradas retorna 404', async () => {
+    const s = makeServer({ nodes: [] }, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/routines/remove`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'r1' })
+    })
+    expect(res.status).toBe(404)
   })
 })
