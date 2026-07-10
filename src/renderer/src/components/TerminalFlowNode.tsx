@@ -2,8 +2,10 @@ import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { TerminalNode } from './TerminalNode'
 import { useCanvasStore } from '../store/canvasStore'
 
-export function TerminalFlowNode({ id, selected }: NodeProps): JSX.Element {
+export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
   const removeNode = useCanvasStore((s) => s.removeNode)
+  const updateTerminalName = useCanvasStore((s) => s.updateTerminalName)
+  const name = (data as { name?: string })?.name ?? 'Terminal'
   return (
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
@@ -35,7 +37,22 @@ export function TerminalFlowNode({ id, selected }: NodeProps): JSX.Element {
             userSelect: 'none'
           }}
         >
-          <span>Terminal</span>
+          <input
+            className="nodrag"
+            value={name}
+            onChange={(e) => updateTerminalName(id, e.target.value)}
+            aria-label="Nome do terminal"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#cccccc',
+              fontSize: 12,
+              padding: 0,
+              outline: 'none',
+              flex: 1,
+              minWidth: 0
+            }}
+          />
           <button
             className="nodrag"
             onClick={() => removeNode(id)}
@@ -54,7 +71,7 @@ export function TerminalFlowNode({ id, selected }: NodeProps): JSX.Element {
           </button>
         </div>
         <div className="nodrag nowheel" style={{ flex: 1, minHeight: 0 }}>
-          <TerminalNode />
+          <TerminalNode nodeId={id} />
         </div>
       </div>
     </>

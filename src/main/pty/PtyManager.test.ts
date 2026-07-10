@@ -118,6 +118,12 @@ describe('PtyManager', () => {
     expect(call[2].cwd).toBe('/explicit/cwd')
   })
 
+  it('registra nodeId->ptyId e resolve com ptyIdForNode', () => {
+    const mgr = new PtyManager(() => makeFakePty().pty)
+    const id = mgr.spawn({ nodeId: 'node-A' })
+    expect(mgr.ptyIdForNode('node-A')).toBe(id)
+  })
+
   it('mescla env extra sobre process.env no spawn', () => {
     const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)

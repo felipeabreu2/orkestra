@@ -15,7 +15,7 @@ describe('canvasStore', () => {
     expect(nodes[0].position).toEqual({ x: 10, y: 20 })
     expect(nodes[0].width).toBe(480)
     expect(nodes[0].height).toBe(320)
-    expect(nodes[0].data).toEqual({})
+    expect((nodes[0].data as { name?: string }).name).toMatch(/^Terminal \d+$/)
   })
 
   it('serialize captura id/type/position/width/height/data de cada nó', () => {
@@ -28,7 +28,7 @@ describe('canvasStore', () => {
     expect(n.position).toEqual({ x: 5, y: 6 })
     expect(n.width).toBe(480)
     expect(n.height).toBe(320)
-    expect(n.data).toEqual({})
+    expect((n.data as { name?: string }).name).toMatch(/^Terminal \d+$/)
     expect(typeof n.id).toBe('string')
   })
 
@@ -153,6 +153,14 @@ describe('canvasStore', () => {
     expect(snap.nodes).toHaveLength(2)
     expect(snap.edges).toHaveLength(1)
     expect(snap.edges[0]).toMatchObject({ source: a.id, target: b.id })
+  })
+
+  it('addTerminalNode nomeia sequencialmente e updateTerminalName renomeia', () => {
+    useCanvasStore.getState().addTerminalNode()
+    const id = useCanvasStore.getState().nodes[0].id
+    expect((useCanvasStore.getState().nodes[0].data as { name?: string }).name).toMatch(/Terminal/)
+    useCanvasStore.getState().updateTerminalName(id, 'Dev')
+    expect((useCanvasStore.getState().nodes[0].data as { name?: string }).name).toBe('Dev')
   })
 
   it('hydrate restaura nodes e edges; snapshot v1 sem edges vira []', () => {

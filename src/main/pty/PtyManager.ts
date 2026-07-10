@@ -14,6 +14,7 @@ export type PtySpawner = (
 
 export class PtyManager {
   private ptys = new Map<string, IPtyLike>()
+  private ptyByNode = new Map<string, string>()
   private nextId = 1
 
   constructor(private spawner: PtySpawner) {}
@@ -24,6 +25,7 @@ export class PtyManager {
     cols?: number
     rows?: number
     env?: Record<string, string>
+    nodeId?: string
   }): string {
     const id = String(this.nextId++)
     const file = opts.file ?? process.env.SHELL ?? '/bin/bash'
@@ -34,8 +36,25 @@ export class PtyManager {
       rows: opts.rows ?? 24
     })
     this.ptys.set(id, pty)
-    pty.onExit(() => { this.ptys.delete(id) })
+    if (opts.nodeId) this.ptyByNode.set(opts.nodeId, id)
+    pty.onExit(() => {
+      this.ptys.delete(id)
+      this.removeNodeMapping(id)
+    })
     return id
+  }
+
+  ptyIdForNode(nodeId: string): string | undefined {
+    return this.ptyByNode.get(nodeId)
+  }
+
+  private removeNodeMapping(id: string): void {
+    for (const [nodeId, ptyId] of this.ptyByNode) {
+      if (ptyId === id) {
+        this.ptyByNode.delete(nodeId)
+        break
+      }
+    }
   }
 
   onData(id: string, cb: (d: string) => void): void {
@@ -52,6 +71,7 @@ export class PtyManager {
     if (p) {
       p.kill()
       this.ptys.delete(id)
+      this.removeNodeMapping(id)
     }
   }
   killAll(): void {

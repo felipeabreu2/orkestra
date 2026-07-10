@@ -3,7 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
-export function TerminalNode(): JSX.Element {
+export function TerminalNode({ nodeId }: { nodeId?: string }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export function TerminalNode(): JSX.Element {
     let ptyId = ''
     let disposed = false
 
-    window.orkestra.pty.spawn({ cols: term.cols, rows: term.rows }).then((id) => {
+    window.orkestra.pty.spawn({ cols: term.cols, rows: term.rows, nodeId }).then((id) => {
       if (disposed) {
         window.orkestra.pty.kill(id)
         return

@@ -9,7 +9,7 @@ export function registerPtyIpc(
   // pela orquestração para o `orq` enxergar o servidor local. Sem orquestração, default vazio.
   getEnv: () => Record<string, string> = () => ({})
 ): void {
-  ipcMain.handle('pty:spawn', (_e, opts: { cwd?: string; cols?: number; rows?: number }) => {
+  ipcMain.handle('pty:spawn', (_e, opts: { cwd?: string; cols?: number; rows?: number; nodeId?: string }) => {
     const id = ptyManager.spawn({ ...(opts ?? {}), env: getEnv() })
     ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
     return id

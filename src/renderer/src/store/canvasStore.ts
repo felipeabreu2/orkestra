@@ -11,12 +11,15 @@ import {
 } from '@xyflow/react'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 
+let terminalSeq = 1
+
 interface CanvasState {
   nodes: Node[]
   edges: Edge[]
   addTerminalNode: (position?: { x: number; y: number }) => void
   addNoteNode: (position?: { x: number; y: number }) => void
   updateNoteContent: (id: string, content: string) => void
+  updateTerminalName: (id: string, name: string) => void
   removeNode: (id: string) => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -36,7 +39,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           id: `terminal-${crypto.randomUUID()}`,
           type: 'terminal',
           position,
-          data: {},
+          data: { name: `Terminal ${terminalSeq++}` },
           width: 480,
           height: 320
         }
@@ -59,6 +62,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   updateNoteContent: (id, content): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, content } } : n))
+    })),
+  updateTerminalName: (id, name): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
     })),
   removeNode: (id): void =>
     set((state) => ({
