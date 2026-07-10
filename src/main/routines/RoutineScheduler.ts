@@ -11,6 +11,9 @@ export class RoutineScheduler {
   // Dedupe por minuto: minuto-epoch (now.getTime()/60000) da última vez que cada rotina
   // disparou. Evita disparo duplo se tick() rodar mais de uma vez dentro do mesmo minuto
   // (ex.: tick manual em teste, ou drift do setInterval de 30s).
+  // Em memória (não persistido): após um restart do app o histórico de disparos é perdido,
+  // então uma rotina pode disparar mais uma vez dentro do mesmo minuto-parede em que já havia
+  // disparado antes do restart — aceitável (janela de no máximo 1 minuto, sem duplicação real).
   private lastFired = new Map<string, number>()
   private timer: ReturnType<typeof setInterval> | null = null
   private readonly onFire: (r: Routine) => void
@@ -29,9 +32,16 @@ export class RoutineScheduler {
     for (const r of this.routines.values()) {
       if (!r.enabled) continue
       if (this.lastFired.get(r.id) === minute) continue
-      if (!cronMatches(r.schedule, now)) continue
-      this.lastFired.set(r.id, minute)
-      this.onFire(r)
+      try {
+        if (!cronMatches(r.schedule, now)) continue
+        this.lastFired.set(r.id, minute)
+        this.onFire(r)
+      } catch (err) {
+        // Isolamento por rotina: um schedule malformado ou um onFire que lança não pode
+        // derrubar o tick inteiro (o setInterval em start() não tem handler de erro) nem
+        // impedir que as demais rotinas disparem.
+        console.error('[routine] tick falhou', r.id, err)
+      }
     }
   }
 
@@ -48,6 +58,10 @@ export class RoutineScheduler {
   }
 
   add(r: Omit<Routine, 'id'>): Routine {
+    if (typeof r.name !== 'string') throw new Error('rotina inválida: name')
+    if (typeof r.schedule !== 'string' || r.schedule.trim() === '') throw new Error('rotina inválida: schedule')
+    if (typeof r.target !== 'string' || r.target.trim() === '') throw new Error('rotina inválida: target')
+    if (typeof r.command !== 'string' || r.command.trim() === '') throw new Error('rotina inválida: command')
     const routine: Routine = { ...r, id: randomUUID() }
     this.routines.set(routine.id, routine)
     void this.persist()
@@ -88,7 +102,21 @@ export class RoutineScheduler {
       const arr = JSON.parse(raw) as Routine[]
       if (Array.isArray(arr)) {
         for (const r of arr) {
-          if (r && typeof r.id === 'string') this.routines.set(r.id, r)
+          // Guarda forte: exige as 5 chaves string + enabled boolean. Um routines.json
+          // corrompido ou editado à mão (ex.: schedule ausente) não pode entrar no scheduler
+          // vivo — cronMatches() lançaria em cada tick e derrubaria o processo principal
+          // se algum item malformado escapasse desta checagem.
+          if (
+            r &&
+            typeof r.id === 'string' &&
+            typeof r.name === 'string' &&
+            typeof r.schedule === 'string' &&
+            typeof r.target === 'string' &&
+            typeof r.command === 'string' &&
+            typeof r.enabled === 'boolean'
+          ) {
+            this.routines.set(r.id, r)
+          }
         }
       }
     } catch {

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { RoutineScheduler } from './RoutineScheduler'
+import type { Routine } from '../../shared/routines'
 
 const at = (h: number, mi: number): Date => new Date(2026, 6, 10, h, mi, 0, 0)
 
@@ -33,5 +37,52 @@ describe('RoutineScheduler', () => {
     const r = s.add({ name: 'R', schedule: '* * * * *', target: 'D', command: 'x', enabled: true })
     s.remove(r.id)
     expect(s.list()).toHaveLength(0)
+  })
+
+  it('isola erro por rotina no tick: uma rotina cujo onFire lança não derruba o tick nem impede as demais', () => {
+    const fired: Routine[] = []
+    const onFire = (r: Routine): void => {
+      if (r.name === 'bad') throw new Error('boom')
+      fired.push(r)
+    }
+    const s = new RoutineScheduler({ onFire, now: () => at(9, 30) })
+    s.add({ name: 'bad', schedule: '* * * * *', target: 'D', command: 'x', enabled: true })
+    s.add({ name: 'good', schedule: '* * * * *', target: 'D', command: 'x', enabled: true })
+
+    expect(() => s.tick()).not.toThrow()
+    expect(fired).toHaveLength(1)
+    expect(fired[0]).toMatchObject({ name: 'good' })
+  })
+
+  it('add valida campos obrigatórios e lança em rotina inválida', () => {
+    const s = new RoutineScheduler({ onFire: vi.fn(), now: () => at(9, 30) })
+    expect(() =>
+      s.add({ name: 'x', schedule: undefined as any, target: 'D', command: 'c', enabled: true })
+    ).toThrow()
+    expect(() =>
+      s.add({ name: 'x', schedule: '* * * * *', target: 'D', command: 'c', enabled: true })
+    ).not.toThrow()
+  })
+
+  it('loadPersisted descarta rotina malformada e mantém a válida; tick subsequente não lança', async () => {
+    let dir = ''
+    try {
+      dir = mkdtempSync(join(tmpdir(), 'orkestra-'))
+      const file = join(dir, 'routines.json')
+      const valid = { id: 'valid-1', name: 'Good', schedule: '* * * * *', target: 'D', command: 'x', enabled: true }
+      const malformed = { id: 'bad-1', name: 'Bad', target: 'D', command: 'x', enabled: true } // sem schedule
+      writeFileSync(file, JSON.stringify([valid, malformed]))
+
+      const onFire = vi.fn()
+      const s = new RoutineScheduler({ onFire, now: () => at(9, 30), persistPath: file })
+      await s.loadPersisted()
+
+      expect(s.list()).toHaveLength(1)
+      expect(s.list()[0]).toMatchObject({ id: 'valid-1' })
+      expect(() => s.tick()).not.toThrow()
+      expect(onFire).toHaveBeenCalledTimes(1)
+    } finally {
+      if (dir) rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
