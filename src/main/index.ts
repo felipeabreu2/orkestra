@@ -66,6 +66,14 @@ function createWindow(): void {
       webviewTag: true
     }
   })
+  // Defense-in-depth: strip dangerous webPreferences from any <webview> guest, even if
+  // a future renderer compromise tries to attach one with nodeIntegration/preload.
+  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, _params) => {
+    delete webPreferences.preload
+    webPreferences.nodeIntegration = false
+    webPreferences.contextIsolation = true
+  })
+
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => {
     ptyManager.killAll()
