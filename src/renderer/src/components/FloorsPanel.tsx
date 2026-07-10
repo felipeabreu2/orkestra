@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Floor } from '../../../shared/floors'
 
 // Painel de floors (Fase 8): cria/lista/aterrissa/remove worktrees isolados via
@@ -6,9 +6,18 @@ import type { Floor } from '../../../shared/floors'
 // escolhido não é um repo git; land/remove em erro de disco/git) é envolvida em
 // try/catch — nunca deixamos uma rejeição de IPC estourar pro React e derrubar o canvas.
 // Estilo mínimo (polish é Fase 13).
+
+// Janela de confirmação inline do "Remover" (Fase 13) — ver handleRemoveClick.
+const REMOVE_CONFIRM_MS = 3000
+
 export function FloorsPanel(): JSX.Element {
   const [floors, setFloors] = useState<Floor[]>([])
   const [status, setStatus] = useState<string>('')
+  const [statusKind, setStatusKind] = useState<'ok' | 'err' | ''>('')
+  // Id do floor com remoção pendente de confirmação (2º clique em "Confirmar?" de fato
+  // remove) — null quando nenhuma remoção está pendente (Fase 13).
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refresh = async (): Promise<void> => {
     setFloors(await window.orkestra.floors.list())
@@ -17,6 +26,31 @@ export function FloorsPanel(): JSX.Element {
   useEffect(() => {
     refresh()
   }, [])
+
+  const cancelConfirmTimer = (): void => {
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
+    }
+  }
+
+  // Clicar fora do botão "Confirmar?" pendente cancela a confirmação — mousedown (não click)
+  // dispara antes do click do alvo, então um clique em OUTRO botão (ex.: "Remover" de outro
+  // floor) já vê confirmingId limpo e trata como 1º clique, não como confirmação (Fase 13).
+  useEffect(() => {
+    if (!confirmingId) return undefined
+    const handlePointerDown = (e: MouseEvent): void => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest(`[data-remove-id="${confirmingId}"]`)) return
+      cancelConfirmTimer()
+      setConfirmingId(null)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [confirmingId])
+
+  // Limpa o timer pendente se o componente desmontar com uma confirmação em aberto.
+  useEffect(() => cancelConfirmTimer, [])
 
   const handleCreate = async (): Promise<void> => {
     const name = window.prompt('Nome do floor:')
@@ -28,19 +62,28 @@ export function FloorsPanel(): JSX.Element {
       const floor = await window.orkestra.floors.create(name.trim())
       if (floor) {
         setStatus('')
+        setStatusKind('')
         await refresh()
       }
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+      setStatusKind('err')
     }
   }
 
   const handleLand = async (id: string): Promise<void> => {
     try {
       const r = await window.orkestra.floors.land(id)
-      setStatus(r.ok ? 'aterrissado' : `conflito: ${r.output}`)
+      if (r.ok) {
+        setStatus('aterrissado')
+        setStatusKind('ok')
+      } else {
+        setStatus(`conflito: ${r.output}`)
+        setStatusKind('err')
+      }
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+      setStatusKind('err')
     }
   }
 
@@ -50,7 +93,27 @@ export function FloorsPanel(): JSX.Element {
       await refresh()
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+      setStatusKind('err')
     }
+  }
+
+  // Remover descarta o worktree com --force (FloorManager.remove) — perda real se houver
+  // trabalho não-commitado. Em vez de window.confirm (bloqueia o processo), confirmação
+  // inline: 1º clique só arma confirmingId e troca o label pra "Confirmar?"; um 2º clique
+  // dentro de REMOVE_CONFIRM_MS remove de fato; timeout ou clique fora cancela (Fase 13).
+  const handleRemoveClick = (id: string): void => {
+    if (confirmingId === id) {
+      cancelConfirmTimer()
+      setConfirmingId(null)
+      void handleRemove(id)
+      return
+    }
+    cancelConfirmTimer()
+    setConfirmingId(id)
+    confirmTimerRef.current = setTimeout(() => {
+      confirmTimerRef.current = null
+      setConfirmingId(null)
+    }, REMOVE_CONFIRM_MS)
   }
 
   return (
@@ -98,7 +161,14 @@ export function FloorsPanel(): JSX.Element {
         </button>
       </div>
       {status && (
-        <div style={{ padding: '4px 8px', color: '#eab308', fontSize: 11, wordBreak: 'break-word' }}>
+        <div
+          style={{
+            padding: '4px 8px',
+            color: statusKind === 'ok' ? 'var(--ok)' : statusKind === 'err' ? 'var(--err)' : 'var(--warn)',
+            fontSize: 11,
+            wordBreak: 'break-word'
+          }}
+        >
           {status}
         </div>
       )}
@@ -151,8 +221,9 @@ export function FloorsPanel(): JSX.Element {
                 Land
               </button>
               <button
-                onClick={() => handleRemove(f.id)}
-                aria-label={`Remover ${f.name}`}
+                onClick={() => handleRemoveClick(f.id)}
+                data-remove-id={f.id}
+                aria-label={confirmingId === f.id ? `Confirmar remoção de ${f.name}` : `Remover ${f.name}`}
                 style={{
                   padding: '2px 6px',
                   background: 'transparent',
@@ -163,7 +234,7 @@ export function FloorsPanel(): JSX.Element {
                   cursor: 'pointer'
                 }}
               >
-                Remover
+                {confirmingId === f.id ? 'Confirmar?' : 'Remover'}
               </button>
             </div>
           </div>

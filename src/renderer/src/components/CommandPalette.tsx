@@ -45,16 +45,30 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
       { id: 'action:note', label: 'Criar Nota', kind: 'action', run: () => addNoteNode() },
       { id: 'action:portal', label: 'Criar Portal', kind: 'action', run: () => addPortalNode() }
     ]
-    const nodeItems: PaletteItem[] = nodes.map((n) => ({
-      id: `node:${n.id}`,
-      label: (n.data as { name?: string })?.name ?? n.type ?? 'nó',
-      kind: 'node',
-      // Foca o nó centralizando o viewport na posição dele (Fase 12: setCenter, não fitView —
-      // mais previsível pra um único alvo escolhido no palette).
-      run: () => {
-        void setCenter(n.position.x, n.position.y, { zoom: 1.2, duration: 400 })
+    const nodeItems: PaletteItem[] = nodes.map((n): PaletteItem => {
+      const data = n.data as { name?: string; content?: string }
+      // Notas não têm data.name (só data.content) — sem isso todo nó-nota aparecia com o
+      // literal "note" no palette. Usa o início do conteúdo como label (ou "Nota" se vazia).
+      // Terminais/portais mantêm data.name (Fase 13).
+      const label =
+        n.type === 'note'
+          ? String(data?.content ?? '').trim().slice(0, 24) || 'Nota'
+          : data?.name ?? n.type ?? 'nó'
+      return {
+        id: `node:${n.id}`,
+        label,
+        kind: 'node',
+        // Foca o nó centralizando o viewport no centro visual dele — soma metade da
+        // largura/altura à posição (que é o canto superior-esquerdo), não fitView (mais
+        // previsível pra um único alvo escolhido no palette) (Fase 12, corrigido Fase 13).
+        run: () => {
+          void setCenter(n.position.x + (n.width ?? 0) / 2, n.position.y + (n.height ?? 0) / 2, {
+            zoom: 1.2,
+            duration: 400
+          })
+        }
       }
-    }))
+    })
     return [...actions, ...nodeItems]
   }, [nodes, addTerminalNode, addNoteNode, addPortalNode, setCenter])
 
@@ -68,6 +82,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   }
 
   return (
+    // Backdrop: clique fora do card fecha o palette (onClose aqui); o card abaixo para a
+    // propagação e carrega role/aria-modal — é ele que representa o diálogo em si (Fase 13).
     <div
       onClick={onClose}
       style={{
@@ -83,6 +99,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
         style={{
           width: 480,
           maxHeight: '60vh',
@@ -117,6 +135,11 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
             } else if (e.key === 'Escape') {
               e.preventDefault()
               onClose()
+            } else if (e.key === 'Tab') {
+              // Focus-trap simples (Fase 13): o input é o único elemento focável do palette (a
+              // lista é navegada por seta, não por Tab), então basta bloquear o Tab pra ele não
+              // vazar foco pro canvas por trás do overlay.
+              e.preventDefault()
             }
           }}
           placeholder="Buscar nós ou ações..."

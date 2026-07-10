@@ -25,6 +25,7 @@ export function RoutinesPanel(): JSX.Element {
   const [routines, setRoutines] = useState<Routine[]>([])
   const [form, setForm] = useState(emptyForm)
   const [status, setStatus] = useState<string>('')
+  const [statusKind, setStatusKind] = useState<'ok' | 'err' | ''>('')
 
   const refresh = async (): Promise<void> => {
     setRoutines(await window.orkestra.routines.list())
@@ -42,9 +43,11 @@ export function RoutinesPanel(): JSX.Element {
       await window.orkestra.routines.add({ ...form, enabled: true })
       setForm(emptyForm)
       setStatus('')
+      setStatusKind('')
       await refresh()
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+      setStatusKind('err')
     }
   }
 
@@ -53,8 +56,10 @@ export function RoutinesPanel(): JSX.Element {
       await window.orkestra.routines.toggle(r.id, !r.enabled)
       await refresh()
       setStatus('')
+      setStatusKind('')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+      setStatusKind('err')
     }
   }
 
@@ -63,8 +68,10 @@ export function RoutinesPanel(): JSX.Element {
       await window.orkestra.routines.remove(id)
       await refresh()
       setStatus('')
+      setStatusKind('')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err))
+      setStatusKind('err')
     }
   }
 
@@ -149,7 +156,14 @@ export function RoutinesPanel(): JSX.Element {
         </button>
       </div>
       {status && (
-        <div style={{ padding: '4px 8px', color: '#eab308', fontSize: 11, wordBreak: 'break-word' }}>
+        <div
+          style={{
+            padding: '4px 8px',
+            color: statusKind === 'ok' ? 'var(--ok)' : statusKind === 'err' ? 'var(--err)' : 'var(--warn)',
+            fontSize: 11,
+            wordBreak: 'break-word'
+          }}
+        >
           {status}
         </div>
       )}
