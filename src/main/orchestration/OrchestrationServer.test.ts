@@ -361,4 +361,50 @@ describe('OrchestrationServer', () => {
     })
     expect(res.status).toBe(404)
   })
+
+  it('POST /portal/eval sem token retorna 401', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/eval`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', js: '1' })
+    })
+    expect(res.status).toBe(401)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /portal/click sem token retorna 401', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/click`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', selector: '.x' })
+    })
+    expect(res.status).toBe(401)
+    expect(commands).toEqual([])
+  })
+
+  it('GET /portal sem token retorna 401', async () => {
+    const s = makeServer({ nodes: [] }, [])
+    const { port } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal?name=P`)
+    expect(res.status).toBe(401)
+  })
+
+  it('POST /portal/eval com js não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/eval`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', js: 123 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
 })
