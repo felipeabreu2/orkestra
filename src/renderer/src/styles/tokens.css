@@ -15,6 +15,9 @@
   /* acento */
   --accent: #7c6cff; /* violeta/índigo */
   --accent-weak: #7c6cff22;
+  --accent-text: #0e1016; /* texto sobre --accent sólido: ~3.2:1 com --text-1 (abaixo do AA
+    4.5:1) -> quase-preto sobre o violeta dá ~4.9:1 (Fase 13 Task 3, a11y). Não usar --accent-
+    text sobre nada além de um preenchimento --accent sólido. */
   /* estados */
   --ok: #3fb984;
   --warn: #e0a13a;

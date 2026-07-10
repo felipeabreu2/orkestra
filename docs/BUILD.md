@@ -37,7 +37,9 @@ Definidos em [`../electron-builder.yml`](../electron-builder.yml):
 
 ### (a) Ícone do app
 
-`electron-builder.yml` aponta `icon: build/icon.png`, mas o arquivo **ainda não existe neste repo** — é um item previsto para a Fase 13 (identidade visual). Até lá, o empacotamento cai no ícone default do Electron (não falha, só fica genérico). Para resolver: colocar um PNG **1024×1024** em `build/icon.png` — o electron-builder deriva o `.icns` (mac) e `.ico` (win) a partir dele automaticamente.
+A marca já existe: [`resources/icon.svg`](../resources/icon.svg) é o mark oficial do Orkestra (SVG original, artwork própria — ver os comentários no arquivo para o conceito), também usado inline (via `src/renderer/src/components/Logo.tsx`) no wordmark do canto do canvas. O que falta é só o **export** — `electron-builder.yml` aponta `icon: build/icon.png`, e esse arquivo **ainda não existe neste repo**. Até lá, o empacotamento cai no ícone default do Electron (não falha, só fica genérico).
+
+Para resolver: exportar `resources/icon.svg` como PNG **1024×1024** e salvar em `build/icon.png` (fundo incluso — o SVG já tem o backdrop quadrado-arredondado embutido, não precisa compor nada por cima). Não há dependência nova no projeto para isso; qualquer ferramenta de export SVG→PNG resolve (Figma/Illustrator/Inkscape, `rsvg-convert`, `resvg`, o painel de export do Chrome/DevTools, etc. — escolha do mantenedor). Com o PNG no lugar, o electron-builder deriva o `.icns` (mac) e `.ico` (win) a partir dele automaticamente.
 
 ### (b) Assinatura e notarização (macOS)
 

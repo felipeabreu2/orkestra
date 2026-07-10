@@ -9,6 +9,7 @@ import { PortalFlowNode } from './PortalFlowNode'
 import { FloorsPanel } from './FloorsPanel'
 import { RoutinesPanel } from './RoutinesPanel'
 import { CommandPalette } from './CommandPalette'
+import { Logo } from './Logo'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
@@ -64,6 +65,14 @@ export function Canvas(): JSX.Element {
       </div>
       <FloorsPanel />
       <RoutinesPanel />
+      {/* Wordmark (Fase 13 Task 3): purely decorative brand lockup, bottom-left — the one corner
+          free of the creation toolbar (top-left) and the Floors/Routines panels (top/bottom
+          right). `pointer-events: none` on the wrapper (see Canvas.css) keeps it out of the way
+          of canvas panning/clicks; `aria-hidden` keeps it out of the way of screen readers too. */}
+      <div className="ork-wordmark" aria-hidden="true">
+        <Logo size={18} />
+        <span className="ork-wordmark-text">Orkestra</span>
+      </div>
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       <ReactFlow
         nodes={nodes}

@@ -47,7 +47,9 @@
   flex: 0 0 auto;
   padding: 4px 10px;
   background: var(--accent);
-  color: var(--text-1);
+  /* --text-1 sobre --accent sólido fica ~3.2:1 (abaixo do WCAG AA 4.5:1) -> --accent-text
+     (quase-preto) dá ~4.9:1 (Fase 13 Task 3, a11y). */
+  color: var(--accent-text);
   border: none;
   border-radius: var(--radius-sm);
   font-size: 11px;

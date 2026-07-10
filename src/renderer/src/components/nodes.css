@@ -160,7 +160,9 @@
 .ork-node-go {
   flex: 0 0 auto;
   background: var(--accent);
-  color: var(--text-1);
+  /* --text-1 sobre --accent sólido fica ~3.2:1 (abaixo do WCAG AA 4.5:1) -> --accent-text
+     (quase-preto) dá ~4.9:1 (Fase 13 Task 3, a11y). */
+  color: var(--accent-text);
   border: none;
   border-radius: var(--radius-sm);
   font-size: 12px;
