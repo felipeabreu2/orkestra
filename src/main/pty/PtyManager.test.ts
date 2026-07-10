@@ -93,7 +93,7 @@ describe('PtyManager', () => {
     expect(call[0]).toBe('/bin/zsh')
     expect(call[1]).toEqual([])
     expect(call[2].cwd).toBe('/tmp/home')
-    expect(call[2].env).toBe(process.env)
+    expect(call[2].env).toEqual(process.env) // agora é uma cópia (merge com opts.env), não a mesma referência
     expect(call[2].cols).toBe(80)
     expect(call[2].rows).toBe(24)
   })
@@ -116,5 +116,14 @@ describe('PtyManager', () => {
     const call = spawner.mock.calls[0]
     expect(call[0]).toBe('/bin/fish')
     expect(call[2].cwd).toBe('/explicit/cwd')
+  })
+
+  it('mescla env extra sobre process.env no spawn', () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    mgr.spawn({ env: { ORKESTRA_PORT: '1234' } })
+    const call = spawner.mock.calls[0]
+    expect(call[2].env.ORKESTRA_PORT).toBe('1234')
+    expect(call[2].env.PATH).toBe(process.env.PATH) // preserva o resto
   })
 })

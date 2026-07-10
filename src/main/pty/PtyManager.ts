@@ -18,12 +18,18 @@ export class PtyManager {
 
   constructor(private spawner: PtySpawner) {}
 
-  spawn(opts: { file?: string; cwd?: string; cols?: number; rows?: number }): string {
+  spawn(opts: {
+    file?: string
+    cwd?: string
+    cols?: number
+    rows?: number
+    env?: Record<string, string>
+  }): string {
     const id = String(this.nextId++)
     const file = opts.file ?? process.env.SHELL ?? '/bin/bash'
     const pty = this.spawner(file, [], {
       cwd: opts.cwd ?? process.env.HOME ?? process.cwd(),
-      env: process.env,
+      env: { ...process.env, ...opts.env },
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24
     })
