@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerPtyIpc } from './registerPtyIpc'
 import { PtyManager, type IPtyLike, type PtySpawner } from './PtyManager'
+import { AgentBus } from '../orchestration/AgentBus'
 
 function fakeIpcMain() {
   const handlers = new Map<string, (...a: any[]) => any>()
@@ -18,6 +19,24 @@ function makeFakePty(): { pty: IPtyLike; emit: (d: string) => void } {
   return {
     pty: { onData: (cb) => { dataCb = cb }, onExit: () => {}, write: vi.fn(), resize: vi.fn(), kill: vi.fn() },
     emit: (d) => dataCb(d)
+  }
+}
+
+// Fake multi-subscriber (não sobrescreve o assinante anterior) — o mesmo formato usado em
+// PtyManager.test.ts. Necessário aqui para provar que DUAS assinaturas onData independentes
+// (o streaming do registerPtyIpc para o renderer + o buffer do AgentBus) coexistem no mesmo
+// pty sem uma pisar na outra, o que o fake de slot único acima não conseguiria revelar.
+function makeMultiSubFakePty(): { pty: IPtyLike; emit: (d: string) => void } {
+  const dataCbs: Array<(d: string) => void> = []
+  return {
+    pty: {
+      onData: (cb) => { dataCbs.push(cb) },
+      onExit: () => {},
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn()
+    },
+    emit: (d) => { for (const cb of dataCbs) cb(d) }
   }
 }
 
@@ -65,5 +84,39 @@ describe('registerPtyIpc', () => {
     registerPtyIpc(ipc as any, mgr, () => null)
     const id = await ipc.handlers.get('pty:spawn')!({}, {})
     expect(typeof id).toBe('string')
+  })
+
+  it('pty:spawn chama onSpawn(id) depois de criar o pty (hook opcional)', async () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const ipc = fakeIpcMain()
+    const onSpawn = vi.fn()
+    registerPtyIpc(ipc as any, mgr, () => null, undefined, onSpawn)
+    const id = await ipc.handlers.get('pty:spawn')!({}, {})
+    expect(onSpawn).toHaveBeenCalledWith(id)
+  })
+
+  it('pty:spawn sem onSpawn explícito não quebra (default no-op)', async () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+    const id = await ipc.handlers.get('pty:spawn')!({}, {})
+    expect(typeof id).toBe('string')
+  })
+
+  it('a assinatura onData do streaming (renderer) e a do AgentBus.track coexistem no mesmo pty (multi-subscriber)', async () => {
+    const fake = makeMultiSubFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const bus = new AgentBus(mgr)
+    const sender = { send: vi.fn() }
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => sender as any, undefined, (id) => bus.track(id))
+
+    const id = await ipc.handlers.get('pty:spawn')!({}, {})
+    fake.emit('saida-do-agente')
+
+    expect(sender.send).toHaveBeenCalledWith('pty:data', id, 'saida-do-agente')
+    expect(bus.read(id)).toContain('saida-do-agente')
   })
 })

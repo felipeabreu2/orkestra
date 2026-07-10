@@ -88,17 +88,19 @@ export class OrchestrationServer {
       })
       return
     }
-    if (req.method === 'GET' && req.url?.startsWith('/check')) {
+    if (req.method === 'GET') {
       const url = new URL(req.url ?? '', 'http://x')
-      const name = url.searchParams.get('name') ?? ''
-      const result = this.opts.check?.(name) ?? null
-      if (result) {
-        res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(result))
-      } else {
-        res.writeHead(404).end('not found')
+      if (url.pathname === '/check') {
+        const name = url.searchParams.get('name') ?? ''
+        const result = this.opts.check?.(name) ?? null
+        if (result) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(result))
+        } else {
+          res.writeHead(404).end('not found')
+        }
+        return
       }
-      return
     }
     res.writeHead(404).end('not found')
   }

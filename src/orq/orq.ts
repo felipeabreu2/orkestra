@@ -24,7 +24,25 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
     }
-    return { code: 2, out: `orq: comando desconhecido. Uso: orq list | orq note write "<conteúdo>"` }
+    if (cmd === 'ask') {
+      const prompt = rest.join(' ')
+      const res = await fetch(`${base}/ask`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: sub, prompt })
+      })
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+    }
+    if (cmd === 'check') {
+      const res = await fetch(`${base}/check?name=${encodeURIComponent(sub ?? '')}`, { headers })
+      if (!res.ok) return { code: 1, out: `orq: erro ${res.status}` }
+      const data = (await res.json()) as { output: string }
+      return { code: 0, out: data.output }
+    }
+    return {
+      code: 2,
+      out: 'orq: comando desconhecido. Uso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" | orq check "<nome>"'
+    }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }
   }

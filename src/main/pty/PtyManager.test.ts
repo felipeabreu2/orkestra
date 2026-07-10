@@ -83,6 +83,19 @@ describe('PtyManager', () => {
     expect(mgr.has(id)).toBe(false)
   })
 
+  it('onExit(id, cb) notifica um assinante externo quando o pty sai, sem quebrar a limpeza interna', () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const id = mgr.spawn({ nodeId: 'node-Z' })
+    const got: number[] = []
+    mgr.onExit(id, (e) => got.push(e.exitCode))
+    fake.emitExit(7)
+    expect(got).toEqual([7])
+    // a limpeza interna (ptys/ptyByNode) continua acontecendo normalmente
+    expect(mgr.has(id)).toBe(false)
+    expect(mgr.ptyIdForNode('node-Z')).toBeUndefined()
+  })
+
   it('passa file/cwd/cols/rows ao spawner com defaults', () => {
     vi.stubEnv('SHELL', '/bin/zsh')
     vi.stubEnv('HOME', '/tmp/home')

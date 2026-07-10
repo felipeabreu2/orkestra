@@ -15,6 +15,7 @@ export type PtySpawner = (
 export class PtyManager {
   private ptys = new Map<string, IPtyLike>()
   private ptyByNode = new Map<string, string>()
+  private exitSubs = new Map<string, Array<(e: { exitCode: number }) => void>>()
   private nextId = 1
 
   constructor(private spawner: PtySpawner) {}
@@ -37,15 +38,30 @@ export class PtyManager {
     })
     this.ptys.set(id, pty)
     if (opts.nodeId) this.ptyByNode.set(opts.nodeId, id)
-    pty.onExit(() => {
+    // Único listener bruto de exit por pty (o IPtyLike/fakes de teste nem sempre suportam
+    // múltiplas assinaturas). Assinantes externos (ex.: AgentBus) entram via onExit(id, cb)
+    // abaixo e são acumulados em exitSubs, disparados aqui junto da limpeza interna.
+    pty.onExit((e) => {
       this.ptys.delete(id)
       this.removeNodeMapping(id)
+      const subs = this.exitSubs.get(id)
+      this.exitSubs.delete(id)
+      if (subs) for (const cb of subs) cb(e)
     })
     return id
   }
 
   ptyIdForNode(nodeId: string): string | undefined {
     return this.ptyByNode.get(nodeId)
+  }
+
+  // Assinatura extra (multi-subscriber) para o exit de um pty específico, sem depender do
+  // IPtyLike subjacente suportar múltiplos onExit — a limpeza interna acima já monopoliza o
+  // único pty.onExit() e repassa para cá.
+  onExit(id: string, cb: (e: { exitCode: number }) => void): void {
+    const list = this.exitSubs.get(id) ?? []
+    list.push(cb)
+    this.exitSubs.set(id, list)
   }
 
   private removeNodeMapping(id: string): void {

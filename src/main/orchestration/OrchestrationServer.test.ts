@@ -123,4 +123,15 @@ describe('OrchestrationServer', () => {
     })
     expect(res.status).toBe(404)
   })
+
+  it('GET /checkxyz (prefixo parecido) não casa com a rota /check — pathname exato', async () => {
+    const check = vi.fn().mockReturnValue({ output: 'não deveria ser chamado' })
+    const s = makeServer({ nodes: [] }, [], { check })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/checkxyz?name=agente-1`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(404)
+    expect(check).not.toHaveBeenCalled()
+  })
 })
