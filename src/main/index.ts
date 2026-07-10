@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -8,6 +8,8 @@ import { registerPersistenceIpc } from './persistence/registerPersistenceIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
+import { FloorManager } from './floors/FloorManager'
+import { registerFloorIpc } from './floors/registerFloorIpc'
 import type { CanvasMirror } from '../shared/orchestration'
 
 let mainWindow: BrowserWindow | null = null
@@ -89,12 +91,22 @@ app.whenReady().then(async () => {
     mirror = m
   })
 
+  // Floors (Fase 8): worktrees git isolados por tarefa, persistidos em
+  // ~/.orkestra/floors/floors.json e recarregados no boot.
+  const floorManager = new FloorManager(join(app.getPath('home'), '.orkestra', 'floors'))
+  await floorManager.loadPersisted()
+  registerFloorIpc(ipcMain, floorManager, async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return r.canceled ? null : r.filePaths[0]
+  })
+
   registerPtyIpc(
     ipcMain,
     ptyManager,
     () => mainWindow?.webContents ?? null,
     () => orchestrationEnv,
-    (id) => agentBus.track(id)
+    (id) => agentBus.track(id),
+    (floorId) => floorManager.get(floorId)?.worktreePath
   )
   const persistence = new CanvasPersistence(join(app.getPath('userData'), 'canvas.json'))
   registerPersistenceIpc(ipcMain, persistence)

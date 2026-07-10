@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand } from '../shared/orchestration'
+import type { Floor } from '../shared/floors'
 
 const api = {
   pty: {
@@ -10,6 +11,7 @@ const api = {
       rows?: number
       nodeId?: string
       initialCommand?: string
+      floorId?: string
     }): Promise<string> => ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => ipcRenderer.send('pty:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
@@ -34,6 +36,13 @@ const api = {
       ipcRenderer.on('orchestration:command', listener)
       return () => ipcRenderer.removeListener('orchestration:command', listener)
     }
+  },
+  floors: {
+    create: (name: string): Promise<Floor | null> => ipcRenderer.invoke('floor:create', name),
+    list: (): Promise<Floor[]> => ipcRenderer.invoke('floor:list'),
+    land: (id: string): Promise<{ ok: boolean; output: string }> =>
+      ipcRenderer.invoke('floor:land', id),
+    remove: (id: string): Promise<boolean> => ipcRenderer.invoke('floor:remove', id)
   }
 }
 
