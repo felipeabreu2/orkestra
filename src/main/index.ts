@@ -54,7 +54,12 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       sandbox: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Fase 9 (Portais): habilita a tag <webview> no renderer para o PortalNode hospedar um
+      // browser embutido dirigível. contextIsolation/sandbox/nodeIntegration acima permanecem
+      // inalterados — o próprio <webview> roda isolado (nodeintegration off por padrão),
+      // então conteúdo web não confiável carregado nele não alcança o processo main/Node.
+      webviewTag: true
     }
   })
   mainWindow.on('ready-to-show', () => mainWindow?.show())

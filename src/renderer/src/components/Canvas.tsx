@@ -3,12 +3,13 @@ import '@xyflow/react/dist/style.css'
 import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
+import { PortalFlowNode } from './PortalFlowNode'
 import { FloorsPanel } from './FloorsPanel'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
 
-const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode }
+const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode, portal: PortalFlowNode }
 
 export function Canvas(): JSX.Element {
   useCanvasPersistence()
@@ -20,6 +21,7 @@ export function Canvas(): JSX.Element {
   const onConnect = useCanvasStore((s) => s.onConnect)
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
+  const addPortalNode = useCanvasStore((s) => s.addPortalNode)
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -63,6 +65,20 @@ export function Canvas(): JSX.Element {
           }}
         >
           + Nota
+        </button>
+        <button
+          onClick={() => addPortalNode()}
+          style={{
+            padding: '6px 12px',
+            background: '#0ea5e9',
+            color: '#082f49',
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 13,
+            cursor: 'pointer'
+          }}
+        >
+          + Portal
         </button>
       </div>
       <FloorsPanel />

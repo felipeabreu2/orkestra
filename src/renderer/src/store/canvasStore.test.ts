@@ -243,4 +243,89 @@ describe('canvasStore', () => {
     // Posição deve seguir a fórmula: 80 + (length % 8) * 36
     expect(nodes[1].position).toEqual({ x: 80 + 36, y: 80 + 36 })
   })
+
+  it('addPortalNode cria um nó tipo portal com data.url e data.name "Portal N"', () => {
+    useCanvasStore.getState().addPortalNode(undefined, { url: 'https://x' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect(n.type).toBe('portal')
+    expect((n.data as { url?: string }).url).toBe('https://x')
+    expect((n.data as { name?: string }).name).toMatch(/^Portal \d+$/)
+  })
+
+  it('addPortalNode sem opts semeia url vazia e posição informada', () => {
+    useCanvasStore.getState().addPortalNode({ x: 3, y: 4 })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect(n.position).toEqual({ x: 3, y: 4 })
+    expect((n.data as { url?: string }).url).toBe('')
+  })
+
+  it('updatePortalUrl altera a url de um portal existente', () => {
+    useCanvasStore.getState().addPortalNode(undefined, { url: 'https://a' })
+    const id = useCanvasStore.getState().nodes.at(-1)!.id
+    useCanvasStore.getState().updatePortalUrl(id, 'https://b')
+    expect((useCanvasStore.getState().nodes.at(-1)!.data as { url?: string }).url).toBe('https://b')
+  })
+
+  it('updatePortalName renomeia um portal existente', () => {
+    useCanvasStore.getState().addPortalNode()
+    const id = useCanvasStore.getState().nodes.at(-1)!.id
+    useCanvasStore.getState().updatePortalName(id, 'Login')
+    expect((useCanvasStore.getState().nodes.at(-1)!.data as { name?: string }).name).toBe('Login')
+  })
+
+  it('addPortalNode nomeia sequencialmente (Portal N, Portal N+1, ...)', () => {
+    // portalSeq é um contador em nível de módulo (como terminalSeq), não resetado pelo
+    // beforeEach — por isso o teste verifica o incremento relativo, não um valor absoluto
+    // (mesmo padrão usado pelos testes de addTerminalNode acima).
+    useCanvasStore.getState().addPortalNode()
+    useCanvasStore.getState().addPortalNode()
+    const [p1, p2] = useCanvasStore.getState().nodes
+    const n1 = parseInt((p1.data as { name: string }).name.match(/^Portal (\d+)$/)![1], 10)
+    const n2 = parseInt((p2.data as { name: string }).name.match(/^Portal (\d+)$/)![1], 10)
+    expect(n2).toBe(n1 + 1)
+  })
+
+  it('addPortalNode e addTerminalNode usam sequências de nome independentes', () => {
+    useCanvasStore.getState().addPortalNode()
+    const firstNum = parseInt(
+      (useCanvasStore.getState().nodes.at(-1)!.data as { name: string }).name.match(/^Portal (\d+)$/)![1],
+      10
+    )
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addPortalNode()
+    const secondNum = parseInt(
+      (useCanvasStore.getState().nodes.at(-1)!.data as { name: string }).name.match(/^Portal (\d+)$/)![1],
+      10
+    )
+    // Criar um terminal entre os dois portais não deve "furar" a sequência de nomes de portal.
+    expect(secondNum).toBe(firstNum + 1)
+  })
+
+  it('url do portal sobrevive ao round-trip serialize→hydrate', () => {
+    useCanvasStore.getState().addPortalNode(undefined, { url: 'https://persist.example', name: 'Docs' })
+    const snap = useCanvasStore.getState().serialize()
+    useCanvasStore.getState().hydrate({ version: 1, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+    useCanvasStore.getState().hydrate(snap)
+    const restored = useCanvasStore.getState().nodes.at(-1)!
+    expect(restored.type).toBe('portal')
+    expect((restored.data as { url?: string; name?: string }).url).toBe('https://persist.example')
+    expect((restored.data as { url?: string; name?: string }).name).toBe('Docs')
+  })
+
+  it('hydrate semeia portalSeq a partir dos nós hidratados para evitar colisão de nomes', () => {
+    useCanvasStore.getState().hydrate({
+      version: 2,
+      nodes: [
+        { id: 'portal-hydrated', type: 'portal', position: { x: 10, y: 20 }, width: 480, height: 320, data: { name: 'Portal 999', url: '' } }
+      ],
+      edges: []
+    })
+    expect(useCanvasStore.getState().nodes).toHaveLength(1)
+    useCanvasStore.getState().addPortalNode()
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(2)
+    const newNode = nodes[1]
+    expect((newNode.data as { name?: string }).name).toBe('Portal 1000')
+  })
 })

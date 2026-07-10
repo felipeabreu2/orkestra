@@ -12,6 +12,7 @@ import {
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 
 let terminalSeq = 1
+let portalSeq = 1
 
 interface CanvasState {
   nodes: Node[]
@@ -21,10 +22,16 @@ interface CanvasState {
     opts?: { preset?: string; role?: string; name?: string; floorId?: string }
   ) => void
   addNoteNode: (position?: { x: number; y: number }) => void
+  addPortalNode: (
+    position?: { x: number; y: number } | undefined,
+    opts?: { name?: string; url?: string }
+  ) => void
   updateNoteContent: (id: string, content: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
   updateTerminalFloor: (id: string, floorId: string) => void
+  updatePortalUrl: (id: string, url: string) => void
+  updatePortalName: (id: string, name: string) => void
   removeNode: (id: string) => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -76,6 +83,26 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         }
       ]
     })),
+  addPortalNode: (position, opts): void =>
+    set((state) => {
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
+      return {
+        nodes: [
+          ...state.nodes,
+          {
+            id: `portal-${crypto.randomUUID()}`,
+            type: 'portal',
+            position: pos,
+            data: {
+              name: opts?.name ?? `Portal ${portalSeq++}`,
+              url: opts?.url ?? ''
+            },
+            width: 480,
+            height: 320
+          }
+        ]
+      }
+    }),
   updateNoteContent: (id, content): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, content } } : n))
@@ -91,6 +118,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   updateTerminalFloor: (id, floorId): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, floorId } } : n))
+    })),
+  updatePortalUrl: (id, url): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, url } } : n))
+    })),
+  updatePortalName: (id, name): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
     })),
   removeNode: (id): void =>
     set((state) => ({
@@ -119,19 +154,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     edges: get().edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
   }),
   hydrate: (snapshot): void => {
-    // Scan hydrated nodes for Terminal names and update terminalSeq to avoid collisions
-    const terminalNames = snapshot.nodes
+    // Scan hydrated nodes for Terminal/Portal names and update terminalSeq/portalSeq to avoid
+    // name collisions with nós criados na sessão atual (mesmo padrão para os dois contadores).
+    const hydratedNames = snapshot.nodes
       .map((p) => (p.data as Record<string, unknown>)?.name)
       .filter((name): name is string => typeof name === 'string')
     const maxTerminalNum = Math.max(
-      ...terminalNames
-        .map((name) => {
-          const match = name.match(/^Terminal (\d+)$/)
-          return match ? parseInt(match[1], 10) : 0
-        })
+      ...hydratedNames.map((name) => {
+        const match = name.match(/^Terminal (\d+)$/)
+        return match ? parseInt(match[1], 10) : 0
+      })
     )
     if (maxTerminalNum > 0) {
       terminalSeq = Math.max(terminalSeq, maxTerminalNum + 1)
+    }
+    const maxPortalNum = Math.max(
+      ...hydratedNames.map((name) => {
+        const match = name.match(/^Portal (\d+)$/)
+        return match ? parseInt(match[1], 10) : 0
+      })
+    )
+    if (maxPortalNum > 0) {
+      portalSeq = Math.max(portalSeq, maxPortalNum + 1)
     }
 
     set({
