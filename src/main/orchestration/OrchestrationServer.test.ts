@@ -11,6 +11,7 @@ function makeServer(
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
     check?: (name: string) => { output: string } | null
+    getPortalState?: (name: string) => { url: string; title: string; text: string } | null
   } = {}
 ) {
   server = new OrchestrationServer({
@@ -224,5 +225,140 @@ describe('OrchestrationServer', () => {
     })
     expect(res.status).toBe(400)
     expect(commands).toEqual([])
+  })
+
+  it('POST /portal/open emite um comando portalOpen', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/open`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', url: 'https://example.com' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalOpen', target: 'P', url: 'https://example.com' }])
+  })
+
+  it('POST /portal/open com url não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/open`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', url: 123 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /portal/click emite um comando portalClick', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/click`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', selector: '.x' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalClick', target: 'P', selector: '.x' }])
+  })
+
+  it('POST /portal/click com body inválido (sem selector) retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/click`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /portal/fill emite um comando portalFill', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/fill`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', selector: '#in', text: 'olá' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalFill', target: 'P', selector: '#in', text: 'olá' }])
+  })
+
+  it('POST /portal/fill sem text retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/fill`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', selector: '#in' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /portal/eval emite um comando portalEval', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/eval`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', js: 'document.title' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalEval', target: 'P', js: 'document.title' }])
+  })
+
+  it('POST /portal/eval com JSON malformado retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/eval`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: '{bad'
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('GET /portal?name=P devolve o estado injetado por getPortalState', async () => {
+    const getPortalState = vi.fn().mockReturnValue({ url: 'https://x', title: 'X', text: 'conteúdo' })
+    const s = makeServer({ nodes: [] }, [], { getPortalState })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal?name=P`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ url: 'https://x', title: 'X', text: 'conteúdo' })
+    expect(getPortalState).toHaveBeenCalledWith('P')
+  })
+
+  it('GET /portal retorna 404 quando getPortalState responde null', async () => {
+    const getPortalState = vi.fn().mockReturnValue(null)
+    const s = makeServer({ nodes: [] }, [], { getPortalState })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal?name=desconhecido`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('GET /portal sem getPortalState nas opts retorna 404', async () => {
+    const s = makeServer({ nodes: [] }, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal?name=P`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(404)
   })
 })

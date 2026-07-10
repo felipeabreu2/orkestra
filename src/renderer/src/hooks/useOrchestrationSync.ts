@@ -1,6 +1,21 @@
 import { useEffect } from 'react'
+import type { WebviewTag } from 'electron'
 import { useCanvasStore } from '../store/canvasStore'
 import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchestration'
+import { clickScript, fillScript } from '../../../shared/portalScripts'
+import { getPortal } from '../portalRegistry'
+
+// Resolve um portal pelo nome atual no espelho local do canvas -> node.id -> webview (via o
+// registry que o PortalNode popula ao montar). Mesmo padrão nome->nó->recurso usado no main para
+// terminais (resolvePtyByName, Fase 6) — aqui a busca é local (useCanvasStore.getState()), não
+// via IPC, já que o registry de webviews só existe neste processo (renderer).
+function resolvePortalWebview(
+  nodes: ReturnType<typeof useCanvasStore.getState>['nodes'],
+  target: string
+): WebviewTag | undefined {
+  const node = nodes.find((n) => n.type === 'portal' && (n.data?.name as string) === target)
+  return node ? getPortal(node.id) : undefined
+}
 
 // Mantém o main sincronizado com um espelho leve do canvas (id/tipo/nome/conteúdo dos nós)
 // e aplica de volta no store os comandos vindos do orq (via main), ex.: updateNote.
@@ -46,6 +61,36 @@ export function useOrchestrationSync(): void {
         const target = terminals.find((n) => (n.data?.name as string) === cmd.target)
         if (source && target) {
           store.onConnect({ source: source.id, target: target.id, sourceHandle: null, targetHandle: null })
+        }
+      } else if (cmd.type === 'portalOpen') {
+        try {
+          resolvePortalWebview(store.nodes, cmd.target)?.loadURL(cmd.url)?.catch(() => {})
+        } catch {
+          // Automação de portal é best-effort/fire-and-forget (ver notas de risco da Fase 9): o
+          // webview alvo pode não existir ainda ou não estar pronto — nunca deixa este hook
+          // quebrar por causa disso. `orq portal snapshot` é o feedback, não este comando.
+        }
+      } else if (cmd.type === 'portalClick') {
+        try {
+          resolvePortalWebview(store.nodes, cmd.target)
+            ?.executeJavaScript(clickScript(cmd.selector))
+            ?.catch(() => {})
+        } catch {
+          // idem
+        }
+      } else if (cmd.type === 'portalFill') {
+        try {
+          resolvePortalWebview(store.nodes, cmd.target)
+            ?.executeJavaScript(fillScript(cmd.selector, cmd.text))
+            ?.catch(() => {})
+        } catch {
+          // idem
+        }
+      } else if (cmd.type === 'portalEval') {
+        try {
+          resolvePortalWebview(store.nodes, cmd.target)?.executeJavaScript(cmd.js)?.catch(() => {})
+        } catch {
+          // idem
         }
       }
     })

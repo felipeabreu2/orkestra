@@ -1,12 +1,13 @@
 import { createServer, type Server } from 'http'
 import { randomBytes } from 'crypto'
-import type { CanvasMirror, OrchestrationCommand } from '../../shared/orchestration'
+import type { CanvasMirror, OrchestrationCommand, PortalState } from '../../shared/orchestration'
 
 interface Opts {
   getMirror: () => CanvasMirror
   onCommand: (cmd: OrchestrationCommand) => void
   ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
   check?: (name: string) => { output: string } | null
+  getPortalState?: (name: string) => PortalState | null
 }
 
 export class OrchestrationServer {
@@ -131,6 +132,91 @@ export class OrchestrationServer {
       })
       return
     }
+    if (req.method === 'POST' && req.url === '/portal/open') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { target?: unknown; url?: unknown }
+          if (typeof parsed.target !== 'string' || typeof parsed.url !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({ type: 'portalOpen', target: parsed.target, url: parsed.url })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/click') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { target?: unknown; selector?: unknown }
+          if (typeof parsed.target !== 'string' || typeof parsed.selector !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({ type: 'portalClick', target: parsed.target, selector: parsed.selector })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/fill') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { target?: unknown; selector?: unknown; text?: unknown }
+          if (
+            typeof parsed.target !== 'string' ||
+            typeof parsed.selector !== 'string' ||
+            typeof parsed.text !== 'string'
+          ) {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({
+            type: 'portalFill',
+            target: parsed.target,
+            selector: parsed.selector,
+            text: parsed.text
+          })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/eval') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { target?: unknown; js?: unknown }
+          if (typeof parsed.target !== 'string' || typeof parsed.js !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({ type: 'portalEval', target: parsed.target, js: parsed.js })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
     if (req.method === 'POST' && req.url === '/ask') {
       let body = ''
       req.on('data', (c) => { body += c })
@@ -159,6 +245,17 @@ export class OrchestrationServer {
       if (url.pathname === '/check') {
         const name = url.searchParams.get('name') ?? ''
         const result = this.opts.check?.(name) ?? null
+        if (result) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(result))
+        } else {
+          res.writeHead(404).end('not found')
+        }
+        return
+      }
+      if (url.pathname === '/portal') {
+        const name = url.searchParams.get('name') ?? ''
+        const result = this.opts.getPortalState?.(name) ?? null
         if (result) {
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify(result))

@@ -12,6 +12,7 @@ async function startServer(
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
     check?: (name: string) => { output: string } | null
+    getPortalState?: (name: string) => { url: string; title: string; text: string } | null
   } = {}
 ) {
   server = new OrchestrationServer({ getMirror: () => mirror, onCommand: (c) => commands.push(c), ...extra })
@@ -106,5 +107,68 @@ describe('runOrq', () => {
     const { code } = await runOrq(['connect', 'A', 'B'], env)
     expect(code).toBe(0)
     expect(commands).toEqual([{ type: 'connect', source: 'A', target: 'B' }])
+  })
+
+  it('portal open chama POST /portal/open com {target, url} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'open', 'P', 'https://example.com'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalOpen', target: 'P', url: 'https://example.com' }])
+  })
+
+  it('portal navigate é um alias de open', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'navigate', 'P', 'https://example.com'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalOpen', target: 'P', url: 'https://example.com' }])
+  })
+
+  it('portal click chama POST /portal/click com {target, selector} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'click', 'P', '.x'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalClick', target: 'P', selector: '.x' }])
+  })
+
+  it('portal fill chama POST /portal/fill com {target, selector, text} (texto multi-palavra junta com espaço)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'fill', 'P', '#in', 'olá', 'mundo'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalFill', target: 'P', selector: '#in', text: 'olá mundo' }])
+  })
+
+  it('portal eval chama POST /portal/eval com {target, js} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'eval', 'P', 'document.title'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalEval', target: 'P', js: 'document.title' }])
+  })
+
+  it('portal snapshot chama GET /portal?name=<nome> e imprime o estado retornado', async () => {
+    const getPortalState = vi.fn().mockReturnValue({ url: 'https://x', title: 'X', text: 'corpo da página' })
+    const env = await startServer({ nodes: [] }, [], { getPortalState })
+    const { code, out } = await runOrq(['portal', 'snapshot', 'P'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('https://x')
+    expect(out).toContain('X')
+    expect(out).toContain('corpo da página')
+    expect(getPortalState).toHaveBeenCalledWith('P')
+  })
+
+  it('portal snapshot retorna código != 0 quando o portal não é encontrado', async () => {
+    const env = await startServer({ nodes: [] }, [], { getPortalState: () => null })
+    const { code } = await runOrq(['portal', 'snapshot', 'Fantasma'], env)
+    expect(code).not.toBe(0)
+  })
+
+  it('portal com subcomando desconhecido retorna código != 0', async () => {
+    const env = await startServer({ nodes: [] }, [])
+    const { code } = await runOrq(['portal', 'blah', 'P'], env)
+    expect(code).not.toBe(0)
   })
 })

@@ -10,7 +10,7 @@ import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
 import { FloorManager } from './floors/FloorManager'
 import { registerFloorIpc } from './floors/registerFloorIpc'
-import type { CanvasMirror } from '../shared/orchestration'
+import type { CanvasMirror, PortalState } from '../shared/orchestration'
 
 let mainWindow: BrowserWindow | null = null
 const ptyManager = new PtyManager(nodePtySpawner)
@@ -20,6 +20,9 @@ const agentBus = new AgentBus(ptyManager)
 
 // Espelho leve do canvas (renderer -> main via 'orchestration:sync'), servido em GET /list.
 let mirror: CanvasMirror = { nodes: [] }
+// Estado reportado por cada portal (nome -> {url,title,text}), atualizado via IPC 'portal:state'
+// a cada did-finish-load do <webview> correspondente (PortalNode); servido em GET /portal.
+const portalStates = new Map<string, PortalState>()
 // Env extra injetado em todo pty spawnado; populado após orchestration.start() (porta+token).
 let orchestrationEnv: Record<string, string> = {}
 
@@ -42,7 +45,8 @@ const orchestration = new OrchestrationServer({
   check: (name) => {
     const p = resolvePtyByName(name)
     return p ? { output: agentBus.read(p) } : null
-  }
+  },
+  getPortalState: (name) => portalStates.get(name) ?? null
 })
 
 function createWindow(): void {
@@ -94,6 +98,9 @@ app.whenReady().then(async () => {
   }
   ipcMain.on('orchestration:sync', (_e, m: CanvasMirror) => {
     mirror = m
+  })
+  ipcMain.on('portal:state', (_e, s: { name: string } & PortalState) => {
+    portalStates.set(s.name, { url: s.url, title: s.title, text: s.text })
   })
 
   // Floors (Fase 8): worktrees git isolados por tarefa, persistidos em

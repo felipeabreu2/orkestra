@@ -142,7 +142,7 @@ export function PortalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
           </button>
         </div>
         <div className="nodrag nowheel" style={{ flex: 1, minHeight: 0 }}>
-          <PortalNode ref={webviewRef} url={url} />
+          <PortalNode ref={webviewRef} url={url} nodeId={id} name={name} />
         </div>
       </div>
     </>

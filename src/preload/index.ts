@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
-import type { CanvasMirror, OrchestrationCommand } from '../shared/orchestration'
+import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Floor } from '../shared/floors'
 
 const api = {
@@ -43,7 +43,11 @@ const api = {
     land: (id: string): Promise<{ ok: boolean; output: string }> =>
       ipcRenderer.invoke('floor:land', id),
     remove: (id: string): Promise<boolean> => ipcRenderer.invoke('floor:remove', id)
-  }
+  },
+  // Fase 9 (Portais): o PortalNode reporta {name,url,title,text} ao main a cada did-finish-load
+  // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
+  // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.
+  portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state)
 }
 
 contextBridge.exposeInMainWorld('orkestra', api)
