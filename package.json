@@ -2,6 +2,18 @@
   "name": "orkestra",
   "version": "0.0.0",
   "description": "Canvas de orquestração de agentes de código de IA",
+  "keywords": [
+    "electron",
+    "ai-agents",
+    "orchestration",
+    "canvas",
+    "terminal"
+  ],
+  "homepage": "https://github.com/TODO-USER/orkestra#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TODO-USER/orkestra.git"
+  },
   "author": "Felipe",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -37,6 +49,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.11.2",
+    "electron-updater": "^6.8.9",
     "node-pty": "^1.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

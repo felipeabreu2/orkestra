@@ -12,6 +12,7 @@ import { FloorManager } from './floors/FloorManager'
 import { registerFloorIpc } from './floors/registerFloorIpc'
 import { RoutineScheduler } from './routines/RoutineScheduler'
 import { registerRoutineIpc } from './routines/registerRoutineIpc'
+import { setupAutoUpdater } from './updater'
 import type { CanvasMirror, PortalState } from '../shared/orchestration'
 
 let mainWindow: BrowserWindow | null = null
@@ -167,6 +168,11 @@ app.whenReady().then(async () => {
   const persistence = new CanvasPersistence(join(app.getPath('userData'), 'canvas.json'))
   registerPersistenceIpc(ipcMain, persistence)
   createWindow()
+  // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
+  // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver
+  // electron-builder.yml publish). Falha silenciosamente enquanto owner/release reais não
+  // existirem (ver TODOs no electron-builder.yml).
+  setupAutoUpdater()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -1,4 +1,4 @@
-appId: com.felipe.orkestra
+appId: app.orkestra.desktop
 productName: Orkestra
 directories:
   output: dist
@@ -7,8 +7,28 @@ files:
   - out/**/*
   - package.json
 npmRebuild: true
+# TODO (Fase 13): icone customizado (build/icon.png -> electron-builder deriva o .icns/.ico a
+# partir dele). O arquivo ainda nao existe neste repo; ate la o empacotamento cai no icone
+# padrao do Electron em vez de falhar.
+icon: build/icon.png
 mac:
   target:
-    - target: dir
+    - target: dmg
+      arch: x64
+    - target: zip
       arch: x64
   category: public.app-category.developer-tools
+win:
+  target:
+    - target: nsis
+linux:
+  target:
+    - target: AppImage
+    - target: deb
+  category: Development
+publish:
+  provider: github
+  # TODO: preencher com o usuario/organizacao real do GitHub antes do primeiro release
+  # publicado - "TODO-USER" e um placeholder e nao resolve.
+  owner: TODO-USER
+  repo: orkestra
