@@ -27,6 +27,11 @@ let mirror: CanvasMirror = { nodes: [] }
 const portalStates = new Map<string, PortalState>()
 // Env extra injetado em todo pty spawnado; populado após orchestration.start() (porta+token).
 let orchestrationEnv: Record<string, string> = {}
+// Rotinas (Fase 10): construído dentro de app.whenReady() (precisa de app.getPath), bem depois
+// deste módulo já ter sido avaliado — igual ao mainWindow abaixo, referenciado via optional
+// chaining nas opts do orchestration (só é lido de fato quando uma requisição HTTP chega, o
+// que nunca acontece antes do app terminar de subir).
+let routineScheduler: RoutineScheduler | undefined
 
 // Resolve um terminal pelo nome atual no espelho do canvas -> ptyId (via PtyManager). Nomes
 // duplicados resolvem para o primeiro nó encontrado; renomear é responsabilidade do usuário.
@@ -48,7 +53,15 @@ const orchestration = new OrchestrationServer({
     const p = resolvePtyByName(name)
     return p ? { output: agentBus.read(p) } : null
   },
-  getPortalState: (name) => portalStates.get(name) ?? null
+  getPortalState: (name) => portalStates.get(name) ?? null,
+  routines: {
+    list: () => routineScheduler?.list() ?? [],
+    add: (r) => {
+      if (!routineScheduler) throw new Error('rotinas indisponíveis (scheduler ainda não iniciado)')
+      return routineScheduler.add(r)
+    },
+    remove: (id) => routineScheduler?.remove(id)
+  }
 })
 
 function createWindow(): void {
@@ -126,17 +139,22 @@ app.whenReady().then(async () => {
   // disparam num terminal existente via AgentBus.ask. Persistidas em ~/.orkestra/routines.json
   // e recarregadas no boot; alvo resolvido por nome (resolvePtyByName) a cada disparo — se o
   // terminal não existir mais, o disparo é um no-op silencioso (documentado no brief).
-  const routineScheduler = new RoutineScheduler({
+  const scheduler = new RoutineScheduler({
     persistPath: join(app.getPath('home'), '.orkestra', 'routines.json'),
     onFire: (r) => {
       const pty = resolvePtyByName(r.target)
       if (pty) agentBus.ask(pty, r.command)
     }
   })
-  await routineScheduler.loadPersisted()
-  routineScheduler.start()
-  app.on('before-quit', () => routineScheduler.stop())
-  registerRoutineIpc(ipcMain, routineScheduler)
+  await scheduler.loadPersisted()
+  scheduler.start()
+  app.on('before-quit', () => scheduler.stop())
+  registerRoutineIpc(ipcMain, scheduler)
+  // Publica no binding de módulo só depois de carregado/iniciado — as opts.routines do
+  // orchestration (acima) só o enxergam a partir daqui (antes disso, list()/add()/remove()
+  // caem no fallback dos optional chains, o que na prática nunca é observado: nenhuma
+  // requisição HTTP chega antes do app terminar de subir).
+  routineScheduler = scheduler
 
   registerPtyIpc(
     ipcMain,

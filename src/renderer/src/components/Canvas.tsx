@@ -5,6 +5,7 @@ import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
 import { FloorsPanel } from './FloorsPanel'
+import { RoutinesPanel } from './RoutinesPanel'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
@@ -82,6 +83,7 @@ export function Canvas(): JSX.Element {
         </button>
       </div>
       <FloorsPanel />
+      <RoutinesPanel />
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}

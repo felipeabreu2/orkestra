@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'http'
 import { randomBytes } from 'crypto'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../../shared/orchestration'
+import type { Routine } from '../../shared/routines'
 
 interface Opts {
   getMirror: () => CanvasMirror
@@ -8,6 +9,14 @@ interface Opts {
   ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
   check?: (name: string) => { output: string } | null
   getPortalState?: (name: string) => PortalState | null
+  // Fase 10 (Rotinas): CRUD fino sobre o RoutineScheduler do main. add() é o validador
+  // (Task 2 hardened): lança em nome/schedule/target/command inválidos — as rotas abaixo
+  // capturam esse throw e respondem 400 em vez de deixá-lo estourar a requisição.
+  routines?: {
+    list(): Routine[]
+    add(r: Omit<Routine, 'id'>): Routine
+    remove(id: string): void
+  }
 }
 
 export class OrchestrationServer {
@@ -45,6 +54,11 @@ export class OrchestrationServer {
     if (req.method === 'GET' && req.url === '/list') {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(this.opts.getMirror()))
+      return
+    }
+    if (req.method === 'GET' && req.url === '/routines') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(this.opts.routines?.list() ?? []))
       return
     }
     if (req.method === 'POST' && req.url === '/note') {
@@ -125,6 +139,56 @@ export class OrchestrationServer {
             return
           }
           this.opts.onCommand({ type: 'connect', source: parsed.source, target: parsed.target })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/routines') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as {
+            name?: unknown
+            schedule?: unknown
+            target?: unknown
+            command?: unknown
+          }
+          // routines.add (RoutineScheduler, Task 2) é o validador: lança em name/schedule/
+          // target/command ausentes, não-string ou vazios. O catch abaixo converte esse throw
+          // em 400 — nunca deixamos a validação derrubar a requisição. Uma rotina recém-criada
+          // nasce habilitada (enabled não é um campo do contrato HTTP; desabilitar é um passo
+          // explícito via POST /routines/remove... via routines.toggle no IPC do renderer).
+          this.opts.routines?.add({
+            name: parsed.name as string,
+            schedule: parsed.schedule as string,
+            target: parsed.target as string,
+            command: parsed.command as string,
+            enabled: true
+          })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad request')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/routines/remove') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { id?: unknown }
+          if (typeof parsed.id !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.routines?.remove(parsed.id)
           res.writeHead(200).end('ok')
         } catch {
           res.writeHead(400).end('bad json')
