@@ -217,4 +217,17 @@ describe('canvasStore', () => {
     expect((serializedData as { preset?: string }).preset).toBe('claude')
     expect((serializedData as { name?: string }).name).toMatch(/^Terminal \d+$/)
   })
+
+  it('addTerminalNode cascata posição quando nenhuma é passada', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(2)
+    // Primeira deve estar em (80, 80)
+    expect(nodes[0].position).toEqual({ x: 80, y: 80 })
+    // Segunda deve estar em posição diferente (cascata)
+    expect(nodes[1].position).not.toEqual({ x: 80, y: 80 })
+    // Posição deve seguir a fórmula: 80 + (length % 8) * 36
+    expect(nodes[1].position).toEqual({ x: 80 + 36, y: 80 + 36 })
+  })
 })

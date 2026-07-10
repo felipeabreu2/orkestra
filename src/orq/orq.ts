@@ -68,7 +68,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido. Uso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>"'
+        'orq: comando desconhecido.\nUso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

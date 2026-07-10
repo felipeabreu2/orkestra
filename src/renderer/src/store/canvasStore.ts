@@ -17,7 +17,7 @@ interface CanvasState {
   nodes: Node[]
   edges: Edge[]
   addTerminalNode: (
-    position?: { x: number; y: number },
+    position?: { x: number; y: number } | undefined,
     opts?: { preset?: string; role?: string; name?: string }
   ) => void
   addNoteNode: (position?: { x: number; y: number }) => void
@@ -35,28 +35,31 @@ interface CanvasState {
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
-  addTerminalNode: (position = { x: 80, y: 80 }, opts): void =>
-    set((state) => ({
-      nodes: [
-        ...state.nodes,
-        {
-          id: `terminal-${crypto.randomUUID()}`,
-          type: 'terminal',
-          position,
-          data: {
-            name: opts?.name ?? `Terminal ${terminalSeq++}`,
-            preset: opts?.preset ?? 'shell',
-            role: opts?.role ?? '',
-            // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
-            // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
-            // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
-            autostart: true
-          },
-          width: 480,
-          height: 320
-        }
-      ]
-    })),
+  addTerminalNode: (position, opts): void =>
+    set((state) => {
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
+      return {
+        nodes: [
+          ...state.nodes,
+          {
+            id: `terminal-${crypto.randomUUID()}`,
+            type: 'terminal',
+            position: pos,
+            data: {
+              name: opts?.name ?? `Terminal ${terminalSeq++}`,
+              preset: opts?.preset ?? 'shell',
+              role: opts?.role ?? '',
+              // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
+              // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
+              // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
+              autostart: true
+            },
+            width: 480,
+            height: 320
+          }
+        ]
+      }
+    }),
   addNoteNode: (position = { x: 120, y: 120 }): void =>
     set((state) => ({
       nodes: [
