@@ -29,10 +29,21 @@ describe('FloorManager', () => {
 
   it('create adiciona um worktree isolado numa branch dedicada', async () => {
     const f = await mgr.create(repo, 'Feature X')
-    expect(f.branch).toBe('orkestra/floor-feature-x')
+    expect(f.branch).toMatch(/^orkestra\/floor-feature-x-[0-9a-f]{8}$/)
     expect(existsSync(f.worktreePath)).toBe(true)
     expect(existsSync(join(f.worktreePath, 'README.md'))).toBe(true) // conteúdo do repo base
     expect(mgr.list()).toHaveLength(1)
+  })
+
+  it('create com nomes que colidem no slug gera branches e worktrees distintos', async () => {
+    const a = await mgr.create(repo, 'same name')
+    const b = await mgr.create(repo, 'same name')
+    expect(a.id).not.toBe(b.id)
+    expect(a.branch).not.toBe(b.branch)
+    expect(a.worktreePath).not.toBe(b.worktreePath)
+    expect(existsSync(a.worktreePath)).toBe(true)
+    expect(existsSync(b.worktreePath)).toBe(true)
+    expect(mgr.list()).toHaveLength(2)
   })
 
   it('create rejeita um diretório que não é repo git', async () => {
@@ -51,10 +62,37 @@ describe('FloorManager', () => {
     expect(existsSync(join(repo, 'novo.txt'))).toBe(true) // aterrissou no base
   })
 
+  it('land retorna ok:false num conflito real e não resolve nada', async () => {
+    const f = await mgr.create(repo, 'conflict')
+    writeFileSync(join(f.worktreePath, 'README.md'), '# floor version\n')
+    execFileSync('git', ['add', '.'], { cwd: f.worktreePath })
+    execFileSync('git', ['commit', '-qm', 'floor edita README'], { cwd: f.worktreePath })
+
+    writeFileSync(join(repo, 'README.md'), '# base version\n')
+    execFileSync('git', ['add', '.'], { cwd: repo })
+    execFileSync('git', ['commit', '-qm', 'base edita README'], { cwd: repo })
+
+    const r = await mgr.land(f.id)
+    expect(r.ok).toBe(false)
+    expect(typeof r.output).toBe('string')
+    expect(r.output.length).toBeGreaterThan(0)
+
+    try { execFileSync('git', ['merge', '--abort'], { cwd: repo }) } catch { /* ignore */ }
+
+    expect(mgr.get(f.id)).toBeTruthy()
+  })
+
   it('remove tira o worktree e some da lista', async () => {
     const f = await mgr.create(repo, 'temp')
     await mgr.remove(f.id)
     expect(existsSync(f.worktreePath)).toBe(false)
+    expect(mgr.list()).toHaveLength(0)
+  })
+
+  it('remove funciona mesmo se o worktree já sumiu do disco (sem zumbi)', async () => {
+    const f = await mgr.create(repo, 'ghost')
+    rmSync(f.worktreePath, { recursive: true, force: true })
+    await mgr.remove(f.id)
     expect(mgr.list()).toHaveLength(0)
   })
 })

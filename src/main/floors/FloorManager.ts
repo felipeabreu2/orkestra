@@ -8,7 +8,7 @@ import type { Floor } from '../../shared/floors'
 const exec = promisify(execFile)
 
 export function slugifyFloorName(name: string): string {
-  return name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-') || 'floor'
+  return name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '') || 'floor'
 }
 
 export class FloorManager {
@@ -24,7 +24,7 @@ export class FloorManager {
     await this.git(repoPath, ['rev-parse', '--git-dir']) // valida repo; lança se não for
     const id = randomUUID()
     const worktreePath = join(this.floorsDir, id)
-    const branch = `orkestra/floor-${slugifyFloorName(name)}`
+    const branch = `orkestra/floor-${slugifyFloorName(name)}-${id.slice(0, 8)}`
     await mkdir(this.floorsDir, { recursive: true })
     await this.git(repoPath, ['worktree', 'add', '-b', branch, worktreePath])
     const floor: Floor = { id, name, repoPath, worktreePath, branch }
@@ -52,7 +52,12 @@ export class FloorManager {
   async remove(id: string): Promise<void> {
     const f = this.floors.get(id)
     if (!f) return
-    await this.git(f.repoPath, ['worktree', 'remove', '--force', f.worktreePath])
+    try {
+      await this.git(f.repoPath, ['worktree', 'remove', '--force', f.worktreePath])
+    } catch {
+      // worktree pode já ter sido apagado manualmente fora do app; segue e limpa o estado mesmo assim
+      // (evita floor "zumbi" que não pode mais ser removido)
+    }
     this.floors.delete(id)
     await this.persist()
   }
