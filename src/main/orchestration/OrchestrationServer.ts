@@ -5,6 +5,8 @@ import type { CanvasMirror, OrchestrationCommand } from '../../shared/orchestrat
 interface Opts {
   getMirror: () => CanvasMirror
   onCommand: (cmd: OrchestrationCommand) => void
+  ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
+  check?: (name: string) => { output: string } | null
 }
 
 export class OrchestrationServer {
@@ -61,6 +63,41 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad json')
         }
       })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/ask') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { name?: unknown; prompt?: unknown }
+          if (typeof parsed.name !== 'string' || typeof parsed.prompt !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          const result = this.opts.ask?.(parsed.name, parsed.prompt) ?? { ok: false, error: 'not available' }
+          if (result.ok) {
+            res.writeHead(200).end('ok')
+          } else {
+            res.writeHead(404).end(result.error ?? 'not found')
+          }
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'GET' && req.url?.startsWith('/check')) {
+      const url = new URL(req.url ?? '', 'http://x')
+      const name = url.searchParams.get('name') ?? ''
+      const result = this.opts.check?.(name) ?? null
+      if (result) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(result))
+      } else {
+        res.writeHead(404).end('not found')
+      }
       return
     }
     res.writeHead(404).end('not found')
