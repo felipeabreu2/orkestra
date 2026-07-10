@@ -134,4 +134,95 @@ describe('OrchestrationServer', () => {
     expect(res.status).toBe(404)
     expect(check).not.toHaveBeenCalled()
   })
+
+  it('POST /recruit emite um comando recruit', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', preset: 'claude', role: 'Reviewer' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
+  })
+
+  it('POST /recruit sem role (opcional) ainda emite o comando', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', preset: 'claude' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude' }])
+  })
+
+  it('POST /recruit com body vazio (sem name/preset) retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /dismiss emite um comando dismiss', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Rev' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'dismiss', target: 'Rev' }])
+  })
+
+  it('POST /dismiss com target não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 123 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /connect emite um comando connect', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/connect`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'A', target: 'B' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'connect', source: 'A', target: 'B' }])
+  })
+
+  it('POST /connect com source ausente retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/connect`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'B' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
 })

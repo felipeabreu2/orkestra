@@ -23,15 +23,30 @@ export function useOrchestrationSync(): void {
     window.orkestra.orchestration.sync(mirror)
   }, [nodes])
 
-  // Aplica comandos vindos do orq (via main).
+  // Aplica comandos vindos do orq (via main). Sempre lê o estado fresco via getState() (em vez
+  // de depender de `nodes` no dep array) para evitar closures obsoletas entre re-renders.
   useEffect(() => {
     const dispose = window.orkestra.orchestration.onCommand((cmd: OrchestrationCommand) => {
+      const store = useCanvasStore.getState()
       if (cmd.type === 'updateNote') {
-        const notes = useCanvasStore.getState().nodes.filter((n) => n.type === 'note')
+        const notes = store.nodes.filter((n) => n.type === 'note')
         const target = cmd.target
           ? notes.find((n) => n.id === cmd.target || (n.data?.name as string) === cmd.target)
           : notes[0]
         if (target) updateNoteContent(target.id, cmd.content)
+      } else if (cmd.type === 'recruit') {
+        store.addTerminalNode(undefined, { name: cmd.name, preset: cmd.preset, role: cmd.role })
+      } else if (cmd.type === 'dismiss') {
+        const terminals = store.nodes.filter((n) => n.type === 'terminal')
+        const target = terminals.find((n) => (n.data?.name as string) === cmd.target)
+        if (target) store.removeNode(target.id)
+      } else if (cmd.type === 'connect') {
+        const terminals = store.nodes.filter((n) => n.type === 'terminal')
+        const source = terminals.find((n) => (n.data?.name as string) === cmd.source)
+        const target = terminals.find((n) => (n.data?.name as string) === cmd.target)
+        if (source && target) {
+          store.onConnect({ source: source.id, target: target.id, sourceHandle: null, targetHandle: null })
+        }
       }
     })
     return dispose

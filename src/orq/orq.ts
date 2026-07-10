@@ -39,9 +39,36 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       const data = (await res.json()) as { output: string }
       return { code: 0, out: data.output }
     }
+    if (cmd === 'recruit') {
+      const [preset, role] = rest
+      const res = await fetch(`${base}/recruit`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: sub, preset, role })
+      })
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+    }
+    if (cmd === 'dismiss') {
+      const res = await fetch(`${base}/dismiss`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ target: sub })
+      })
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+    }
+    if (cmd === 'connect') {
+      const [target] = rest
+      const res = await fetch(`${base}/connect`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ source: sub, target })
+      })
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+    }
     return {
       code: 2,
-      out: 'orq: comando desconhecido. Uso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" | orq check "<nome>"'
+      out:
+        'orq: comando desconhecido. Uso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>"'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

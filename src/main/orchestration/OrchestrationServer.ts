@@ -65,6 +65,72 @@ export class OrchestrationServer {
       })
       return
     }
+    if (req.method === 'POST' && req.url === '/recruit') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { name?: unknown; preset?: unknown; role?: unknown }
+          if (
+            typeof parsed.name !== 'string' ||
+            typeof parsed.preset !== 'string' ||
+            (parsed.role !== undefined && typeof parsed.role !== 'string')
+          ) {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({
+            type: 'recruit',
+            name: parsed.name,
+            preset: parsed.preset,
+            role: parsed.role as string | undefined
+          })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/dismiss') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { target?: unknown }
+          if (typeof parsed.target !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({ type: 'dismiss', target: parsed.target })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/connect') {
+      let body = ''
+      req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { source?: unknown; target?: unknown }
+          if (typeof parsed.source !== 'string' || typeof parsed.target !== 'string') {
+            res.writeHead(400).end('bad request')
+            return
+          }
+          this.opts.onCommand({ type: 'connect', source: parsed.source, target: parsed.target })
+          res.writeHead(200).end('ok')
+        } catch {
+          res.writeHead(400).end('bad json')
+        }
+      })
+      return
+    }
     if (req.method === 'POST' && req.url === '/ask') {
       let body = ''
       req.on('data', (c) => { body += c })

@@ -75,4 +75,36 @@ describe('runOrq', () => {
     const { code } = await runOrq(['check', 'Fantasma'], env)
     expect(code).not.toBe(0)
   })
+
+  it('recruit chama POST /recruit com {name, preset, role} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['recruit', 'Rev', 'claude', 'Reviewer'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
+  })
+
+  it('recruit sem role (opcional) ainda funciona', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['recruit', 'Rev', 'shell'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'shell' }])
+  })
+
+  it('dismiss chama POST /dismiss com {target} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['dismiss', 'Rev'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'dismiss', target: 'Rev' }])
+  })
+
+  it('connect chama POST /connect com {source, target} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['connect', 'A', 'B'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'connect', source: 'A', target: 'B' }])
+  })
 })
