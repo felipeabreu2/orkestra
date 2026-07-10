@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Floor } from '../shared/floors'
+import type { Routine } from '../shared/routines'
 
 const api = {
   pty: {
@@ -47,7 +48,16 @@ const api = {
   // Fase 9 (Portais): o PortalNode reporta {name,url,title,text} ao main a cada did-finish-load
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
   // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.
-  portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state)
+  portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state),
+  // Fase 10 (Rotinas): comandos agendados via cron que disparam num terminal via AgentBus
+  // (RoutineScheduler no main). CRUD fino: list/add/remove/toggle.
+  routines: {
+    list: (): Promise<Routine[]> => ipcRenderer.invoke('routine:list'),
+    add: (r: Omit<Routine, 'id'>): Promise<Routine> => ipcRenderer.invoke('routine:add', r),
+    remove: (id: string): Promise<boolean> => ipcRenderer.invoke('routine:remove', id),
+    toggle: (id: string, enabled: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('routine:toggle', id, enabled)
+  }
 }
 
 contextBridge.exposeInMainWorld('orkestra', api)

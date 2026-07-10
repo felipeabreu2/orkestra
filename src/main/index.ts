@@ -10,6 +10,8 @@ import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
 import { FloorManager } from './floors/FloorManager'
 import { registerFloorIpc } from './floors/registerFloorIpc'
+import { RoutineScheduler } from './routines/RoutineScheduler'
+import { registerRoutineIpc } from './routines/registerRoutineIpc'
 import type { CanvasMirror, PortalState } from '../shared/orchestration'
 
 let mainWindow: BrowserWindow | null = null
@@ -119,6 +121,22 @@ app.whenReady().then(async () => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
+
+  // Rotinas (Fase 10): comandos agendados via cron (RoutineScheduler.tick, a cada 30s) que
+  // disparam num terminal existente via AgentBus.ask. Persistidas em ~/.orkestra/routines.json
+  // e recarregadas no boot; alvo resolvido por nome (resolvePtyByName) a cada disparo — se o
+  // terminal não existir mais, o disparo é um no-op silencioso (documentado no brief).
+  const routineScheduler = new RoutineScheduler({
+    persistPath: join(app.getPath('home'), '.orkestra', 'routines.json'),
+    onFire: (r) => {
+      const pty = resolvePtyByName(r.target)
+      if (pty) agentBus.ask(pty, r.command)
+    }
+  })
+  await routineScheduler.loadPersisted()
+  routineScheduler.start()
+  app.on('before-quit', () => routineScheduler.stop())
+  registerRoutineIpc(ipcMain, routineScheduler)
 
   registerPtyIpc(
     ipcMain,
