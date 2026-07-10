@@ -178,4 +178,19 @@ describe('canvasStore', () => {
     })
     expect(useCanvasStore.getState().edges).toHaveLength(1)
   })
+
+  it('hydrate semeia terminalSeq a partir dos nós hidratados para evitar colisão de nomes', () => {
+    // Hidrata um snapshot contendo Terminal 999; addTerminalNode deve nomear o novo nó como Terminal 1000
+    useCanvasStore.getState().hydrate({
+      version: 2,
+      nodes: [{ id: 'terminal-hydrated', type: 'terminal', position: { x: 10, y: 20 }, width: 480, height: 320, data: { name: 'Terminal 999' } }],
+      edges: []
+    })
+    expect(useCanvasStore.getState().nodes).toHaveLength(1)
+    useCanvasStore.getState().addTerminalNode()
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(2)
+    const newNode = nodes[1]
+    expect((newNode.data as { name?: string }).name).toBe('Terminal 1000')
+  })
 })

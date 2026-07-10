@@ -87,7 +87,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     })),
     edges: get().edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
   }),
-  hydrate: (snapshot): void =>
+  hydrate: (snapshot): void => {
+    // Scan hydrated nodes for Terminal names and update terminalSeq to avoid collisions
+    const terminalNames = snapshot.nodes
+      .map((p) => (p.data as Record<string, unknown>)?.name)
+      .filter((name): name is string => typeof name === 'string')
+    const maxTerminalNum = Math.max(
+      ...terminalNames
+        .map((name) => {
+          const match = name.match(/^Terminal (\d+)$/)
+          return match ? parseInt(match[1], 10) : 0
+        })
+    )
+    if (maxTerminalNum > 0) {
+      terminalSeq = Math.max(terminalSeq, maxTerminalNum + 1)
+    }
+
     set({
       nodes: snapshot.nodes.map((p) => ({
         id: p.id,
@@ -99,4 +114,5 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       })),
       edges: (snapshot.edges ?? []).map((e) => ({ id: e.id, source: e.source, target: e.target }))
     })
+  }
 }))
