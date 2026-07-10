@@ -32,4 +32,22 @@ describe('cronMatches', () => {
     expect(cronMatches('nonsense', at(2026, 7, 10, 0, 0))).toBe(false)
     expect(cronMatches('* * *', at(2026, 7, 10, 0, 0))).toBe(false)
   })
+  it('*/2 em dayOfMonth conta a partir de 1 (ímpares, não pares)', () => {
+    expect(cronMatches('0 0 */2 * *', at(2026, 7, 3, 0, 0))).toBe(true)
+    expect(cronMatches('0 0 */2 * *', at(2026, 7, 4, 0, 0))).toBe(false)
+  })
+  it('*/2 em month conta a partir de 1 (ímpares, não pares)', () => {
+    expect(cronMatches('0 0 1 */2 *', at(2026, 3, 1, 0, 0))).toBe(true)
+    expect(cronMatches('0 0 1 */2 *', at(2026, 4, 1, 0, 0))).toBe(false)
+  })
+  it('*/15 em minute continua casando 0,15,30,45 e não 16 (base 0 preservada)', () => {
+    expect(cronMatches('*/15 * * * *', at(2026, 7, 10, 3, 0))).toBe(true)
+    expect(cronMatches('*/15 * * * *', at(2026, 7, 10, 3, 15))).toBe(true)
+    expect(cronMatches('*/15 * * * *', at(2026, 7, 10, 3, 30))).toBe(true)
+    expect(cronMatches('*/15 * * * *', at(2026, 7, 10, 3, 45))).toBe(true)
+    expect(cronMatches('*/15 * * * *', at(2026, 7, 10, 3, 16))).toBe(false)
+  })
+  it('vírgula solta não casa com val=0 (parte vazia deve ser ignorada)', () => {
+    expect(cronMatches(',5 * * * *', at(2026, 7, 10, 0, 0))).toBe(false)
+  })
 })

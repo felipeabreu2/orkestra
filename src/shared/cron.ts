@@ -1,9 +1,10 @@
-function matchField(spec: string, val: number): boolean {
+function matchField(spec: string, val: number, fieldMin: number): boolean {
   for (const part of spec.split(',')) {
+    if (part === '') continue
     if (part === '*') return true
     if (part.startsWith('*/')) {
       const step = Number(part.slice(2))
-      if (Number.isInteger(step) && step > 0 && val % step === 0) return true
+      if (Number.isInteger(step) && step > 0 && val >= fieldMin && (val - fieldMin) % step === 0) return true
       continue
     }
     if (part.includes('-')) {
@@ -21,10 +22,10 @@ export function cronMatches(expr: string, d: Date): boolean {
   if (fields.length !== 5) return false
   const [min, hour, dom, mon, dow] = fields
   return (
-    matchField(min, d.getMinutes()) &&
-    matchField(hour, d.getHours()) &&
-    matchField(dom, d.getDate()) &&
-    matchField(mon, d.getMonth() + 1) &&
-    matchField(dow, d.getDay())
+    matchField(min, d.getMinutes(), 0) &&
+    matchField(hour, d.getHours(), 0) &&
+    matchField(dom, d.getDate(), 1) &&
+    matchField(mon, d.getMonth() + 1, 1) &&
+    matchField(dow, d.getDay(), 0)
   )
 }
