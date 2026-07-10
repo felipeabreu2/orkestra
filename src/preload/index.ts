@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
+import type { CanvasMirror, OrchestrationCommand } from '../shared/orchestration'
 
 const api = {
   pty: {
@@ -20,6 +21,14 @@ const api = {
   persistence: {
     load: (): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('persistence:load'),
     save: (snapshot: CanvasSnapshot): void => ipcRenderer.send('persistence:save', snapshot)
+  },
+  orchestration: {
+    sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),
+    onCommand: (cb: (cmd: OrchestrationCommand) => void): (() => void) => {
+      const listener = (_e: unknown, cmd: OrchestrationCommand): void => cb(cmd)
+      ipcRenderer.on('orchestration:command', listener)
+      return () => ipcRenderer.removeListener('orchestration:command', listener)
+    }
   }
 }
 

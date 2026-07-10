@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerPtyIpc } from './registerPtyIpc'
-import { PtyManager, type IPtyLike } from './PtyManager'
+import { PtyManager, type IPtyLike, type PtySpawner } from './PtyManager'
 
 function fakeIpcMain() {
   const handlers = new Map<string, (...a: any[]) => any>()
@@ -43,5 +43,27 @@ describe('registerPtyIpc', () => {
     const id = await ipc.handlers.get('pty:spawn')!({}, {})
     ipc.listeners.get('pty:write')!({}, id, 'echo hi\n')
     expect(fake.pty.write).toHaveBeenCalledWith('echo hi\n')
+  })
+
+  it('pty:spawn injeta o env de orquestração (getEnv) no PtyManager.spawn', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null, () => ({ ORKESTRA_PORT: '4321', ORKESTRA_TOKEN: 'tok' }))
+
+    await ipc.handlers.get('pty:spawn')!({}, { cols: 80, rows: 24 })
+
+    const call = spawner.mock.calls[0]
+    expect(call[2].env.ORKESTRA_PORT).toBe('4321')
+    expect(call[2].env.ORKESTRA_TOKEN).toBe('tok')
+  })
+
+  it('pty:spawn sem getEnv explícito não quebra (default env vazio)', async () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+    const id = await ipc.handlers.get('pty:spawn')!({}, {})
+    expect(typeof id).toBe('string')
   })
 })

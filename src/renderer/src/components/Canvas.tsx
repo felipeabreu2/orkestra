@@ -4,11 +4,13 @@ import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
+import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 
 const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode }
 
 export function Canvas(): JSX.Element {
   useCanvasPersistence()
+  useOrchestrationSync()
   const nodes = useCanvasStore((s) => s.nodes)
   const onNodesChange = useCanvasStore((s) => s.onNodesChange)
   const edges = useCanvasStore((s) => s.edges)
