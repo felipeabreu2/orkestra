@@ -3,6 +3,8 @@ export interface MirrorNode {
   type: string
   name: string
   content?: string
+  role?: string
+  preset?: string
 }
 
 export interface CanvasMirror {

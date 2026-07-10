@@ -5,6 +5,7 @@ import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
+import { PRESETS } from '../../../shared/presets'
 
 const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode }
 
@@ -21,30 +22,48 @@ export function Canvas(): JSX.Element {
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-      <button
-        onClick={() => addTerminalNode()}
+      <div
         style={{
           position: 'absolute',
           top: 12,
           left: 12,
           zIndex: 10,
-          padding: '6px 12px',
-          background: '#1633f9',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 6,
-          fontSize: 13,
-          cursor: 'pointer'
+          display: 'flex',
+          gap: 6
         }}
       >
-        + Terminal
-      </button>
-      <button
-        onClick={() => addNoteNode()}
-        style={{ position: 'absolute', top: 12, left: 110, zIndex: 10, padding: '6px 12px', background: '#eab308', color: '#3b3610', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
-      >
-        + Nota
-      </button>
+        {PRESETS.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => addTerminalNode(undefined, { preset: p.id })}
+            style={{
+              padding: '6px 12px',
+              background: '#1633f9',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: 'pointer'
+            }}
+          >
+            + {p.label}
+          </button>
+        ))}
+        <button
+          onClick={() => addNoteNode()}
+          style={{
+            padding: '6px 12px',
+            background: '#eab308',
+            color: '#3b3610',
+            border: 'none',
+            borderRadius: 6,
+            fontSize: 13,
+            cursor: 'pointer'
+          }}
+        >
+          + Nota
+        </button>
+      </div>
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}

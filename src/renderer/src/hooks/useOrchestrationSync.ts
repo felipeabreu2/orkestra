@@ -15,7 +15,9 @@ export function useOrchestrationSync(): void {
         id: n.id,
         type: n.type ?? 'terminal',
         name: ((n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó').slice(0, 40),
-        content: n.data?.content as string | undefined
+        content: n.data?.content as string | undefined,
+        role: (n.data?.role as string) ?? '',
+        preset: (n.data?.preset as string) ?? 'shell'
       }))
     }
     window.orkestra.orchestration.sync(mirror)

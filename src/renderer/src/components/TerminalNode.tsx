@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { presetById } from '../../../shared/presets'
 
-export function TerminalNode({ nodeId }: { nodeId?: string }): JSX.Element {
+export function TerminalNode({ nodeId, preset }: { nodeId?: string; preset?: string }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -24,7 +25,10 @@ export function TerminalNode({ nodeId }: { nodeId?: string }): JSX.Element {
     let ptyId = ''
     let disposed = false
 
-    window.orkestra.pty.spawn({ cols: term.cols, rows: term.rows, nodeId }).then((id) => {
+    // preset 'shell'/ausente → command null/undefined → initialCommand undefined (sem auto-run).
+    const initialCommand = (preset ? presetById(preset)?.command : undefined) ?? undefined
+
+    window.orkestra.pty.spawn({ cols: term.cols, rows: term.rows, nodeId, initialCommand }).then((id) => {
       if (disposed) {
         window.orkestra.pty.kill(id)
         return

@@ -4,8 +4,13 @@ import type { CanvasMirror, OrchestrationCommand } from '../shared/orchestration
 
 const api = {
   pty: {
-    spawn: (opts: { cwd?: string; cols?: number; rows?: number; nodeId?: string }): Promise<string> =>
-      ipcRenderer.invoke('pty:spawn', opts),
+    spawn: (opts: {
+      cwd?: string
+      cols?: number
+      rows?: number
+      nodeId?: string
+      initialCommand?: string
+    }): Promise<string> => ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => ipcRenderer.send('pty:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('pty:resize', id, cols, rows),

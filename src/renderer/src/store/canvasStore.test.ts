@@ -193,4 +193,13 @@ describe('canvasStore', () => {
     const newNode = nodes[1]
     expect((newNode.data as { name?: string }).name).toBe('Terminal 1000')
   })
+
+  it('addTerminalNode aceita preset e role e updateTerminalRole altera o papel', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { preset: 'claude', role: 'Frontend' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { preset?: string }).preset).toBe('claude')
+    expect((n.data as { role?: string }).role).toBe('Frontend')
+    useCanvasStore.getState().updateTerminalRole(n.id, 'Backend')
+    expect((useCanvasStore.getState().nodes.at(-1)!.data as { role?: string }).role).toBe('Backend')
+  })
 })

@@ -16,10 +16,14 @@ let terminalSeq = 1
 interface CanvasState {
   nodes: Node[]
   edges: Edge[]
-  addTerminalNode: (position?: { x: number; y: number }) => void
+  addTerminalNode: (
+    position?: { x: number; y: number },
+    opts?: { preset?: string; role?: string; name?: string }
+  ) => void
   addNoteNode: (position?: { x: number; y: number }) => void
   updateNoteContent: (id: string, content: string) => void
   updateTerminalName: (id: string, name: string) => void
+  updateTerminalRole: (id: string, role: string) => void
   removeNode: (id: string) => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -31,7 +35,7 @@ interface CanvasState {
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
-  addTerminalNode: (position = { x: 80, y: 80 }): void =>
+  addTerminalNode: (position = { x: 80, y: 80 }, opts): void =>
     set((state) => ({
       nodes: [
         ...state.nodes,
@@ -39,7 +43,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           id: `terminal-${crypto.randomUUID()}`,
           type: 'terminal',
           position,
-          data: { name: `Terminal ${terminalSeq++}` },
+          data: {
+            name: opts?.name ?? `Terminal ${terminalSeq++}`,
+            preset: opts?.preset ?? 'shell',
+            role: opts?.role ?? ''
+          },
           width: 480,
           height: 320
         }
@@ -66,6 +74,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   updateTerminalName: (id, name): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
+  updateTerminalRole: (id, role): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, role } } : n))
     })),
   removeNode: (id): void =>
     set((state) => ({

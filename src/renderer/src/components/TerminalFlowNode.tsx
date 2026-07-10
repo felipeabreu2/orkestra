@@ -5,7 +5,10 @@ import { useCanvasStore } from '../store/canvasStore'
 export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
   const removeNode = useCanvasStore((s) => s.removeNode)
   const updateTerminalName = useCanvasStore((s) => s.updateTerminalName)
+  const updateTerminalRole = useCanvasStore((s) => s.updateTerminalRole)
   const name = (data as { name?: string })?.name ?? 'Terminal'
+  const role = (data as { role?: string })?.role ?? ''
+  const preset = (data as { preset?: string })?.preset
   return (
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
@@ -53,6 +56,24 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
               minWidth: 0
             }}
           />
+          <input
+            className="nodrag"
+            value={role}
+            onChange={(e) => updateTerminalRole(id, e.target.value)}
+            aria-label="Papel do terminal"
+            placeholder="papel"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#8a8a8a',
+              fontSize: 12,
+              padding: 0,
+              outline: 'none',
+              flex: 1,
+              minWidth: 0,
+              textAlign: 'right'
+            }}
+          />
           <button
             className="nodrag"
             onClick={() => removeNode(id)}
@@ -71,7 +92,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           </button>
         </div>
         <div className="nodrag nowheel" style={{ flex: 1, minHeight: 0 }}>
-          <TerminalNode nodeId={id} />
+          <TerminalNode nodeId={id} preset={preset} />
         </div>
       </div>
     </>
