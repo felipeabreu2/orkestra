@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Floor } from '../../../shared/floors'
+import './panels.css'
 
 // Painel de floors (Fase 8): cria/lista/aterrissa/remove worktrees isolados via
 // window.orkestra.floors. Toda chamada que pode rejeitar (create quando o diretório
@@ -117,122 +118,42 @@ export function FloorsPanel(): JSX.Element {
   }
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        zIndex: 10,
-        width: 220,
-        maxHeight: '60vh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#1e1e1e',
-        border: '1px solid #333',
-        borderRadius: 6,
-        color: '#cccccc',
-        fontSize: 12,
-        overflow: 'hidden'
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '6px 8px',
-          borderBottom: '1px solid #333'
-        }}
-      >
-        <span style={{ fontWeight: 600 }}>Floors</span>
-        <button
-          onClick={handleCreate}
-          style={{
-            padding: '3px 8px',
-            background: '#1633f9',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            fontSize: 11,
-            cursor: 'pointer'
-          }}
-        >
+    <div className="ork-panel ork-panel--floors">
+      <div className="ork-panel-header">
+        <span className="ork-panel-title">Floors</span>
+        <button className="ork-panel-primary-btn" onClick={handleCreate}>
           + Criar floor
         </button>
       </div>
       {status && (
         <div
-          style={{
-            padding: '4px 8px',
-            color: statusKind === 'ok' ? 'var(--ok)' : statusKind === 'err' ? 'var(--err)' : 'var(--warn)',
-            fontSize: 11,
-            wordBreak: 'break-word'
-          }}
+          className="ork-panel-status"
+          style={{ color: statusKind === 'ok' ? 'var(--ok)' : statusKind === 'err' ? 'var(--err)' : 'var(--warn)' }}
         >
           {status}
         </div>
       )}
-      <div style={{ overflowY: 'auto', padding: 4 }}>
-        {floors.length === 0 && (
-          <div style={{ padding: '6px 4px', color: '#8a8a8a' }}>Nenhum floor</div>
-        )}
+      <div className="ork-panel-body">
+        {floors.length === 0 && <div className="ork-panel-empty">Nenhum floor</div>}
         {floors.map((f) => (
-          <div
-            key={f.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 6,
-              padding: '4px',
-              borderBottom: '1px solid #2d2d2d'
-            }}
-          >
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {f.name}
-              </div>
-              <div
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: '#8a8a8a',
-                  fontSize: 10
-                }}
-              >
-                {f.branch}
-              </div>
+          <div key={f.id} className="ork-panel-row">
+            <div className="ork-panel-row-main">
+              <div className="ork-panel-row-title">{f.name}</div>
+              <div className="ork-panel-row-sub">{f.branch}</div>
             </div>
-            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            <div className="ork-panel-row-actions">
               <button
+                className="ork-panel-action ork-panel-action--ok"
                 onClick={() => handleLand(f.id)}
                 aria-label={`Aterrissar ${f.name}`}
-                style={{
-                  padding: '2px 6px',
-                  background: 'transparent',
-                  color: '#4ade80',
-                  border: '1px solid #333',
-                  borderRadius: 4,
-                  fontSize: 11,
-                  cursor: 'pointer'
-                }}
               >
                 Land
               </button>
               <button
+                className={`ork-panel-action ork-panel-action--danger${confirmingId === f.id ? ' ork-panel-action--armed' : ''}`}
                 onClick={() => handleRemoveClick(f.id)}
                 data-remove-id={f.id}
                 aria-label={confirmingId === f.id ? `Confirmar remoção de ${f.name}` : `Remover ${f.name}`}
-                style={{
-                  padding: '2px 6px',
-                  background: 'transparent',
-                  color: '#f87171',
-                  border: '1px solid #333',
-                  borderRadius: 4,
-                  fontSize: 11,
-                  cursor: 'pointer'
-                }}
               >
                 {confirmingId === f.id ? 'Confirmar?' : 'Remover'}
               </button>

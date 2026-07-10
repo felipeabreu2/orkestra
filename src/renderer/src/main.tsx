@@ -1,5 +1,6 @@
 import './styles/tokens.css'
 import './styles/base.css'
+import './styles/motion.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'

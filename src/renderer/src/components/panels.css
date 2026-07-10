@@ -1,0 +1,182 @@
+/* Shared floating-panel styling (Fase 13 Task 2), consumed by FloorsPanel and RoutinesPanel.
+   Both panels share the same card chrome/header/row/status idiom and only differ in position
+   (top vs. bottom) and size — those two differences live in the `--floors`/`--routines`
+   modifier classes below, everything else is common. */
+
+.ork-panel {
+  position: absolute;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  color: var(--text-1);
+  font-size: 12px;
+  overflow: hidden;
+  animation: ork-fade-in var(--dur-2) var(--ease);
+}
+.ork-panel--floors {
+  top: 12px;
+  width: 220px;
+  max-height: 60vh;
+}
+.ork-panel--routines {
+  bottom: 12px;
+  width: 260px;
+  max-height: 55vh;
+}
+
+.ork-panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ork-panel-title {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.ork-panel-primary-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  background: var(--accent);
+  color: var(--text-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter var(--dur-1) var(--ease);
+}
+.ork-panel-primary-btn:hover {
+  filter: brightness(1.12);
+}
+
+.ork-panel-status {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.ork-panel-form {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ork-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.ork-panel-empty {
+  padding: 8px 6px;
+  color: var(--text-3);
+}
+
+.ork-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-1) var(--ease);
+}
+.ork-panel-row:hover {
+  background: var(--bg-2);
+}
+
+.ork-panel-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.ork-panel-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+.ork-panel-row-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+.ork-panel-row-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+}
+
+.ork-panel-action {
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+.ork-panel-action:hover {
+  background: var(--bg-2);
+  border-color: var(--border-strong);
+}
+.ork-panel-action--ok {
+  color: var(--ok);
+}
+.ork-panel-action--muted {
+  color: var(--text-3);
+}
+.ork-panel-action--danger:hover {
+  color: var(--err);
+  border-color: var(--err);
+}
+/* Floor "Remover" armed for a confirming 2nd click (see FloorsPanel confirmingId) — reuses the
+   existing confirmation state to also flag the button as already in its destructive state,
+   instead of only reacting on :hover. */
+.ork-panel-action--armed {
+  color: var(--err);
+  border-color: var(--err);
+}
+
+.ork-field {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: 12px;
+  padding: 4px 6px;
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease);
+}
+.ork-field:hover {
+  border-color: var(--border-strong);
+}
+.ork-field:focus {
+  border-color: var(--border-strong);
+}
+.ork-field::placeholder {
+  color: var(--text-3);
+}

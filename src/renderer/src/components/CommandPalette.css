@@ -1,0 +1,95 @@
+/* Command palette styling (Fase 13 Task 2). The backdrop stays a plain dim overlay (no token
+   covers "modal scrim" specifically); the card itself, input, list and items move to the design
+   tokens, plus a light scale+fade entrance on the card. Since the palette is conditionally
+   mounted (Canvas.tsx only renders it while open), a CSS `animation` on mount is all that's
+   needed — no extra React state — and it already collapses under prefers-reduced-motion via the
+   --dur-2 token going to 0ms. */
+
+.ork-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ork-palette-card {
+  width: 480px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  color: var(--text-1);
+  font-size: 13px;
+  overflow: hidden;
+  animation: ork-scale-in var(--dur-2) var(--ease);
+}
+
+.ork-palette-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: 15px;
+  padding: 12px 14px;
+  outline: none;
+}
+.ork-palette-input::placeholder {
+  color: var(--text-3);
+}
+
+.ork-palette-list {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.ork-palette-empty {
+  padding: 10px 12px;
+  color: var(--text-3);
+}
+
+.ork-palette-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px 7px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.ork-palette-item--active {
+  background: var(--accent-weak);
+}
+.ork-palette-item--active::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.ork-palette-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ork-palette-item-kind {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}

@@ -1,0 +1,190 @@
+/* Shared node-card styling (Fase 13 Task 2), consumed by TerminalFlowNode/NoteNode/
+   PortalFlowNode. Purely visual — the markup each component renders (NodeResizer, Handle,
+   nodrag/nowheel wrappers) is unchanged; these classes just replace the old ad-hoc inline
+   hex colors with the design tokens from styles/tokens.css.
+
+   React Flow adds `.selected` to the ancestor `.react-flow__node` wrapper (outside of what
+   these components render) when a node is selected — `.react-flow__node.selected .ork-node`
+   below hooks that without any JS beyond what already reads NodeProps.selected for the
+   NodeResizer. */
+
+.ork-node {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+
+.react-flow__node.selected .ork-node {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-2);
+}
+
+.ork-node-header {
+  flex: 0 0 auto;
+  height: 28px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+/* Tiny per-type accent (brief: "terminal neutro, nota âmbar suave, portal violeta"). */
+.ork-node-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.ork-node-dot--note {
+  background: var(--warn);
+}
+.ork-node-dot--portal {
+  background: var(--accent);
+}
+
+.ork-node-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Name/role/URL text inputs in the header — transparent, discreet, a hairline underline that
+   strengthens on focus instead of a full input box. */
+.ork-node-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-1);
+  font-size: 12px;
+  padding: 2px 0;
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease);
+}
+.ork-node-input:hover {
+  border-bottom-color: var(--border);
+}
+.ork-node-input:focus {
+  border-bottom-color: var(--border-strong);
+}
+.ork-node-input::placeholder {
+  color: var(--text-3);
+}
+.ork-node-input--secondary {
+  color: var(--text-2);
+  text-align: right;
+}
+.ork-node-input--select {
+  flex: 0 0 auto;
+  max-width: 74px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.ork-node-iconbtn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  transition:
+    color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+.ork-node-iconbtn:hover {
+  color: var(--err);
+  background: var(--bg-1);
+}
+
+.ork-node-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Portal URL bar */
+.ork-node-urlbar {
+  flex: 0 0 auto;
+  height: 28px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+.ork-node-urlinput {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: 12px;
+  padding: 3px 6px;
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease);
+}
+.ork-node-urlinput:hover {
+  border-color: var(--border-strong);
+}
+.ork-node-urlinput:focus {
+  border-color: var(--border-strong);
+}
+.ork-node-urlinput::placeholder {
+  color: var(--text-3);
+}
+.ork-node-go {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: var(--text-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: filter var(--dur-1) var(--ease);
+}
+.ork-node-go:hover {
+  filter: brightness(1.12);
+}
+
+/* Note body */
+.ork-note-textarea {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px;
+}
+.ork-note-textarea::placeholder {
+  color: var(--text-3);
+}

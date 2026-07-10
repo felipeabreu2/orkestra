@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { rankItems } from '../search'
+import './CommandPalette.css'
 
 // Command palette (Cmd/Ctrl+K, Fase 12): busca unificada sobre ações de criação
 // (terminal/nota/portal) e os nós já presentes no canvas. `rankItems` (puro, testado em
@@ -84,39 +85,11 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   return (
     // Backdrop: clique fora do card fecha o palette (onClose aqui); o card abaixo para a
     // propagação e carrega role/aria-modal — é ele que representa o diálogo em si (Fase 13).
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        background: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        paddingTop: '15vh'
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        style={{
-          width: 480,
-          maxHeight: '60vh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: '#1e1e1e',
-          border: '1px solid #333',
-          borderRadius: 8,
-          color: '#cccccc',
-          fontSize: 13,
-          overflow: 'hidden',
-          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.6)'
-        }}
-      >
+    <div className="ork-palette-backdrop" onClick={onClose}>
+      <div className="ork-palette-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <input
           ref={inputRef}
+          className="ork-palette-input"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -144,39 +117,18 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           }}
           placeholder="Buscar nós ou ações..."
           aria-label="Busca do command palette"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            borderBottom: '1px solid #333',
-            color: '#eeeeee',
-            fontSize: 14,
-            padding: '10px 12px',
-            outline: 'none'
-          }}
         />
-        <div style={{ overflowY: 'auto', padding: 4 }}>
-          {filtered.length === 0 && (
-            <div style={{ padding: '8px 6px', color: '#8a8a8a' }}>Nenhum resultado</div>
-          )}
+        <div className="ork-palette-list">
+          {filtered.length === 0 && <div className="ork-palette-empty">Nenhum resultado</div>}
           {filtered.map((item, index) => (
             <div
               key={item.id}
+              className={`ork-palette-item${index === activeIndex ? ' ork-palette-item--active' : ''}`}
               onMouseEnter={() => setSelectedIndex(index)}
               onClick={() => runItem(item)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px 8px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                background: index === activeIndex ? '#2d2d2d' : 'transparent'
-              }}
             >
-              <span>{item.label}</span>
-              <span style={{ color: '#8a8a8a', fontSize: 11 }}>
-                {item.kind === 'action' ? 'ação' : 'nó'}
-              </span>
+              <span className="ork-palette-item-label">{item.label}</span>
+              <span className="ork-palette-item-kind">{item.kind === 'action' ? 'ação' : 'nó'}</span>
             </div>
           ))}
         </div>

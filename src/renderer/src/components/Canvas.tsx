@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ReactFlow, Background, Controls } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import './Canvas.css'
 import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
@@ -43,59 +44,21 @@ export function Canvas(): JSX.Element {
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-      <div
-        style={{
-          position: 'absolute',
-          top: 12,
-          left: 12,
-          zIndex: 10,
-          display: 'flex',
-          gap: 6
-        }}
-      >
+      <div className="ork-toolbar">
         {PRESETS.map((p) => (
           <button
             key={p.id}
+            className="ork-toolbar-btn"
             onClick={() => addTerminalNode(undefined, { preset: p.id })}
-            style={{
-              padding: '6px 12px',
-              background: '#1633f9',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              fontSize: 13,
-              cursor: 'pointer'
-            }}
           >
             + {p.label}
           </button>
         ))}
-        <button
-          onClick={() => addNoteNode()}
-          style={{
-            padding: '6px 12px',
-            background: '#eab308',
-            color: '#3b3610',
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 13,
-            cursor: 'pointer'
-          }}
-        >
+        <span className="ork-toolbar-divider" />
+        <button className="ork-toolbar-btn" onClick={() => addNoteNode()}>
           + Nota
         </button>
-        <button
-          onClick={() => addPortalNode()}
-          style={{
-            padding: '6px 12px',
-            background: '#0ea5e9',
-            color: '#082f49',
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 13,
-            cursor: 'pointer'
-          }}
-        >
+        <button className="ork-toolbar-btn" onClick={() => addPortalNode()}>
           + Portal
         </button>
       </div>

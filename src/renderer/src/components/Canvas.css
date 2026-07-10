@@ -1,0 +1,81 @@
+/* Canvas chrome (Fase 13 Task 2): the floating creation toolbar + dark-theme wiring for React
+   Flow's own chrome (background grid, edges, handles, selection box, <Controls>). React Flow
+   v12 reads a documented set of `--xy-*` custom properties (see @xyflow/react/dist/style.css)
+   with a `var(--xy-x, var(--xy-x-default))` fallback chain — setting the non-`-default`,
+   non-`-props` name on `.react-flow` (an ancestor of every RF-internal element) overrides the
+   built-in default via normal CSS inheritance, no `colorMode` prop / JS needed. */
+
+.react-flow {
+  --xy-background-color: var(--bg-0);
+  --xy-background-pattern-color: var(--border);
+  --xy-edge-stroke: var(--border-strong);
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-connectionline-stroke: var(--accent);
+  --xy-connectionline-stroke-width: 1.5;
+  --xy-handle-background-color: var(--accent);
+  --xy-handle-border-color: var(--bg-0);
+  --xy-selection-background-color: var(--accent-weak);
+  --xy-selection-border: 1px dotted var(--accent);
+  --xy-controls-button-background-color: var(--bg-1);
+  --xy-controls-button-background-color-hover: var(--bg-2);
+  --xy-controls-button-color: var(--text-2);
+  --xy-controls-button-color-hover: var(--text-1);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: var(--shadow-1);
+}
+
+.react-flow__controls {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.react-flow__controls-button {
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+
+/* Creation toolbar */
+.ork-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  animation: ork-fade-in var(--dur-2) var(--ease);
+}
+
+.ork-toolbar-btn {
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-toolbar-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.ork-toolbar-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--border);
+}
