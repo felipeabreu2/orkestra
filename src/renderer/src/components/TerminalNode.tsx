@@ -7,11 +7,13 @@ import { presetById } from '../../../shared/presets'
 export function TerminalNode({
   nodeId,
   preset,
-  autostart
+  autostart,
+  floorId
 }: {
   nodeId?: string
   preset?: string
   autostart?: boolean
+  floorId?: string
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -40,19 +42,26 @@ export function TerminalNode({
     // preset 'shell'/ausente → command null/undefined → initialCommand undefined (sem auto-run).
     const initialCommand = autostart && preset ? (presetById(preset)?.command ?? undefined) : undefined
 
-    window.orkestra.pty.spawn({ cols: term.cols, rows: term.rows, nodeId, initialCommand }).then((id) => {
-      if (disposed) {
-        window.orkestra.pty.kill(id)
-        return
-      }
-      ptyId = id
-      disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
-      term.onData((data) => window.orkestra.pty.write(id, data))
-      term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
-    })
-    .catch((err) => {
-      term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
-    })
+    // floorId (Fase 8) é lido só nesta primeira execução do efeito (deps: [] — spawna uma vez
+    // por montagem do nó). O main resolve floorId -> worktreePath e usa como cwd do pty. Como
+    // o cwd de um processo já em execução não pode mudar, atribuir/trocar o floor de um
+    // terminal JÁ rodando (no seletor do header) não afeta esta sessão de shell — só o próximo
+    // terminal criado com aquele floor. MVP intencional (documentado no plano da Fase 8).
+    window.orkestra.pty
+      .spawn({ cols: term.cols, rows: term.rows, nodeId, initialCommand, floorId })
+      .then((id) => {
+        if (disposed) {
+          window.orkestra.pty.kill(id)
+          return
+        }
+        ptyId = id
+        disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
+        term.onData((data) => window.orkestra.pty.write(id, data))
+        term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
+      })
+      .catch((err) => {
+        term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
+      })
 
     const ro = new ResizeObserver(() => fit.fit())
     ro.observe(el)

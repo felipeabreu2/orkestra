@@ -218,6 +218,19 @@ describe('canvasStore', () => {
     expect((serializedData as { name?: string }).name).toMatch(/^Terminal \d+$/)
   })
 
+  it('addTerminalNode aceita floorId (default "") e updateTerminalFloor altera o floor atribuído', () => {
+    useCanvasStore.getState().addTerminalNode()
+    const noFloor = useCanvasStore.getState().nodes.at(-1)!
+    expect((noFloor.data as { floorId?: string }).floorId).toBe('')
+
+    useCanvasStore.getState().addTerminalNode(undefined, { floorId: 'floor-1' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { floorId?: string }).floorId).toBe('floor-1')
+
+    useCanvasStore.getState().updateTerminalFloor(n.id, 'floor-2')
+    expect((useCanvasStore.getState().nodes.at(-1)!.data as { floorId?: string }).floorId).toBe('floor-2')
+  })
+
   it('addTerminalNode cascata posição quando nenhuma é passada', () => {
     useCanvasStore.getState().addTerminalNode()
     useCanvasStore.getState().addTerminalNode()

@@ -3,6 +3,7 @@ import '@xyflow/react/dist/style.css'
 import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
+import { FloorsPanel } from './FloorsPanel'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
@@ -64,6 +65,7 @@ export function Canvas(): JSX.Element {
           + Nota
         </button>
       </div>
+      <FloorsPanel />
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}
