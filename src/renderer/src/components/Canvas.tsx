@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { ReactFlow, Background, Controls } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCanvasStore } from '../store/canvasStore'
@@ -6,6 +7,7 @@ import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
 import { FloorsPanel } from './FloorsPanel'
 import { RoutinesPanel } from './RoutinesPanel'
+import { CommandPalette } from './CommandPalette'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
@@ -23,6 +25,21 @@ export function Canvas(): JSX.Element {
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // Atalho global do command palette (Fase 12): Cmd+K no mac, Ctrl+K em win/linux. Compara
+  // e.key em minúsculo para não perder o atalho quando o sistema reporta 'K' (ex.: Shift
+  // pressionado junto ou layouts que capitalizam com Cmd/Ctrl ativo).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -84,6 +101,7 @@ export function Canvas(): JSX.Element {
       </div>
       <FloorsPanel />
       <RoutinesPanel />
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}
