@@ -9,6 +9,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const name = (data as { name?: string })?.name ?? 'Terminal'
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
+  const autostart = (data as { autostart?: boolean })?.autostart
   return (
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
@@ -92,7 +93,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           </button>
         </div>
         <div className="nodrag nowheel" style={{ flex: 1, minHeight: 0 }}>
-          <TerminalNode nodeId={id} preset={preset} />
+          <TerminalNode nodeId={id} preset={preset} autostart={autostart} />
         </div>
       </div>
     </>

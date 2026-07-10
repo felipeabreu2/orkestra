@@ -12,7 +12,8 @@ export function registerPtyIpc(
   // forma que registerPtyIpc não precise conhecer o AgentBus diretamente (Fase 6).
   onSpawn: (ptyId: string) => void = () => {}
 ): void {
-  ipcMain.handle('pty:spawn', (_e, opts: { cwd?: string; cols?: number; rows?: number; nodeId?: string }) => {
+  type SpawnOpts = { cwd?: string; cols?: number; rows?: number; nodeId?: string; initialCommand?: string }
+  ipcMain.handle('pty:spawn', (_e, opts: SpawnOpts) => {
     const id = ptyManager.spawn({ ...(opts ?? {}), env: getEnv() })
     ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
     onSpawn(id)

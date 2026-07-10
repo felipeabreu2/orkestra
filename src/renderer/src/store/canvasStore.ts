@@ -46,7 +46,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           data: {
             name: opts?.name ?? `Terminal ${terminalSeq++}`,
             preset: opts?.preset ?? 'shell',
-            role: opts?.role ?? ''
+            role: opts?.role ?? '',
+            // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
+            // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
+            // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
+            autostart: true
           },
           width: 480,
           height: 320
@@ -89,14 +93,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   onConnect: (connection): void => set((state) => ({ edges: addEdge(connection, state.edges) })),
   serialize: (): CanvasSnapshot => ({
     version: 2,
-    nodes: get().nodes.map((n) => ({
-      id: n.id,
-      type: n.type ?? 'terminal',
-      position: n.position,
-      width: n.width ?? 480,
-      height: n.height ?? 320,
-      data: (n.data ?? {}) as Record<string, unknown>
-    })),
+    nodes: get().nodes.map((n) => {
+      // autostart é efêmero (só vale para a sessão em que o nó foi criado) — nunca deve ir
+      // para o snapshot persistido, senão todo reload re-rodaria o comando do preset (Fase 7 Task 2).
+      const rest = { ...((n.data ?? {}) as Record<string, unknown>) }
+      delete rest.autostart
+      return {
+        id: n.id,
+        type: n.type ?? 'terminal',
+        position: n.position,
+        width: n.width ?? 480,
+        height: n.height ?? 320,
+        data: rest
+      }
+    }),
     edges: get().edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
   }),
   hydrate: (snapshot): void => {

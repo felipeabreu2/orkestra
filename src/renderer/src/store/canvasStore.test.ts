@@ -202,4 +202,19 @@ describe('canvasStore', () => {
     useCanvasStore.getState().updateTerminalRole(n.id, 'Backend')
     expect((useCanvasStore.getState().nodes.at(-1)!.data as { role?: string }).role).toBe('Backend')
   })
+
+  it('addTerminalNode semeia data.autostart:true (flag efêmero p/ auto-run do preset apenas na criação)', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { preset: 'claude' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { autostart?: boolean }).autostart).toBe(true)
+  })
+
+  it('serialize NÃO persiste autostart, mas preset/name continuam presentes no data serializado', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { preset: 'claude' })
+    const snap = useCanvasStore.getState().serialize()
+    const serializedData = snap.nodes.at(-1)!.data
+    expect('autostart' in serializedData).toBe(false)
+    expect((serializedData as { preset?: string }).preset).toBe('claude')
+    expect((serializedData as { name?: string }).name).toMatch(/^Terminal \d+$/)
+  })
 })
