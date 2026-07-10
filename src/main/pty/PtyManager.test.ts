@@ -124,6 +124,24 @@ describe('PtyManager', () => {
     expect(mgr.ptyIdForNode('node-A')).toBe(id)
   })
 
+  it('remove o mapa nodeId->ptyId quando mata explicitamente', () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const id = mgr.spawn({ nodeId: 'node-X' })
+    expect(mgr.ptyIdForNode('node-X')).toBe(id)
+    mgr.kill(id)
+    expect(mgr.ptyIdForNode('node-X')).toBeUndefined()
+  })
+
+  it('remove o mapa nodeId->ptyId quando o pty sai sozinho', () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const id = mgr.spawn({ nodeId: 'node-Y' })
+    expect(mgr.ptyIdForNode('node-Y')).toBe(id)
+    fake.emitExit(0)
+    expect(mgr.ptyIdForNode('node-Y')).toBeUndefined()
+  })
+
   it('mescla env extra sobre process.env no spawn', () => {
     const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
