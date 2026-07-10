@@ -42,4 +42,30 @@ describe('OrchestrationServer', () => {
     expect(res.status).toBe(200)
     expect(commands).toEqual([{ type: 'updateNote', target: 'Nota', content: 'olá' }])
   })
+
+  it('POST /note com content não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/note`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'x', content: 123 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /note com JSON malformado retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/note`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: '{bad'
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
 })

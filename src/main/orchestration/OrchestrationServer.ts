@@ -16,7 +16,8 @@ export class OrchestrationServer {
   start(): Promise<{ port: number; token: string }> {
     this.token = randomBytes(24).toString('hex')
     this.server = createServer((req, res) => this.handle(req, res))
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      this.server!.once('error', reject)
       this.server!.listen(0, '127.0.0.1', () => {
         const addr = this.server!.address()
         const port = typeof addr === 'object' && addr ? addr.port : 0
@@ -46,6 +47,7 @@ export class OrchestrationServer {
     if (req.method === 'POST' && req.url === '/note') {
       let body = ''
       req.on('data', (c) => { body += c })
+      req.on('error', () => { res.writeHead(400).end('bad request') })
       req.on('end', () => {
         try {
           const parsed = JSON.parse(body) as { target?: unknown; content?: unknown }
