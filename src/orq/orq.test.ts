@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { runOrq } from './orq'
 import { OrchestrationServer } from '../main/orchestration/OrchestrationServer'
 import type { CanvasMirror, OrchestrationCommand } from '../shared/orchestration'
-import type { Routine } from '../shared/routines'
 
 let server: OrchestrationServer | undefined
 afterEach(async () => { await server?.stop(); server = undefined })
@@ -15,11 +14,6 @@ async function startServer(
     askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     check?: (name: string) => { output: string } | null
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
-    routines?: {
-      list: () => Routine[]
-      add: (r: Omit<Routine, 'id'>) => Routine
-      remove: (id: string) => void
-    }
   } = {}
 ) {
   server = new OrchestrationServer({ getMirror: () => mirror, onCommand: (c) => commands.push(c), ...extra })
@@ -235,59 +229,6 @@ describe('runOrq', () => {
   it('portal com subcomando desconhecido retorna código != 0', async () => {
     const env = await startServer({ nodes: [] }, [])
     const { code } = await runOrq(['portal', 'blah', 'P'], env)
-    expect(code).not.toBe(0)
-  })
-
-  // Fase 10 (Rotinas): orq routine list|add|remove sobre GET/POST /routines.
-  it('routine add chama POST /routines com {name, schedule, target, command} (comando junta o resto) e retorna código 0', async () => {
-    const add = vi.fn().mockReturnValue({
-      id: 'r1',
-      name: 'R',
-      schedule: '*/5 * * * *',
-      target: 'Dev',
-      command: 'echo oi',
-      enabled: true
-    })
-    const env = await startServer({ nodes: [] }, [], { routines: { list: vi.fn(), add, remove: vi.fn() } })
-    const { code } = await runOrq(['routine', 'add', 'R', '*/5 * * * *', 'Dev', 'echo', 'oi'], env)
-    expect(code).toBe(0)
-    expect(add).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'R', schedule: '*/5 * * * *', target: 'Dev', command: 'echo oi' })
-    )
-  })
-
-  it('routine add com validação inválida no servidor (routines.add lança -> 400) retorna código != 0', async () => {
-    const add = vi.fn().mockImplementation(() => {
-      throw new Error('rotina inválida: schedule')
-    })
-    const env = await startServer({ nodes: [] }, [], { routines: { list: vi.fn(), add, remove: vi.fn() } })
-    const { code } = await runOrq(['routine', 'add', 'R', '', 'Dev', 'echo'], env)
-    expect(code).not.toBe(0)
-  })
-
-  it('routine list chama GET /routines e imprime as rotinas retornadas', async () => {
-    const list = vi.fn().mockReturnValue([
-      { id: 'r1', name: 'R', schedule: '* * * * *', target: 'Dev', command: 'echo oi', enabled: true }
-    ])
-    const env = await startServer({ nodes: [] }, [], { routines: { list, add: vi.fn(), remove: vi.fn() } })
-    const { code, out } = await runOrq(['routine', 'list'], env)
-    expect(code).toBe(0)
-    expect(out).toContain('R')
-    expect(out).toContain('echo oi')
-    expect(list).toHaveBeenCalled()
-  })
-
-  it('routine remove chama POST /routines/remove com {id} e retorna código 0', async () => {
-    const remove = vi.fn()
-    const env = await startServer({ nodes: [] }, [], { routines: { list: vi.fn(), add: vi.fn(), remove } })
-    const { code } = await runOrq(['routine', 'remove', 'r1'], env)
-    expect(code).toBe(0)
-    expect(remove).toHaveBeenCalledWith('r1')
-  })
-
-  it('routine com subcomando desconhecido retorna código != 0', async () => {
-    const env = await startServer({ nodes: [] }, [])
-    const { code } = await runOrq(['routine', 'blah'], env)
     expect(code).not.toBe(0)
   })
 })

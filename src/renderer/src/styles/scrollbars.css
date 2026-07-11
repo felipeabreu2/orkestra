@@ -1,27 +1,23 @@
 /* Custom scrollbars (refinamento visual): thin dark webkit scrollbars for the app's scrollable
-   surfaces — the Routines panel body, the command palette's result list, the note
-   textarea, and the terminal's internal xterm viewport. Electron ships Chromium, so
-   ::-webkit-scrollbar is safe here (no other engine to worry about). Scoped to these selectors
-   instead of applied globally so we don't reach into anything unexpected; purely cosmetic
-   (width/thumb/track only), no layout-affecting properties, and no selector here overlaps with
-   xterm's own CSS (xterm.css sets overflow/background on .xterm-viewport, never scrollbar
-   pseudo-elements). */
+   surfaces — the command palette's result list, the note textarea, and the terminal's internal
+   xterm viewport. Electron ships Chromium, so ::-webkit-scrollbar is safe here (no other engine
+   to worry about). Scoped to these selectors instead of applied globally so we don't reach into
+   anything unexpected; purely cosmetic (width/thumb/track only), no layout-affecting properties,
+   and no selector here overlaps with xterm's own CSS (xterm.css sets overflow/background on
+   .xterm-viewport, never scrollbar pseudo-elements). */
 
-.ork-panel-body::-webkit-scrollbar,
 .ork-palette-list::-webkit-scrollbar,
 .ork-note-textarea::-webkit-scrollbar,
 .xterm-viewport::-webkit-scrollbar {
   width: 10px;
 }
 
-.ork-panel-body::-webkit-scrollbar-track,
 .ork-palette-list::-webkit-scrollbar-track,
 .ork-note-textarea::-webkit-scrollbar-track,
 .xterm-viewport::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.ork-panel-body::-webkit-scrollbar-thumb,
 .ork-palette-list::-webkit-scrollbar-thumb,
 .ork-note-textarea::-webkit-scrollbar-thumb,
 .xterm-viewport::-webkit-scrollbar-thumb {
@@ -31,7 +27,6 @@
   background-clip: padding-box;
 }
 
-.ork-panel-body::-webkit-scrollbar-thumb:hover,
 .ork-palette-list::-webkit-scrollbar-thumb:hover,
 .ork-note-textarea::-webkit-scrollbar-thumb:hover,
 .xterm-viewport::-webkit-scrollbar-thumb:hover {

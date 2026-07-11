@@ -18,7 +18,6 @@ Inspirado por ferramentas de orquestração de agentes, o Orkestra não embute n
 - **Comunicação agente↔agente** — terminais têm nomes; `orq ask "<nome>" "<prompt>"` envia texto a outro terminal, `orq check "<nome>"` lê a saída recente dele.
 - **Modo Maestro** — presets de agente (`Shell`, `Claude Code`, `Codex CLI`, `Gemini CLI`) com auto-run do comando na criação e papéis editáveis; um agente pode montar e coordenar sua própria equipe com `orq recruit "<nome>" "<preset>" ["<papel>"]`, `orq connect "<A>" "<B>"` e `orq dismiss "<nome>"`.
 - **Portais** — um `<webview>` embutido e dirigível por comando: `orq portal open/navigate/click/fill/eval/snapshot "<nome>" ...` para automatizar ou inspecionar uma página web a partir de um terminal.
-- **Rotinas** — um agendador cron interno; `orq routine add "<nome>" "<cron>" "<alvo>" "<comando>"` dispara comandos sozinho, num terminal alvo, no horário programado. Painel dedicado na UI.
 - **Command palette** (`Cmd/Ctrl+K`) — busca nós e ações do canvas por texto, com navegação por teclado.
 - **Segurança** — renderer sandboxed (`contextIsolation`, sem `nodeIntegration`); `node-pty`, git e acesso a arquivos só existem no processo main; o servidor de orquestração só escuta em loopback (`127.0.0.1`) e exige um token por sessão; o `<webview>` dos Portais roda com hardening adicional (nodeIntegration/preload removidos mesmo se algo tentar reanexá-los).
 
@@ -57,7 +56,6 @@ Comandos disponíveis:
 | `orq portal open\|navigate "<nome>" "<url>"` | Navega um Portal para uma URL. |
 | `orq portal click\|fill\|eval "<nome>" ...` | Interage com a página carregada num Portal. |
 | `orq portal snapshot "<nome>"` | Lê a URL/título/texto atuais de um Portal. |
-| `orq routine list\|add\|remove` | Lista, cria ou remove rotinas agendadas (cron). |
 
 ## Build
 
@@ -65,7 +63,7 @@ Ver [`docs/BUILD.md`](docs/BUILD.md) para compilar e empacotar o app (macOS/Wind
 
 ## Arquitetura
 
-O Orkestra segue a separação padrão de um app Electron: um processo **main** (Node.js) concentra tudo que é sensível — `node-pty` (os shells reais), acesso a sistema de arquivos (persistência do canvas) e o `OrchestrationServer`, um servidor HTTP que só escuta em `127.0.0.1` e exige um token aleatório gerado por sessão (header `x-orkestra-token`) para expor list/note/ask/check/recruit/connect/dismiss/portal/routines; um **preload** expõe apenas uma API restrita (`window.orkestra`) via `contextBridge`; e o **renderer**, sandboxed (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`), desenha o canvas (React Flow) e nunca acessa Node/FS/child_process diretamente. Isso mantém a superfície de ataque pequena mesmo com terminais reais e automação de navegador rodando dentro do app.
+O Orkestra segue a separação padrão de um app Electron: um processo **main** (Node.js) concentra tudo que é sensível — `node-pty` (os shells reais), acesso a sistema de arquivos (persistência do canvas) e o `OrchestrationServer`, um servidor HTTP que só escuta em `127.0.0.1` e exige um token aleatório gerado por sessão (header `x-orkestra-token`) para expor list/note/ask/check/recruit/connect/dismiss/portal; um **preload** expõe apenas uma API restrita (`window.orkestra`) via `contextBridge`; e o **renderer**, sandboxed (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`), desenha o canvas (React Flow) e nunca acessa Node/FS/child_process diretamente. Isso mantém a superfície de ataque pequena mesmo com terminais reais e automação de navegador rodando dentro do app.
 
 ## Status
 
