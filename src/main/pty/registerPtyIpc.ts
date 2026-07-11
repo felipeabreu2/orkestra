@@ -10,7 +10,12 @@ export function registerPtyIpc(
   getEnv: () => Record<string, string> = () => ({}),
   // Hook chamado com o id logo após cada pty:spawn — hoje usado para agentBus.track(id), de
   // forma que registerPtyIpc não precise conhecer o AgentBus diretamente (Fase 6).
-  onSpawn: (ptyId: string) => void = () => {}
+  onSpawn: (ptyId: string) => void = () => {},
+  // Fase 17 (Task 1): resolver late-bound do cwd do projeto ATIVO (ProjectManager.getActive()?.cwd
+  // em produção) — chamado a cada pty:spawn, nunca cacheado, então trocar de projeto muda a pasta
+  // dos PRÓXIMOS terminais sem afetar os já abertos. Parâmetro opcional/appended por
+  // retrocompatibilidade; sem ele (ou sem cwd ativo), o fallback de HOME em PtyManager.spawn segue valendo.
+  getProjectCwd?: () => string | undefined
 ): void {
   type SpawnOpts = {
     cwd?: string
@@ -21,7 +26,7 @@ export function registerPtyIpc(
   }
   ipcMain.handle('pty:spawn', (_e, opts: SpawnOpts) => {
     const o = opts ?? {}
-    const cwd = o.cwd
+    const cwd = o.cwd ?? getProjectCwd?.()
     const id = ptyManager.spawn({ ...o, cwd, env: getEnv() })
     ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
     onSpawn(id)

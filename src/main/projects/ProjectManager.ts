@@ -101,8 +101,18 @@ export class ProjectManager {
     return this.readIndex() ?? { projects: [], activeId: '' }
   }
 
-  create(name: string): Project {
-    const project: Project = { id: randomUUID(), name }
+  // Fase 17 (Task 1): projeto ATIVO (com seu `cwd`, se houver) — usado pelo resolver late-bound
+  // de registerPtyIpc (getProjectCwd), chamado a cada pty:spawn, não guardado em cache aqui.
+  getActive(): Project | undefined {
+    const idx = this.list()
+    return idx.projects.find((p) => p.id === idx.activeId)
+  }
+
+  // Fase 17 (Task 1): `cwd` opcional — a pasta vinculada ao projeto, usada depois para resolver
+  // o cwd do próximo terminal spawnado (ver registerPtyIpc/getProjectCwd). Sem cwd, o projeto
+  // segue com o fallback de HOME já existente em PtyManager.spawn.
+  create(name: string, cwd?: string): Project {
+    const project: Project = cwd === undefined ? { id: randomUUID(), name } : { id: randomUUID(), name, cwd }
     this.writeCanvas(project.id, emptyCanvas())
     const idx = this.list()
     idx.projects.push(project)
@@ -123,6 +133,16 @@ export class ProjectManager {
     const project = idx.projects.find((p) => p.id === id)
     if (!project) return
     project.name = name
+    this.writeIndex(idx)
+  }
+
+  // Fase 17 (Task 1): troca a pasta vinculada a um projeto já existente (ex.: botão "pasta" na
+  // sidebar). Mesmo formato de rename() — no-op silencioso se o id não existir.
+  setCwd(id: string, cwd: string): void {
+    const idx = this.list()
+    const project = idx.projects.find((p) => p.id === id)
+    if (!project) return
+    project.cwd = cwd
     this.writeIndex(idx)
   }
 

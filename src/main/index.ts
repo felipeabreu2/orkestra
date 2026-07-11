@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -120,20 +120,31 @@ app.whenReady().then(async () => {
     portalStates.set(s.name, { url: s.url, title: s.title, text: s.text })
   })
 
+  // Projetos (Fase 15 Task 2): cada projeto tem seu próprio canvas; bootstrap() cria o índice na
+  // primeira vez (migrando o canvas.json legado single-projeto) e é idempotente depois disso.
+  // persistence:load/save (registerPersistenceIpc) passam a operar sobre o projeto ATIVO.
+  // Criado ANTES de registerPtyIpc (Fase 17 Task 1) porque este último recebe um resolver que
+  // fecha sobre `projectManager` (getProjectCwd) — precisa existir antes de ser referenciado.
+  const projectManager = new ProjectManager(app.getPath('userData'))
+  projectManager.bootstrap()
+
   registerPtyIpc(
     ipcMain,
     ptyManager,
     () => mainWindow?.webContents ?? null,
     () => orchestrationEnv,
-    (id) => agentBus.track(id)
+    (id) => agentBus.track(id),
+    // Fase 17 (Task 1): late-bound — lido a cada pty:spawn, então trocar de projeto muda a
+    // pasta dos PRÓXIMOS terminais (os já abertos não mudam de cwd).
+    () => projectManager.getActive()?.cwd
   )
-  // Projetos (Fase 15 Task 2): cada projeto tem seu próprio canvas; bootstrap() cria o índice na
-  // primeira vez (migrando o canvas.json legado single-projeto) e é idempotente depois disso.
-  // persistence:load/save (registerPersistenceIpc) passam a operar sobre o projeto ATIVO.
-  const projectManager = new ProjectManager(app.getPath('userData'))
-  projectManager.bootstrap()
   registerPersistenceIpc(ipcMain, projectManager)
-  registerProjectIpc(ipcMain, projectManager)
+  // Fase 17 (Task 1): pickDirectory real — diálogo nativo do Electron (só existe aqui no main;
+  // registerProjectIpc não importa `dialog` para continuar testável com um fake).
+  registerProjectIpc(ipcMain, projectManager, async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return r.canceled ? null : r.filePaths[0]
+  })
   createWindow()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
   // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver

@@ -33,7 +33,8 @@ const api = {
   // projeto é feito via switch(id), que já devolve o canvas do projeto recém-ativado.
   projects: {
     list: (): Promise<ProjectIndex> => ipcRenderer.invoke('projects:list'),
-    create: (name: string): Promise<Project> => ipcRenderer.invoke('projects:create', name),
+    // Fase 17 (Task 1): cwd opcional — a pasta escolhida via pickDirectory() antes de criar.
+    create: (name: string, cwd?: string): Promise<Project> => ipcRenderer.invoke('projects:create', name, cwd),
     switch: (id: string): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('projects:switch', id),
     rename: (id: string, name: string): Promise<void> => ipcRenderer.invoke('projects:rename', id, name),
     remove: (id: string): Promise<{ activeId: string; snapshot: CanvasSnapshot | null }> =>
@@ -44,7 +45,12 @@ const api = {
     // que o handler roda), este grava sempre no projeto do `id` passado, então não há dependência
     // de ordem entre o flush e a troca do ativo.
     saveCanvas: (id: string, snapshot: CanvasSnapshot): Promise<void> =>
-      ipcRenderer.invoke('projects:saveCanvas', id, snapshot)
+      ipcRenderer.invoke('projects:saveCanvas', id, snapshot),
+    // Fase 17 (Task 1): troca a pasta de um projeto já existente (ex.: botão "pasta" na sidebar).
+    setCwd: (id: string, cwd: string): Promise<void> => ipcRenderer.invoke('projects:setCwd', id, cwd),
+    // Abre o diálogo nativo de escolha de pasta (roda no main) -> path escolhido, ou null se o
+    // usuário cancelar. Renderer nunca toca fs/dialog diretamente.
+    pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('projects:pickDirectory')
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),

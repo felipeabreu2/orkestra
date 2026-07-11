@@ -22,13 +22,16 @@ function fakeMgr() {
   return {
     bootstrap: vi.fn(),
     list: vi.fn((): ProjectIndex => fakeIndex()),
-    create: vi.fn((name: string): Project => ({ id: 'p2', name })),
+    create: vi.fn((name: string, cwd?: string): Project => (cwd === undefined ? { id: 'p2', name } : { id: 'p2', name, cwd })),
     switch: vi.fn((_id: string): CanvasSnapshot | null => ({ version: 2, nodes: [], edges: [] })),
     rename: vi.fn((_id: string, _name: string): void => {}),
     remove: vi.fn((_id: string) => ({ activeId: 'p1', snapshot: null })),
     loadActiveCanvas: vi.fn((): CanvasSnapshot | null => null),
     saveActiveCanvas: vi.fn(),
-    saveCanvas: vi.fn((_id: string, _snapshot: CanvasSnapshot): void => {})
+    saveCanvas: vi.fn((_id: string, _snapshot: CanvasSnapshot): void => {}),
+    // Fase 17 (Task 1): cwd do projeto.
+    getActive: vi.fn((): Project | undefined => fakeIndex().projects[0]),
+    setCwd: vi.fn((_id: string, _cwd: string): void => {})
   }
 }
 
@@ -51,8 +54,56 @@ describe('registerProjectIpc', () => {
 
     const result = await ipc.handlers.get('projects:create')!({}, 'Backend')
 
-    expect(mgr.create).toHaveBeenCalledWith('Backend')
+    expect(mgr.create).toHaveBeenCalledWith('Backend', undefined)
     expect(result).toEqual({ id: 'p2', name: 'Backend' })
+  })
+
+  // Fase 17 (Task 1): create(name, cwd) — a pasta escolhida no diálogo (renderer) chega aqui
+  // como segundo argumento e é repassada ao ProjectManager tal qual.
+  it('projects:create com cwd chama pm.create(name, cwd) e retorna o projeto com cwd', async () => {
+    const mgr = fakeMgr()
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+
+    const result = await ipc.handlers.get('projects:create')!({}, 'Backend', '/Users/x/Apps')
+
+    expect(mgr.create).toHaveBeenCalledWith('Backend', '/Users/x/Apps')
+    expect(result).toEqual({ id: 'p2', name: 'Backend', cwd: '/Users/x/Apps' })
+  })
+
+  it('projects:setCwd chama pm.setCwd(id, cwd)', async () => {
+    const mgr = fakeMgr()
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+
+    await ipc.handlers.get('projects:setCwd')!({}, 'p1', '/Users/x/outro')
+
+    expect(mgr.setCwd).toHaveBeenCalledWith('p1', '/Users/x/outro')
+  })
+
+  // pickDirectory é injetável: produção usa dialog.showOpenDialog (main/index.ts), teste usa um
+  // fake — registerProjectIpc não conhece `dialog`/electron diretamente.
+  it('projects:pickDirectory chama o pickDirectory injetado e retorna o path', async () => {
+    const mgr = fakeMgr()
+    const ipc = fakeIpcMain()
+    const pickDirectory = vi.fn(async (): Promise<string | null> => '/Users/x/escolhida')
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager, pickDirectory)
+
+    const result = await ipc.handlers.get('projects:pickDirectory')!({})
+
+    expect(pickDirectory).toHaveBeenCalled()
+    expect(result).toBe('/Users/x/escolhida')
+  })
+
+  it('projects:pickDirectory retorna null quando o usuário cancela o diálogo', async () => {
+    const mgr = fakeMgr()
+    const ipc = fakeIpcMain()
+    const pickDirectory = vi.fn(async (): Promise<string | null> => null)
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager, pickDirectory)
+
+    const result = await ipc.handlers.get('projects:pickDirectory')!({})
+
+    expect(result).toBeNull()
   })
 
   it('projects:switch chama pm.switch(id) e retorna o canvas do projeto', async () => {

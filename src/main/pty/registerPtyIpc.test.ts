@@ -105,6 +105,44 @@ describe('registerPtyIpc', () => {
     expect(typeof id).toBe('string')
   })
 
+  // Fase 17 (Task 1): getProjectCwd é o resolver late-bound do cwd do projeto ATIVO — chamado a
+  // cada pty:spawn (não cacheado), então trocar de projeto muda a pasta dos PRÓXIMOS terminais.
+  it('pty:spawn sem o.cwd usa getProjectCwd() como cwd', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null, undefined, undefined, () => '/tmp/proj')
+
+    await ipc.handlers.get('pty:spawn')!({}, { cols: 80, rows: 24 })
+
+    const call = spawner.mock.calls[0]
+    expect(call[2].cwd).toBe('/tmp/proj')
+  })
+
+  it('pty:spawn com o.cwd explícito vence sobre getProjectCwd()', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null, undefined, undefined, () => '/tmp/proj')
+
+    await ipc.handlers.get('pty:spawn')!({}, { cwd: '/tmp/explicito' })
+
+    const call = spawner.mock.calls[0]
+    expect(call[2].cwd).toBe('/tmp/explicito')
+  })
+
+  it('pty:spawn sem o.cwd e sem getProjectCwd deixa o PtyManager aplicar o fallback de HOME', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+
+    await ipc.handlers.get('pty:spawn')!({}, {})
+
+    const call = spawner.mock.calls[0]
+    expect(call[2].cwd).toBe(process.env.HOME ?? process.cwd())
+  })
+
   it('a assinatura onData do streaming (renderer) e a do AgentBus.track coexistem no mesmo pty (multi-subscriber)', async () => {
     const fake = makeMultiSubFakePty()
     const mgr = new PtyManager(() => fake.pty)

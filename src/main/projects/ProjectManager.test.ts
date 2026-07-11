@@ -88,6 +88,18 @@ describe('ProjectManager', () => {
   // Trava o invariante do qual o remove-guard do renderer depende (ProjectsSidebar.handleRemove só
   // re-hidrata quando o activeId de fato muda): remover um projeto que NÃO é o ativo não pode
   // mexer nem no activeId nem no canvas do projeto que continua ativo.
+  // Fase 17 (Task 1): cada projeto pode ser vinculado a uma pasta (cwd) — usada depois para
+  // resolver o cwd do próximo terminal spawnado (ver registerPtyIpc/getProjectCwd).
+  it('create aceita um cwd e getActive/switch o expõem; setCwd atualiza', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const p = pm.create('Web', '/Users/x/Documents/Apps')
+    expect(pm.list().projects.find((x) => x.id === p.id)?.cwd).toBe('/Users/x/Documents/Apps')
+    pm.switch(p.id)
+    expect(pm.getActive()?.cwd).toBe('/Users/x/Documents/Apps')
+    pm.setCwd(p.id, '/Users/x/outro')
+    expect(pm.getActive()?.cwd).toBe('/Users/x/outro')
+  })
+
   it('remove de um projeto NÃO ativo mantém activeId e o canvas do ativo intactos', () => {
     const pm = new ProjectManager(dir); pm.bootstrap()
     const activeId = pm.list().activeId
