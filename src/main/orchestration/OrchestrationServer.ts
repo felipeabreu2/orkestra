@@ -1,7 +1,13 @@
 import { createServer, type Server } from 'http'
-import { randomBytes } from 'crypto'
+import { randomBytes, timingSafeEqual } from 'crypto'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../../shared/orchestration'
 import type { Routine } from '../../shared/routines'
+
+// Fase 14 (Task 3): cap de tamanho do corpo dos POSTs — payloads acima disso respondem 413
+// antes de terminar de acumular (ver readJsonBody). 1 MB é folgado para os payloads reais
+// deste servidor (nota/prompt/JS de portal), mas barra um corpo hostil ou acidentalmente
+// gigante de consumir memória sem limite.
+const MAX_BODY = 1_000_000
 
 interface Opts {
   getMirror: () => CanvasMirror
@@ -49,8 +55,61 @@ export class OrchestrationServer {
     })
   }
 
+  // Fase 14 (Task 3): comparação de token em tempo constante. `timingSafeEqual` lança se os
+  // buffers tiverem tamanhos diferentes, então a guarda de comprimento vem primeiro — um
+  // header ausente/não-string ou de comprimento diferente é 401 direto, sem invocar
+  // timingSafeEqual. Só buffers de mesmo tamanho chegam à comparação byte-a-byte.
+  private isAuthorized(req: import('http').IncomingMessage): boolean {
+    const header = req.headers['x-orkestra-token']
+    if (typeof header !== 'string') return false
+    const provided = Buffer.from(header)
+    const expected = Buffer.from(this.token)
+    if (provided.length !== expected.length) return false
+    return timingSafeEqual(provided, expected)
+  }
+
+  // Fase 14 (Task 3): centraliza o que antes eram ~11 blocos quase idênticos de
+  // acúmulo+parse do corpo dos POSTs. Mantém um contador de bytes recebidos; ao ultrapassar
+  // MAX_BODY, responde 413 e destrói a conexão sem chamar onOk (nem terminar o parse) — o
+  // objetivo é não deixar um corpo hostil ficar sendo acumulado indefinidamente em memória.
+  // A validação dos campos de cada rota (typeof name === 'string' etc.) continua em cada
+  // onOk, inalterada — este helper só resolve o acúmulo, o cap e o JSON.parse.
+  private readJsonBody(
+    req: import('http').IncomingMessage,
+    res: import('http').ServerResponse,
+    onOk: (parsed: unknown) => void
+  ): void {
+    let body = ''
+    let size = 0
+    let aborted = false
+    req.on('data', (chunk) => {
+      if (aborted) return
+      size += Buffer.byteLength(chunk)
+      if (size > MAX_BODY) {
+        aborted = true
+        res.writeHead(413).end('payload too large')
+        req.destroy()
+        return
+      }
+      body += chunk
+    })
+    req.on('error', () => {
+      if (aborted) return
+      res.writeHead(400).end('bad request')
+    })
+    req.on('end', () => {
+      if (aborted) return
+      try {
+        const parsed = JSON.parse(body) as unknown
+        onOk(parsed)
+      } catch {
+        res.writeHead(400).end('bad json')
+      }
+    })
+  }
+
   private handle(req: import('http').IncomingMessage, res: import('http').ServerResponse): void {
-    if (req.headers['x-orkestra-token'] !== this.token) {
+    if (!this.isAuthorized(req)) {
       res.writeHead(401).end('unauthorized')
       return
     }
@@ -65,87 +124,59 @@ export class OrchestrationServer {
       return
     }
     if (req.method === 'POST' && req.url === '/note') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { target?: unknown; content?: unknown }
-          if (typeof parsed.target !== 'string' || typeof parsed.content !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({ type: 'updateNote', target: parsed.target, content: parsed.content })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; content?: unknown }
+        if (typeof parsed.target !== 'string' || typeof parsed.content !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({ type: 'updateNote', target: parsed.target, content: parsed.content })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/recruit') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { name?: unknown; preset?: unknown; role?: unknown }
-          if (
-            typeof parsed.name !== 'string' ||
-            typeof parsed.preset !== 'string' ||
-            (parsed.role !== undefined && typeof parsed.role !== 'string')
-          ) {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({
-            type: 'recruit',
-            name: parsed.name,
-            preset: parsed.preset,
-            role: parsed.role as string | undefined
-          })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { name?: unknown; preset?: unknown; role?: unknown }
+        if (
+          typeof parsed.name !== 'string' ||
+          typeof parsed.preset !== 'string' ||
+          (parsed.role !== undefined && typeof parsed.role !== 'string')
+        ) {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({
+          type: 'recruit',
+          name: parsed.name,
+          preset: parsed.preset,
+          role: parsed.role as string | undefined
+        })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/dismiss') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { target?: unknown }
-          if (typeof parsed.target !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({ type: 'dismiss', target: parsed.target })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown }
+        if (typeof parsed.target !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({ type: 'dismiss', target: parsed.target })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/connect') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { source?: unknown; target?: unknown }
-          if (typeof parsed.source !== 'string' || typeof parsed.target !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({ type: 'connect', source: parsed.source, target: parsed.target })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { source?: unknown; target?: unknown }
+        if (typeof parsed.source !== 'string' || typeof parsed.target !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({ type: 'connect', source: parsed.source, target: parsed.target })
+        res.writeHead(200).end('ok')
       })
       return
     }
@@ -154,17 +185,14 @@ export class OrchestrationServer {
         res.writeHead(404).end('not found')
         return
       }
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as {
+          name?: unknown
+          schedule?: unknown
+          target?: unknown
+          command?: unknown
+        }
         try {
-          const parsed = JSON.parse(body) as {
-            name?: unknown
-            schedule?: unknown
-            target?: unknown
-            command?: unknown
-          }
           // routines.add (RoutineScheduler, Task 2) é o validador: lança em name/schedule/
           // target/command ausentes, não-string ou vazios. O catch abaixo converte esse throw
           // em 400 — nunca deixamos a validação derrubar a requisição. Uma rotina recém-criada
@@ -189,120 +217,84 @@ export class OrchestrationServer {
         res.writeHead(404).end('not found')
         return
       }
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { id?: unknown }
-          if (typeof parsed.id !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.routines!.remove(parsed.id)
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { id?: unknown }
+        if (typeof parsed.id !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.routines!.remove(parsed.id)
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/portal/open') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { target?: unknown; url?: unknown }
-          if (typeof parsed.target !== 'string' || typeof parsed.url !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({ type: 'portalOpen', target: parsed.target, url: parsed.url })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; url?: unknown }
+        if (typeof parsed.target !== 'string' || typeof parsed.url !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({ type: 'portalOpen', target: parsed.target, url: parsed.url })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/portal/click') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { target?: unknown; selector?: unknown }
-          if (typeof parsed.target !== 'string' || typeof parsed.selector !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({ type: 'portalClick', target: parsed.target, selector: parsed.selector })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; selector?: unknown }
+        if (typeof parsed.target !== 'string' || typeof parsed.selector !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({ type: 'portalClick', target: parsed.target, selector: parsed.selector })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/portal/fill') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { target?: unknown; selector?: unknown; text?: unknown }
-          if (
-            typeof parsed.target !== 'string' ||
-            typeof parsed.selector !== 'string' ||
-            typeof parsed.text !== 'string'
-          ) {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({
-            type: 'portalFill',
-            target: parsed.target,
-            selector: parsed.selector,
-            text: parsed.text
-          })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; selector?: unknown; text?: unknown }
+        if (
+          typeof parsed.target !== 'string' ||
+          typeof parsed.selector !== 'string' ||
+          typeof parsed.text !== 'string'
+        ) {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({
+          type: 'portalFill',
+          target: parsed.target,
+          selector: parsed.selector,
+          text: parsed.text
+        })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/portal/eval') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { target?: unknown; js?: unknown }
-          if (typeof parsed.target !== 'string' || typeof parsed.js !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
-          }
-          this.opts.onCommand({ type: 'portalEval', target: parsed.target, js: parsed.js })
-          res.writeHead(200).end('ok')
-        } catch {
-          res.writeHead(400).end('bad json')
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; js?: unknown }
+        if (typeof parsed.target !== 'string' || typeof parsed.js !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
         }
+        this.opts.onCommand({ type: 'portalEval', target: parsed.target, js: parsed.js })
+        res.writeHead(200).end('ok')
       })
       return
     }
     if (req.method === 'POST' && req.url === '/ask') {
-      let body = ''
-      req.on('data', (c) => { body += c })
-      req.on('error', () => { res.writeHead(400).end('bad request') })
-      req.on('end', () => {
+      this.readJsonBody(req, res, (raw) => {
         // Fase 14 (Task 1): wait:true bifurca para askWait (bloqueante — espera o agente
         // ficar ocioso) e responde {output}. Sem wait (ou wait:false), segue o caminho ask
-        // fire-and-forget de sempre, byte-a-byte igual à Fase 6.
+        // fire-and-forget de sempre, byte-a-byte igual à Fase 6. O try/catch aqui (distinto
+        // do try/catch do JSON.parse já resolvido pelo readJsonBody) cobre uma askWait que
+        // rejeite — preserva o comportamento pré-refactor de responder 400 nesse caso.
         void (async () => {
           try {
-            const parsed = JSON.parse(body) as { name?: unknown; prompt?: unknown; wait?: unknown }
+            const parsed = raw as { name?: unknown; prompt?: unknown; wait?: unknown }
             if (typeof parsed.name !== 'string' || typeof parsed.prompt !== 'string') {
               res.writeHead(400).end('bad request')
               return

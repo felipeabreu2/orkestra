@@ -46,6 +46,25 @@ describe('OrchestrationServer', () => {
     expect(res.status).toBe(401)
   })
 
+  // Fase 14 (Task 3): comparação de token em tempo constante (crypto.timingSafeEqual).
+  // Um token do MESMO comprimento do real, porém incorreto, precisa continuar dando 401 —
+  // isso exercita o caminho que de fato chama timingSafeEqual (em vez de sair cedo só pela
+  // guarda de comprimento, que sozinha não provaria que a comparação byte-a-byte funciona).
+  it('token do mesmo comprimento do real, porém incorreto, retorna 401', async () => {
+    const s = makeServer({ nodes: [] }, [])
+    const { port, token } = await s.start()
+    const wrongSameLength = token
+      .split('')
+      .map((c) => (c === 'a' ? 'b' : 'a'))
+      .join('')
+    expect(wrongSameLength).toHaveLength(token.length)
+    expect(wrongSameLength).not.toBe(token)
+    const res = await fetch(`http://127.0.0.1:${port}/list`, {
+      headers: { 'x-orkestra-token': wrongSameLength }
+    })
+    expect(res.status).toBe(401)
+  })
+
   it('POST /note emite um comando updateNote', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [] }, commands)
@@ -82,6 +101,24 @@ describe('OrchestrationServer', () => {
       body: '{bad'
     })
     expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // Fase 14 (Task 3): corpo maior que o cap (MAX_BODY = 1 MB) deve ser rejeitado cedo —
+  // durante o acúmulo, não só no fim — e nunca chegar a chamar onCommand. Protege o servidor
+  // local contra um payload hostil ou acidentalmente enorme (ex.: content gigante colado).
+  it('POST /note com corpo maior que o cap (1 MB) retorna 413 e não chama onCommand', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    // > MAX_BODY (1_000_000 bytes), com folga para o overhead de aspas/chaves do JSON.
+    const big = 'x'.repeat(1_100_000)
+    const res = await fetch(`http://127.0.0.1:${port}/note`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Nota', content: big })
+    })
+    expect(res.status).toBe(413)
     expect(commands).toEqual([])
   })
 
