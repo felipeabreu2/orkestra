@@ -46,6 +46,7 @@ export function Canvas(): JSX.Element {
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
+  const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [minimapOn, setMinimapOn] = useState(true)
   const { fitView } = useReactFlow()
@@ -226,6 +227,27 @@ export function Canvas(): JSX.Element {
         snapToGrid
         snapGrid={[20, 20]}
         deleteKeyCode={['Backspace', 'Delete']}
+        // Fase 18 Task 3 fix (perda de dados): o React Flow trata grupo+filhos como árvore
+        // parent/child e cascateia a remoção — um Backspace/Delete num grupo selecionado
+        // apagaria o grupo E todo o conteúdo dentro dele (terminais/notas/portais) numa tacada
+        // só, sem confirmação nem undo. onBeforeDelete roda ANTES do React Flow aplicar a
+        // remoção: se algum dos nós a deletar é um group, ungroupa primeiro (filhos voltam a
+        // ser top-level, mantidos vivos no store) e deixa passar pra remoção só os containers
+        // (agora vazios) + qualquer nó selecionado que não seja filho de um dos grupos deletados.
+        // Deletar um nó comum (terminal/nota/portal, sem group na seleção) cai no `return true`
+        // — comportamento padrão do React Flow, sem tocar o store. Cmd/Ctrl+Shift+G continua
+        // sendo o caminho explícito de desagrupar (handleKeyDown acima), inalterado.
+        onBeforeDelete={async ({ nodes: toDelete, edges: edgesToDelete }) => {
+          const groupIds = toDelete.filter((n) => n.type === 'group').map((n) => n.id)
+          if (groupIds.length === 0) return true
+          ungroupGroupsById(groupIds) // filhos sobrevivem, reparentados pro canvas
+          return {
+            nodes: toDelete.filter(
+              (n) => n.type === 'group' || !(n.parentId && groupIds.includes(n.parentId))
+            ),
+            edges: edgesToDelete
+          }
+        }}
         proOptions={{ hideAttribution: true }}
       >
         <Background />

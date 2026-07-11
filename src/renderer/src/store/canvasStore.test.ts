@@ -522,4 +522,40 @@ describe('canvasStore', () => {
     expect(children).toHaveLength(2)
     children.forEach((c) => expect(c.extent).toBe('parent'))
   })
+
+  // --- Fase 18 Task 3 fix: deletar um grupo desagrupa (preserva os filhos) em vez de destruí-los ---
+
+  it('ungroupGroupsById desagrupa os filhos do grupo indicado sem remover o nó group (quem remove o container é o caller); filhos NÃO são deletados', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 10, y: 20 })
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 200 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const groupId = useCanvasStore.getState().nodes[0].id
+
+    useCanvasStore.getState().ungroupGroupsById([groupId])
+
+    const { nodes } = useCanvasStore.getState()
+    // O grupo ainda existe — ungroupGroupsById não remove o container, só desfaz o parentesco.
+    expect(nodes.find((n) => n.id === groupId)).toBeTruthy()
+    expect(nodes).toHaveLength(3)
+    // Os filhos SOBREVIVEM (não são deletados): sem parentId/extent, posição absoluta de volta.
+    const childA = nodes.find((n) => n.id === a.id)!
+    const childB = nodes.find((n) => n.id === b.id)!
+    expect(childA).toBeTruthy()
+    expect(childB).toBeTruthy()
+    expect(childA.parentId).toBeUndefined()
+    expect(childB.parentId).toBeUndefined()
+    expect(childA.extent).toBeUndefined()
+    expect(childB.extent).toBeUndefined()
+    expect(childA.position).toEqual({ x: 10, y: 20 })
+    expect(childB.position).toEqual({ x: 100, y: 200 })
+  })
+
+  it('ungroupGroupsById ignora ids que não correspondem a um nó group e deixa nós não relacionados intocados', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const before = useCanvasStore.getState().nodes
+    useCanvasStore.getState().ungroupGroupsById(['id-inexistente'])
+    expect(useCanvasStore.getState().nodes).toBe(before)
+  })
 })

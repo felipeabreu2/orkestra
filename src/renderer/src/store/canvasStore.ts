@@ -51,6 +51,15 @@ interface CanvasState {
   // e remove parentId/extent + o nó group. Ambos são no-op seguro se não há o que fazer.
   groupSelected: () => void
   ungroupSelected: () => void
+  // Fase 18 Task 3 fix (perda de dados): o React Flow trata grupo+filhos como uma árvore
+  // parent/child e cascateia a remoção — um Backspace num grupo selecionado apagaria o grupo E
+  // todo o conteúdo dentro dele (terminais/notas/portais) numa tacada só, sem confirmação nem
+  // undo. ungroupGroupsById é o antídoto: para cada id em `groupIds` que resolve a um nó
+  // type:'group', desfaz o parentesco de cada filho (posição relativa -> absoluta, remove
+  // parentId/extent) SEM remover os nós group em si — quem decide remover o(s) container(s) é o
+  // caller (Canvas.tsx.onBeforeDelete: ungroupa primeiro, aí deleta só os containers vazios).
+  // Diferente de ungroupSelected, não deriva os grupos-alvo da seleção; recebe os ids prontos.
+  ungroupGroupsById: (groupIds: string[]) => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (connection: Connection) => void
@@ -223,6 +232,29 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           delete restored.extent
           return restored
         })
+      return { nodes }
+    }),
+  ungroupGroupsById: (groupIds): void =>
+    set((state) => {
+      const targetIds = new Set(groupIds)
+      const groupsById = new Map(
+        state.nodes.filter((n) => n.type === 'group' && targetIds.has(n.id)).map((n) => [n.id, n])
+      )
+      if (groupsById.size === 0) return state // nenhum id resolve a um group real -> no-op seguro
+      const nodes = state.nodes.map((n) => {
+        const group = n.parentId ? groupsById.get(n.parentId) : undefined
+        if (!group) return n // fora dos grupos indicados (ou órfão) -> intocado
+        const restored: Node = {
+          ...n,
+          // relativa ao grupo -> absoluta de novo (soma a posição do grupo), mesma matemática de ungroupSelected
+          position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y }
+        }
+        delete restored.parentId
+        delete restored.extent
+        return restored
+      })
+      // Nota: ao contrário de ungroupSelected, os nós group NÃO são filtrados/removidos aqui —
+      // a remoção do container é responsabilidade do caller (ver comentário na interface acima).
       return { nodes }
     }),
   onNodesChange: (changes): void => set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) })),
