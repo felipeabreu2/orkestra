@@ -147,4 +147,37 @@ describe('AgentBus.waitForIdle', () => {
     await vi.advanceTimersByTimeAsync(300); expect(resolved).toBe(true)   // 1100ms desde 'b'
     await expect(p).resolves.toBe('ab')
   })
+
+  // Fix 4 (bug real, Fase 14 Task 1): a versão anterior chamava resetIdleTimer() na configuração
+  // (antes de qualquer onData), então o silêncio ANTES do primeiro token do agente já contava
+  // como ociosidade. Um agente de IA real que delibera por mais de idleMs (default 1500ms) antes
+  // de imprimir o primeiro token fazia waitForIdle resolver cedo demais com delta vazio/parcial —
+  // o caso comum de `orq ask "Dev" "refactor X" --wait`. Este teste prova que o silêncio antes do
+  // primeiro token NÃO deve contar: com a implementação antiga, resolved já seria true aos 3000ms
+  // (idleMs=1000, sem nenhum emit).
+  it('nao inicia a contagem de ociosidade antes do primeiro output (agente que delibera antes de responder)', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    let resolved = false
+    const p = bus.waitForIdle(id, { idleMs: 1000, timeoutMs: 60000 }).then((o) => { resolved = true; return o })
+    await vi.advanceTimersByTimeAsync(3000) // silêncio antes do primeiro token: NÃO deve resolver
+    expect(resolved).toBe(false)
+    f.emit('resposta')                      // primeiro token: só agora o timer de ociosidade arma
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(resolved).toBe(true)
+    await expect(p).resolves.toBe('resposta')
+  })
+
+  // Cobertura de regressão: o teto (timeoutMs) precisa continuar resolvendo mesmo quando o
+  // agente nunca emite nada — sem isso, remover o resetIdleTimer() da configuração poderia
+  // (em uma implementação errada) deixar a Promise pendente para sempre nesse caso.
+  it('o timeoutMs (teto) ainda resolve quando o agente nunca emite nenhuma saida', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    let resolved = false
+    const p = bus.waitForIdle(id, { idleMs: 5000, timeoutMs: 2000 }).then((o) => { resolved = true; return o })
+    await vi.advanceTimersByTimeAsync(2000) // nenhum emit em todo o teste
+    expect(resolved).toBe(true)
+    await expect(p).resolves.toBe('')
+  })
 })
