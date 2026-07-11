@@ -1,4 +1,11 @@
 export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
+  // orq depende do fetch global (Node >= 18). Sem ele, cada comando abaixo lançaria um
+  // ReferenceError cru vindo de dentro do try/catch genérico (mascarado como "falha de
+  // conexão"). Detectamos isso aqui, na frente, e falhamos de forma amigável em stderr.
+  if (typeof fetch === 'undefined') {
+    process.stderr.write('orq: requer Node >= 18 (fetch global indisponível)\n')
+    return { code: 1, out: '' }
+  }
   const port = env.ORKESTRA_PORT
   const token = env.ORKESTRA_TOKEN
   if (!port || !token) {

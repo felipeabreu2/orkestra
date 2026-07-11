@@ -28,6 +28,12 @@ describe('cronMatches', () => {
     expect(cronMatches('* * * * 5', at(2026, 7, 10, 0, 0))).toBe(true)
     expect(cronMatches('* * * * 1', at(2026, 7, 10, 0, 0))).toBe(false)
   })
+  it('dia da semana: 7 no campo dow também casa domingo (dialeto alternativo)', () => {
+    // 2026-07-12 é um domingo (dow=0); alguns dialetos de cron usam 7 como domingo alternativo
+    expect(cronMatches('* * * * 7', at(2026, 7, 12, 0, 0))).toBe(true)
+    // 2026-07-10 é sexta-feira (dow=5): 7 no campo dow não deve casar dias que não são domingo
+    expect(cronMatches('* * * * 7', at(2026, 7, 10, 0, 0))).toBe(false)
+  })
   it('expr malformada → false', () => {
     expect(cronMatches('nonsense', at(2026, 7, 10, 0, 0))).toBe(false)
     expect(cronMatches('* * *', at(2026, 7, 10, 0, 0))).toBe(false)

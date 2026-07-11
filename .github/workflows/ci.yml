@@ -2,7 +2,10 @@ name: CI
 on: [push, pull_request]
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -11,3 +14,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      # TODO: empacotamento/assinatura (`npm run package`) fica de fora do CI de PR de propósito —
+      # é um workflow de release separado, que exige os recursos de assinatura/Apple do mantenedor
+      # (certificados macOS, notarização, etc.), não disponíveis neste matrix de CI genérico.

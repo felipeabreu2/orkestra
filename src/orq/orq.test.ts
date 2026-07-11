@@ -28,6 +28,23 @@ async function startServer(
 }
 
 describe('runOrq', () => {
+  // Fase 14 (Task 2): sem fetch global (Node < 18), runOrq deve falhar de forma amigável
+  // (mensagem em stderr + código 1) em vez de deixar vazar um ReferenceError cru vindo de
+  // dentro de um comando. Usamos vi.stubGlobal para sombrear `fetch` só durante este teste;
+  // vi.unstubAllGlobals() no finally garante que não vaza para os demais testes deste arquivo.
+  it('sem fetch global (Node < 18) escreve mensagem amigável em stderr e retorna código 1, sem lançar', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.stubGlobal('fetch', undefined)
+    try {
+      const { code } = await runOrq(['list'], { ORKESTRA_PORT: '1', ORKESTRA_TOKEN: 't' })
+      expect(code).toBe(1)
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Node >= 18'))
+    } finally {
+      vi.unstubAllGlobals()
+      stderrSpy.mockRestore()
+    }
+  })
+
   it('list imprime os nós do espelho', async () => {
     const env = await startServer({ nodes: [{ id: 'n1', type: 'note', name: 'Spec' }] }, [])
     const { code, out } = await runOrq(['list'], env)
