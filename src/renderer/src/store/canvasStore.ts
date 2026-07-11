@@ -9,7 +9,7 @@ import {
   type EdgeChange,
   type Connection
 } from '@xyflow/react'
-import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
+import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapshot'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -42,6 +42,15 @@ interface CanvasState {
   // selecionados). `map` vem de arrange.ts (alignNodes/distributeNodes/gridArrange) — nós cujo
   // id não está no map ficam intocados (permite mexer só num subconjunto, ex.: a seleção atual).
   setNodePositions: (map: Record<string, { x: number; y: number }>) => void
+  // Grupos (Fase 18 Task 3, React Flow v12 parent/child nodes): groupSelected agrupa 2+ nós
+  // `selected` num novo nó type:'group' (posicionado/dimensionado no bbox da seleção), dando a
+  // cada filho `parentId`+`extent:'parent'` e reescrevendo sua `position` de absoluta pra
+  // relativa ao topo-esquerda do grupo (é assim que o RF renderiza o filho "dentro" do pai).
+  // ungroupSelected desfaz: acha o(s) grupo(s) alvo (o próprio nó group selecionado, OU o grupo
+  // de um filho selecionado), devolve cada filho pra posição absoluta (soma a posição do grupo)
+  // e remove parentId/extent + o nó group. Ambos são no-op seguro se não há o que fazer.
+  groupSelected: () => void
+  ungroupSelected: () => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (connection: Connection) => void
@@ -142,6 +151,80 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => ({
       nodes: state.nodes.map((n) => (map[n.id] ? { ...n, position: map[n.id] } : n))
     })),
+  groupSelected: (): void =>
+    set((state) => {
+      const selected = state.nodes.filter((n) => n.selected)
+      if (selected.length < 2) return state // no-op: devolve a MESMA referência de state, o Zustand pula a atualização
+      const minX = Math.min(...selected.map((n) => n.position.x))
+      const minY = Math.min(...selected.map((n) => n.position.y))
+      const maxX = Math.max(...selected.map((n) => n.position.x + (n.width ?? 0)))
+      const maxY = Math.max(...selected.map((n) => n.position.y + (n.height ?? 0)))
+      const groupId = `group-${crypto.randomUUID()}`
+      const groupNode: Node = {
+        id: groupId,
+        type: 'group',
+        position: { x: minX, y: minY },
+        width: maxX - minX,
+        height: maxY - minY,
+        data: { name: 'Grupo' },
+        // Restringe o arraste do NÓ INTEIRO ao cabeçalho (GroupNode.tsx) — sem isso, qualquer
+        // clique no corpo do grupo (área não coberta por um filho) arrastaria o grupo inteiro,
+        // já que o React Flow só respeita um "drag handle" dedicado quando ele é setado no nó
+        // (verificado na fonte de @xyflow/system: sem dragHandle, o filtro do d3-drag aceita
+        // qualquer target dentro do wrapper do nó — só setar pointer-events:none no CSS do
+        // corpo NÃO basta, pois o wrapper .react-flow__node ainda recebe o evento por trás).
+        // Os nós FILHOS (terminal/nota/portal agrupados) não são afetados por nada disso — são
+        // elementos irmãos separados no DOM que já ficam por cima do grupo (ordem de pintura:
+        // o grupo entra ANTES deles no array, exigido pelo próprio React Flow).
+        dragHandle: '.ork-group-header',
+        selected: true
+      }
+      const selectedIds = new Set(selected.map((n) => n.id))
+      const rest = state.nodes.map((n) =>
+        selectedIds.has(n.id)
+          ? {
+              ...n,
+              parentId: groupId,
+              extent: 'parent' as const,
+              // absoluta -> relativa ao topo-esquerda do grupo (é assim que o RF posiciona filhos)
+              position: { x: n.position.x - minX, y: n.position.y - minY },
+              selected: false
+            }
+          : n
+      )
+      // O grupo precisa vir ANTES de seus filhos no array (exigência do React Flow).
+      return { nodes: [groupNode, ...rest] }
+    }),
+  ungroupSelected: (): void =>
+    set((state) => {
+      // Grupo(s)-alvo: o próprio nó group selecionado, OU o grupo de um filho selecionado
+      // (clicar num nó dentro do grupo seleciona o FILHO, não o group em si).
+      const groupIds = new Set<string>()
+      for (const n of state.nodes) {
+        if (n.selected && n.type === 'group') groupIds.add(n.id)
+        if (n.selected && n.parentId) groupIds.add(n.parentId)
+      }
+      if (groupIds.size === 0) return state // nada selecionado é agrupável -> no-op seguro
+      const groupsById = new Map(
+        state.nodes.filter((n) => n.type === 'group' && groupIds.has(n.id)).map((n) => [n.id, n])
+      )
+      if (groupsById.size === 0) return state // parentId órfão ou seleção não resolve a um group real -> no-op seguro
+      const nodes = state.nodes
+        .filter((n) => !groupsById.has(n.id)) // remove o(s) nó(s) group
+        .map((n) => {
+          const group = n.parentId ? groupsById.get(n.parentId) : undefined
+          if (!group) return n
+          const restored: Node = {
+            ...n,
+            // relativa ao grupo -> absoluta de novo (soma a posição do grupo)
+            position: { x: n.position.x + group.position.x, y: n.position.y + group.position.y }
+          }
+          delete restored.parentId
+          delete restored.extent
+          return restored
+        })
+      return { nodes }
+    }),
   onNodesChange: (changes): void => set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) })),
   onEdgesChange: (changes): void => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
   onConnect: (connection): void => set((state) => ({ edges: addEdge(connection, state.edges) })),
@@ -152,7 +235,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       // para o snapshot persistido, senão todo reload re-rodaria o comando do preset (Fase 7 Task 2).
       const rest = { ...((n.data ?? {}) as Record<string, unknown>) }
       delete rest.autostart
-      return {
+      const persisted: PersistedNode = {
         id: n.id,
         type: n.type ?? 'terminal',
         position: n.position,
@@ -160,6 +243,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         height: n.height ?? 320,
         data: rest
       }
+      // Grupos (Fase 18 Task 3): só presentes em nós que pertencem a um grupo — um nó sem
+      // grupo simplesmente omite os dois campos (não persiste `parentId`/`extent: undefined`).
+      if (n.parentId) persisted.parentId = n.parentId
+      if (n.extent === 'parent') persisted.extent = 'parent'
+      return persisted
     }),
     edges: get().edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
   }),
@@ -189,14 +277,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
 
     set({
-      nodes: snapshot.nodes.map((p) => ({
-        id: p.id,
-        type: p.type,
-        position: p.position,
-        data: p.data,
-        width: p.width,
-        height: p.height
-      })),
+      nodes: snapshot.nodes.map((p) => {
+        const node: Node = {
+          id: p.id,
+          type: p.type,
+          position: p.position,
+          data: p.data,
+          width: p.width,
+          height: p.height
+        }
+        // Grupos (Fase 18 Task 3): restaura parentId/extent quando presentes no snapshot — a
+        // ordem de p.nodes já vem pai-antes-do-filho (serialize preserva a ordem de get().nodes,
+        // que groupSelected já escreve nessa ordem), então o React Flow recebe os nós na ordem
+        // que exige sem precisamos reordenar aqui.
+        if (p.parentId) node.parentId = p.parentId
+        if (p.extent === 'parent') node.extent = 'parent'
+        return node
+      }),
       edges: (snapshot.edges ?? []).map((e) => ({ id: e.id, source: e.source, target: e.target }))
     })
   }

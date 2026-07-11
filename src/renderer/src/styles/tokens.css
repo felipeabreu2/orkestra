@@ -6,6 +6,7 @@
   --bg-0: #0b0d12; /* fundo do canvas */
   --bg-1: #12151c; /* painéis/nós */
   --bg-2: #1a1e27; /* elevação/hover */
+  --bg-2-weak: #1a1e2766; /* --bg-2 translúcido (Fase 18 Task 3: corpo do GroupNode) */
   --border: #262b36;
   --border-strong: #333a48;
   /* texto */

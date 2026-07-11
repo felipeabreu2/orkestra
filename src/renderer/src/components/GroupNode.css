@@ -1,0 +1,53 @@
+/* Group node (Fase 18 Task 3) — um retângulo translúcido e tracejado com um pequeno cabeçalho
+   (data.name). Deliberadamente mínimo: sem NodeResizer, sem botão de fechar — agrupar/
+   desagrupar é feito via Cmd/Ctrl+G e Cmd/Ctrl+Shift+G (Canvas.tsx) ou diretamente por
+   store.groupSelected/ungroupSelected.
+
+   Interatividade:
+   - Os nós filhos (terminal/nota/portal agrupados) são elementos IRMÃOS separados no DOM — o
+     React Flow v12 não os aninha dentro deste componente, só calcula a posição de cada um
+     relativa ao pai. Eles continuam clicáveis/arrastáveis normalmente por cima do grupo graças
+     à ORDEM DE PINTURA: o grupo entra ANTES dos filhos no array de nodes (exigência do próprio
+     React Flow) e, com o mesmo z-index padrão (0, quando não selecionado), quem vem depois no
+     DOM pinta por cima — nada aqui precisa "abrir espaço" pra eles.
+   - O corpo (.ork-group) leva pointer-events:none. Isso sozinho NÃO impede arrastar o nó group
+     pelo corpo — verificado na fonte de @xyflow/system (packages/system/src/xydrag): o filtro
+     do d3-drag só restringe o alvo do arraste a um seletor quando o nó tem `dragHandle`
+     definido; sem isso, o wrapper .react-flow__node recebe o evento por trás mesmo com
+     pointer-events:none no conteúdo interno. Por isso quem de fato restringe o arraste do
+     grupo ao cabeçalho é `dragHandle: '.ork-group-header'`, setado no nó em
+     canvasStore.groupSelected() — o pointer-events:none aqui só existe pra permitir a
+     reabilitação seletiva do cabeçalho abaixo (pointer-events é herdado pelos descendentes; sem
+     essa reabilitação explícita o cabeçalho também ficaria inerte) e pra não parecer clicável
+     numa área vazia. */
+.ork-group {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2-weak);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  pointer-events: none;
+  transition: border-color var(--dur-1) var(--ease);
+}
+
+/* Mesmo hook usado pelos outros tipos de nó (nodes.css): o React Flow soma `.selected` no
+   wrapper `.react-flow__node`, fora do que este componente renderiza. */
+.react-flow__node.selected .ork-group {
+  border-color: var(--accent);
+}
+
+.ork-group-header {
+  flex: 0 0 auto;
+  pointer-events: auto;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: grab;
+  user-select: none;
+}

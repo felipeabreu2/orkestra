@@ -5,6 +5,11 @@ export interface PersistedNode {
   width: number
   height: number
   data: Record<string, unknown>
+  // Grupos (Fase 18 Task 3, React Flow v12 parent/child nodes): presentes só em nós que
+  // pertencem a um grupo — `position` acima já é RELATIVA ao grupo nesse caso (não absoluta).
+  // Um nó sem grupo simplesmente omite os dois campos.
+  parentId?: string
+  extent?: 'parent'
 }
 
 export interface PersistedEdge {

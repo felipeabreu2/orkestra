@@ -346,4 +346,180 @@ describe('canvasStore', () => {
     expect(nodes.find((n) => n.id === b.id)?.position).toEqual({ x: 10, y: 10 })
     expect(nodes.find((n) => n.id === c.id)?.position).toEqual({ x: 3, y: 3 })
   })
+
+  // --- Fase 18 Task 3: grupos (React Flow v12 parent/child) ---
+
+  it('groupSelected não faz nada com menos de 2 nós selecionados', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().groupSelected()
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(1)
+    expect(nodes.some((n) => n.type === 'group')).toBe(false)
+  })
+
+  it('groupSelected agrupa 2 nós selecionados: cria 1 nó group ANTES dos filhos, cada filho ganha parentId/extent:parent e posição relativa ao bbox', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 10, y: 20 }) // width 480 height 320 (default)
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 200 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.setState((s) => ({
+      nodes: s.nodes.map((n) => ({ ...n, selected: n.id === a.id || n.id === b.id }))
+    }))
+    useCanvasStore.getState().groupSelected()
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(3)
+
+    const group = nodes[0]
+    expect(group.type).toBe('group')
+    expect(group.id).toMatch(/^group-/)
+    // bbox: a=(10,20)+480x320 -> right 490/bottom 340; b=(100,200)+480x320 -> right 580/bottom 520
+    // minX=10 minY=20 maxRight=580 maxBottom=520 -> width=570 height=500
+    expect(group.position).toEqual({ x: 10, y: 20 })
+    expect(group.width).toBe(570)
+    expect(group.height).toBe(500)
+
+    const childA = nodes.find((n) => n.id === a.id)!
+    const childB = nodes.find((n) => n.id === b.id)!
+    expect(childA.parentId).toBe(group.id)
+    expect(childB.parentId).toBe(group.id)
+    expect(childA.extent).toBe('parent')
+    expect(childB.extent).toBe('parent')
+    // posição relativa = posição absoluta original - topo-esquerda do bbox
+    expect(childA.position).toEqual({ x: 0, y: 0 })
+    expect(childB.position).toEqual({ x: 90, y: 180 })
+
+    // React Flow exige o pai ANTES dos filhos no array
+    expect(nodes.indexOf(group)).toBeLessThan(nodes.indexOf(childA))
+    expect(nodes.indexOf(group)).toBeLessThan(nodes.indexOf(childB))
+  })
+
+  it('groupSelected usa ?? 0 para nós sem width/height ao calcular o bbox', () => {
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    useCanvasStore.setState((s) => ({
+      nodes: s.nodes.map((n) => ({ ...n, width: undefined, height: undefined }))
+    }))
+    useCanvasStore.getState().addNoteNode({ x: 50, y: 50 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    expect(() => useCanvasStore.getState().groupSelected()).not.toThrow()
+    const group = useCanvasStore.getState().nodes[0]
+    expect(group.type).toBe('group')
+    // primeiro nó sem width/height conta como 0 -> maxX/maxY vêm só do segundo nó (50,50)+240x180
+    expect(group.width).toBe(290)
+    expect(group.height).toBe(230)
+  })
+
+  it('ungroupSelected desfaz o grupo quando o próprio nó group está selecionado: filhos perdem parentId/extent e voltam à posição absoluta, o group some', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 10, y: 20 })
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 200 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const groupId = useCanvasStore.getState().nodes[0].id
+
+    // Seleciona só o group (como ficou logo após o groupSelected).
+    useCanvasStore.setState((s) => ({
+      nodes: s.nodes.map((n) => ({ ...n, selected: n.id === groupId }))
+    }))
+    useCanvasStore.getState().ungroupSelected()
+
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes.find((n) => n.id === groupId)).toBeUndefined()
+    expect(nodes).toHaveLength(2)
+    const childA = nodes.find((n) => n.id === a.id)!
+    const childB = nodes.find((n) => n.id === b.id)!
+    expect(childA.parentId).toBeUndefined()
+    expect(childB.parentId).toBeUndefined()
+    expect(childA.extent).toBeUndefined()
+    expect(childB.extent).toBeUndefined()
+    expect(childA.position).toEqual({ x: 10, y: 20 })
+    expect(childB.position).toEqual({ x: 100, y: 200 })
+  })
+
+  it('ungroupSelected também funciona quando só um filho (não o group) está selecionado', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 50, y: 50 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const [group, childA] = useCanvasStore.getState().nodes
+
+    // Seleciona só o filho, simulando um clique num nó dentro do grupo (não no header do grupo).
+    useCanvasStore.setState((s) => ({
+      nodes: s.nodes.map((n) => ({ ...n, selected: n.id === childA.id }))
+    }))
+    useCanvasStore.getState().ungroupSelected()
+
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes.find((n) => n.id === group.id)).toBeUndefined()
+    expect(nodes.every((n) => n.parentId === undefined)).toBe(true)
+    expect(nodes.every((n) => n.extent === undefined)).toBe(true)
+  })
+
+  it('ungroupSelected não faz nada (no-op seguro) se nada agrupável estiver selecionado', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const before = useCanvasStore.getState().nodes
+    useCanvasStore.getState().ungroupSelected()
+    expect(useCanvasStore.getState().nodes).toBe(before)
+  })
+
+  it('serialize inclui parentId/extent de um nó agrupado; o próprio group (sem pai) omite os dois (Fase 18 Task 3)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 50, y: 50 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+
+    const snap = useCanvasStore.getState().serialize()
+    const groupSnap = snap.nodes.find((n) => n.type === 'group')!
+    const childSnaps = snap.nodes.filter((n) => n.type === 'terminal')
+    expect(childSnaps).toHaveLength(2)
+    for (const childSnap of childSnaps) {
+      expect(childSnap.parentId).toBe(groupSnap.id)
+      expect(childSnap.extent).toBe('parent')
+    }
+    expect('parentId' in groupSnap).toBe(false)
+    expect('extent' in groupSnap).toBe(false)
+  })
+
+  it('hydrate restaura parentId/extent de um nó a partir do snapshot persistido', () => {
+    useCanvasStore.getState().hydrate({
+      version: 2,
+      nodes: [
+        { id: 'group-1', type: 'group', position: { x: 0, y: 0 }, width: 400, height: 300, data: { name: 'Grupo' } },
+        {
+          id: 'terminal-1',
+          type: 'terminal',
+          position: { x: 10, y: 10 },
+          width: 480,
+          height: 320,
+          data: {},
+          parentId: 'group-1',
+          extent: 'parent'
+        }
+      ],
+      edges: []
+    })
+    const { nodes } = useCanvasStore.getState()
+    const group = nodes.find((n) => n.id === 'group-1')!
+    const child = nodes.find((n) => n.id === 'terminal-1')!
+    expect(group.parentId).toBeUndefined()
+    expect(child.parentId).toBe('group-1')
+    expect(child.extent).toBe('parent')
+  })
+
+  it('grupo sobrevive ao round-trip serialize→hydrate: parentId/extent preservados nos filhos', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 50, y: 50 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const groupId = useCanvasStore.getState().nodes[0].id
+
+    const snap = useCanvasStore.getState().serialize()
+    useCanvasStore.getState().hydrate({ version: 1, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+    useCanvasStore.getState().hydrate(snap)
+
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(3)
+    const children = nodes.filter((n) => n.parentId === groupId)
+    expect(children).toHaveLength(2)
+    children.forEach((c) => expect(c.extent).toBe('parent'))
+  })
 })

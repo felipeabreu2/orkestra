@@ -6,21 +6,23 @@ import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
+import { GroupNode } from './GroupNode'
 import { CommandPalette } from './CommandPalette'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
 
-const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode, portal: PortalFlowNode }
+const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode, portal: PortalFlowNode, group: GroupNode }
 
-// Atalhos de teclado globais (Cmd/Ctrl+K da Fase 12 + foco/zoom/minimap da Fase 18) não podem
-// disparar enquanto o usuário está digitando — nem num input/textarea/select/contentEditable
-// (nome de terminal, nota, campo do palette) nem dentro de um terminal xterm.js (que captura
-// teclado via uma <textarea> escondida — já cairia no primeiro check, mas o closest('.xterm')
-// cobre qualquer outro elemento focável que a lib venha a usar dentro do terminal). Sem isso,
-// por ex. Backspace apagaria o nó do terminal enquanto o usuário só queria apagar um caractere
-// no shell.
+// isTypingTarget guarda os atalhos que SÃO sensíveis a texto (foco/zoom/minimap da Fase 18:
+// Shift+1/2/M) — Cmd/Ctrl+K (Fase 12) e Cmd/Ctrl+G / Cmd/Ctrl+Shift+G (Fase 18 Task 3) são
+// comandos, não texto, e rodam ANTES deste guard (ver handleKeyDown abaixo), então não passam
+// por aqui. Esta função cobre: nem num input/textarea/select/contentEditable (nome de
+// terminal, nota, campo do palette) nem dentro de um terminal xterm.js (que captura teclado via
+// uma <textarea> escondida — já cairia no primeiro check, mas o closest('.xterm') cobre
+// qualquer outro elemento focável que a lib venha a usar dentro do terminal). Sem isso, por ex.
+// Backspace apagaria o nó do terminal enquanto o usuário só queria apagar um caractere no shell.
 function isTypingTarget(e: KeyboardEvent): boolean {
   const target = e.target as HTMLElement | null
   if (target) {
@@ -63,16 +65,30 @@ export function Canvas(): JSX.Element {
   // Atalho global do command palette (Fase 12): Cmd+K no mac, Ctrl+K em win/linux. Compara
   // e.key em minúsculo para não perder o atalho quando o sistema reporta 'K' (ex.: Shift
   // pressionado junto ou layouts que capitalizam com Cmd/Ctrl ativo).
-  // Fase 18: o mesmo handler ganhou os atalhos de foco/zoom/minimap. Usa e.code (não e.key)
-  // para os dígitos porque Shift+1/Shift+2 produz caracteres diferentes por layout de teclado
-  // (ex.: "!"/"@" em US e ABNT2) — e.code é a tecla física, estável entre layouts. Todos
-  // (incluindo o Cmd+K existente) são ignorados via isTypingTarget — ver comentário acima.
+  // Fase 18 Task 1: o mesmo handler ganhou os atalhos de foco/zoom/minimap. Usa e.code (não
+  // e.key) para os dígitos porque Shift+1/Shift+2 produz caracteres diferentes por layout de
+  // teclado (ex.: "!"/"@" em US e ABNT2) — e.code é a tecla física, estável entre layouts.
+  // Fase 18 Task 3: Cmd/Ctrl+G (agrupar) e Cmd/Ctrl+Shift+G (desagrupar) entraram no mesmo
+  // padrão do Cmd+K — comandos, não texto, então rodam ANTES do isTypingTarget guard (ver
+  // comentário na própria função, acima). Só Shift+1/2/M passam pelo guard.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Cmd/Ctrl+K (palette toggle) is a command chord, not text — always works, even while typing.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
+        return
+      }
+      // Cmd/Ctrl+G (agrupar) / Cmd/Ctrl+Shift+G (desagrupar) — Fase 18 Task 3: mesmo raciocínio
+      // do Cmd+K acima (comando, não texto) — roda ANTES do isTypingTarget guard, então
+      // funciona mesmo com um input/terminal focado (ex.: logo após renomear um terminal).
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          useCanvasStore.getState().ungroupSelected()
+        } else {
+          useCanvasStore.getState().groupSelected()
+        }
         return
       }
       // Guard remaining shortcuts (Shift+1/2/M) to prevent them firing while typing.
