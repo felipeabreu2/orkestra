@@ -3,8 +3,9 @@ import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
 import { registerPtyIpc } from './pty/registerPtyIpc'
-import { CanvasPersistence } from './persistence/CanvasPersistence'
 import { registerPersistenceIpc } from './persistence/registerPersistenceIpc'
+import { ProjectManager } from './projects/ProjectManager'
+import { registerProjectIpc } from './projects/registerProjectIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
@@ -174,8 +175,13 @@ app.whenReady().then(async () => {
     (id) => agentBus.track(id),
     (floorId) => floorManager.get(floorId)?.worktreePath
   )
-  const persistence = new CanvasPersistence(join(app.getPath('userData'), 'canvas.json'))
-  registerPersistenceIpc(ipcMain, persistence)
+  // Projetos (Fase 15 Task 2): cada projeto tem seu próprio canvas; bootstrap() cria o índice na
+  // primeira vez (migrando o canvas.json legado single-projeto) e é idempotente depois disso.
+  // persistence:load/save (registerPersistenceIpc) passam a operar sobre o projeto ATIVO.
+  const projectManager = new ProjectManager(app.getPath('userData'))
+  projectManager.bootstrap()
+  registerPersistenceIpc(ipcMain, projectManager)
+  registerProjectIpc(ipcMain, projectManager)
   createWindow()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
   // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver

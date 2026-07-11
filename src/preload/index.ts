@@ -3,6 +3,7 @@ import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Floor } from '../shared/floors'
 import type { Routine } from '../shared/routines'
+import type { Project, ProjectIndex } from '../shared/project'
 
 const api = {
   pty: {
@@ -29,6 +30,17 @@ const api = {
   persistence: {
     load: (): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('persistence:load'),
     save: (snapshot: CanvasSnapshot): void => ipcRenderer.send('persistence:save', snapshot)
+  },
+  // Fase 15 (Task 2): CRUD de projetos (cada um com seu próprio canvas, ver ProjectManager no
+  // main). persistence.load/save acima continuam operando sobre o projeto ATIVO — trocar de
+  // projeto é feito via switch(id), que já devolve o canvas do projeto recém-ativado.
+  projects: {
+    list: (): Promise<ProjectIndex> => ipcRenderer.invoke('projects:list'),
+    create: (name: string): Promise<Project> => ipcRenderer.invoke('projects:create', name),
+    switch: (id: string): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('projects:switch', id),
+    rename: (id: string, name: string): Promise<void> => ipcRenderer.invoke('projects:rename', id, name),
+    remove: (id: string): Promise<{ activeId: string; snapshot: CanvasSnapshot | null }> =>
+      ipcRenderer.invoke('projects:remove', id)
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),
