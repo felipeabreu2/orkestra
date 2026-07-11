@@ -1,0 +1,192 @@
+/* ProjectsSidebar (Fase 15 Task 3): barra fixa à esquerda, full height — brand no topo, lista de
+   projetos rolável no meio, "+ Novo projeto" no rodapé. Self-contained (não depende de
+   panels.css) para manter este componente como uma unidade só, igual pedido no brief. */
+
+.ork-sidebar {
+  width: 210px;
+  flex: 0 0 210px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.ork-sidebar-brand {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ork-sidebar-brand-text {
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ork-sidebar-error {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: var(--err);
+  font-size: 11px;
+  word-break: break-word;
+  border-bottom: 1px solid var(--border);
+}
+
+.ork-sidebar-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ork-sidebar-list::-webkit-scrollbar {
+  width: 10px;
+}
+.ork-sidebar-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ork-sidebar-list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.ork-sidebar-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  background-clip: padding-box;
+}
+
+.ork-sidebar-empty {
+  padding: 16px 8px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.ork-sidebar-project {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 8px 7px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.ork-sidebar-project:hover {
+  background: var(--bg-2);
+}
+/* Projeto ativo: fundo fraco do acento + barra de acento à esquerda, mesmo idioma visual do
+   item ativo no CommandPalette (ork-palette-item--active). */
+.ork-sidebar-project--active {
+  background: var(--accent-weak);
+}
+.ork-sidebar-project--active:hover {
+  background: var(--accent-weak);
+}
+.ork-sidebar-project--active::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.ork-sidebar-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.ork-sidebar-rename-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--bg-0);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: 12px;
+  padding: 3px 6px;
+  outline: none;
+}
+
+.ork-sidebar-remove {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--text-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+.ork-sidebar-remove:hover {
+  color: var(--err);
+  border-color: var(--err);
+  background: var(--bg-1);
+}
+.ork-sidebar-remove--armed {
+  width: auto;
+  padding: 0 6px;
+  color: var(--err);
+  border-color: var(--err);
+}
+
+.ork-sidebar-footer {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.ork-sidebar-new-btn {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--accent);
+  /* --accent-text (quase-preto) em vez de --text-1: mesma correção de contraste do
+     ork-panel-primary-btn (Fase 13 Task 3, a11y) — --text-1 sobre --accent sólido fica ~3.2:1. */
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    filter var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+.ork-sidebar-new-btn:hover {
+  filter: brightness(1.18);
+}
+.ork-sidebar-new-btn:active {
+  transform: translateY(1px);
+}

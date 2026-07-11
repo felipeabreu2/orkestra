@@ -7,7 +7,6 @@ import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
 import { CommandPalette } from './CommandPalette'
-import { Logo } from './Logo'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
@@ -42,7 +41,10 @@ export function Canvas(): JSX.Element {
   }, [])
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+    // width/height:100% (não 100vw/100vh, Fase 15 Task 3): este <div> agora preenche o wrapper
+    // flex:1 do App.tsx, ao lado da ProjectsSidebar — 100vw/100vh tomaria a viewport inteira e
+    // cobriria a sidebar.
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div className="ork-toolbar">
         {PRESETS.map((p) => (
           <button
@@ -61,12 +63,8 @@ export function Canvas(): JSX.Element {
           + Portal
         </button>
       </div>
-      {/* Wordmark: decorative brand lockup, bottom-left. `pointer-events: none` (see Canvas.css)
-          keeps it clear of canvas panning/clicks; `aria-hidden` keeps it out of screen readers. */}
-      <div className="ork-wordmark" aria-hidden="true">
-        <Logo size={18} />
-        <span className="ork-wordmark-text">Orkestra</span>
-      </div>
+      {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
+          (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       <ReactFlow
         nodes={nodes}
