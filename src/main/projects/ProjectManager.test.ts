@@ -100,6 +100,27 @@ describe('ProjectManager', () => {
     expect(pm.getActive()?.cwd).toBe('/Users/x/outro')
   })
 
+  // Fase 18 (Task 4): ícone (emoji) por projeto, mesmo formato read-modify-write de rename()/
+  // setCwd() — setIcon grava e list()/getActive() refletem; id desconhecido é no-op (não cria
+  // projeto fantasma nem afeta os demais).
+  it('setIcon grava o emoji e list()/getActive() refletem; id desconhecido é no-op', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const a = pm.list().activeId
+    const b = pm.create('B')
+    expect(pm.list().projects.find((x) => x.id === b.id)?.icon).toBeUndefined() // sem icon até setIcon
+
+    pm.setIcon(b.id, '🚀')
+    expect(pm.list().projects.find((x) => x.id === b.id)?.icon).toBe('🚀')
+
+    pm.switch(b.id)
+    expect(pm.getActive()?.icon).toBe('🚀')
+
+    pm.setIcon('id-que-nao-existe', '📦')
+    expect(pm.list().projects).toHaveLength(2) // no-op: não cria projeto novo
+    expect(pm.list().projects.find((x) => x.id === a)?.icon).toBeUndefined() // não afetado
+    expect(pm.list().projects.find((x) => x.id === b.id)?.icon).toBe('🚀') // não afetado
+  })
+
   it('remove de um projeto NÃO ativo mantém activeId e o canvas do ativo intactos', () => {
     const pm = new ProjectManager(dir); pm.bootstrap()
     const activeId = pm.list().activeId

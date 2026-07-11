@@ -146,6 +146,17 @@ export class ProjectManager {
     this.writeIndex(idx)
   }
 
+  // Fase 18 (Task 4): ícone (emoji) escolhido no seletor da sidebar. Mesmo formato read-modify-
+  // write de rename()/setCwd() — no-op silencioso se o id não existir (nenhuma ação de
+  // recuperação melhor no chamador do que simplesmente ignorar).
+  setIcon(id: string, icon: string): void {
+    const idx = this.list()
+    const project = idx.projects.find((p) => p.id === id)
+    if (!project) return
+    project.icon = icon
+    this.writeIndex(idx)
+  }
+
   remove(id: string): { activeId: string; snapshot: CanvasSnapshot | null } {
     const idx = this.list()
     idx.projects = idx.projects.filter((p) => p.id !== id)

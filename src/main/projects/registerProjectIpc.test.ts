@@ -31,7 +31,9 @@ function fakeMgr() {
     saveCanvas: vi.fn((_id: string, _snapshot: CanvasSnapshot): void => {}),
     // Fase 17 (Task 1): cwd do projeto.
     getActive: vi.fn((): Project | undefined => fakeIndex().projects[0]),
-    setCwd: vi.fn((_id: string, _cwd: string): void => {})
+    setCwd: vi.fn((_id: string, _cwd: string): void => {}),
+    // Fase 18 (Task 4): ícone (emoji) do projeto.
+    setIcon: vi.fn((_id: string, _icon: string): void => {})
   }
 }
 
@@ -104,6 +106,18 @@ describe('registerProjectIpc', () => {
     const result = await ipc.handlers.get('projects:pickDirectory')!({})
 
     expect(result).toBeNull()
+  })
+
+  // Fase 18 (Task 4): ícone (emoji) por projeto — a sidebar chama isso a partir do seletor
+  // inline, tanto pelas opções curadas quanto pelo input de texto livre.
+  it('projects:setIcon chama pm.setIcon(id, icon)', async () => {
+    const mgr = fakeMgr()
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+
+    await ipc.handlers.get('projects:setIcon')!({}, 'p1', '🚀')
+
+    expect(mgr.setIcon).toHaveBeenCalledWith('p1', '🚀')
   })
 
   it('projects:switch chama pm.switch(id) e retorna o canvas do projeto', async () => {

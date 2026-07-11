@@ -26,6 +26,9 @@ export function registerProjectIpc(ipcMain: IpcMain, pm: ProjectManager, pickDir
   )
   // Fase 17 (Task 1): troca a pasta de um projeto já existente (ex.: botão "pasta" na sidebar).
   ipcMain.handle('projects:setCwd', (_e, id: string, cwd: string) => pm.setCwd(id, cwd))
+  // Fase 18 (Task 4): troca o ícone (emoji) de um projeto já existente (seletor inline na
+  // sidebar — lista curada + input de texto livre).
+  ipcMain.handle('projects:setIcon', (_e, id: string, icon: string) => pm.setIcon(id, icon))
   // Fase 17 (Task 1): abre o diálogo de pasta -> string | null. Sem pickDirectory injetado
   // (não deveria acontecer em produção, já que main/index.ts sempre passa um), retorna null.
   ipcMain.handle('projects:pickDirectory', async () => (pickDirectory ? await pickDirectory() : null))

@@ -9,6 +9,10 @@ export interface Project {
   // seguem abrindo terminais no HOME (fallback já existente em PtyManager.spawn). Resolvido
   // late-bound no spawn via ProjectManager.getActive(), não gravado em nenhum outro lugar.
   cwd?: string
+  // Fase 18 (Task 4): ícone (emoji) do projeto, escolhido via o seletor da sidebar. Opcional —
+  // projetos existentes (criados antes desta task) seguem sem `icon`; a sidebar cai num
+  // fallback visual (inicial do nome) quando ausente.
+  icon?: string
 }
 
 export interface ProjectIndex {

@@ -13,12 +13,40 @@ import './ProjectsSidebar.css'
 // Janela de confirmação inline do "Remover" (Fase 13).
 const REMOVE_CONFIRM_MS = 3000
 
+// Fase 18 (Task 4): chave de localStorage p/ persistir o estado colapsado da sidebar entre
+// sessões — só o boolean; a lista de projetos em si continua vindo do main (projects:list).
+const SIDEBAR_COLLAPSED_KEY = 'orkestra.sidebar.collapsed'
+
+// Fase 18 (Task 4): conjunto curado e pequeno de emojis comuns pro seletor de ícone — além
+// destes, o input de texto livre aceita qualquer emoji colado.
+const ICON_CHOICES = ['📁', '💻', '🌐', '🧪', '🚀', '📦', '🔧', '🎨', '📝', '⚙️']
+
 // Fase 17 (Task 2): último segmento não-vazio do path (funciona pra POSIX "/a/b/" e Windows
 // "C:\\a\\b\\") — só para exibição discreta na linha; o path completo (usado no title e passado
 // pra setCwd) permanece intacto em p.cwd.
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] ?? path
+}
+
+// Fase 18 (Task 4): fallback visual quando o projeto não tem `icon` — 1ª letra do nome (maiúscula)
+// num chip pequeno, tanto na linha expandida quanto no trilho colapsado.
+function initialOf(name: string): string {
+  const trimmed = name.trim()
+  return trimmed ? trimmed[0]!.toUpperCase() : '?'
+}
+
+// Conteúdo do "chip" de ícone — emoji do projeto se houver, senão a inicial do nome. Compartilhado
+// entre a linha expandida (botão clicável, abre o seletor) e o item do trilho colapsado (só
+// exibição + switch, sem seletor).
+function ProjectIconGlyph({ p }: { p: Project }): JSX.Element {
+  return p.icon ? (
+    <span aria-hidden="true">{p.icon}</span>
+  ) : (
+    <span className="ork-sidebar-icon-fallback" aria-hidden="true">
+      {initialOf(p.name)}
+    </span>
+  )
 }
 
 export function ProjectsSidebar(): JSX.Element {
@@ -37,6 +65,21 @@ export function ProjectsSidebar(): JSX.Element {
   // ativa dispara dois onClick antes do onDoubleClick) — sem isso, dois switchTo() em voo
   // fariam flush/hydrate fora de ordem.
   const switchingRef = useRef(false)
+  // Fase 18 (Task 4): estado colapsado da sidebar — lido 1x na montagem (lazy initializer) e
+  // persistido em localStorage a cada toggle. localStorage pode não existir (ex.: alguma sandbox
+  // de teste/preview) — try/catch com fallback pra "expandido" em vez de deixar o componente
+  // quebrar por causa de uma preferência puramente cosmética.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+  // Id do projeto com o seletor de ícone aberto (null = nenhum) — só existe na sidebar expandida;
+  // colapsar fecha implicitamente (o trilho não renderiza o seletor).
+  const [iconPickerId, setIconPickerId] = useState<string | null>(null)
+  const [customIcon, setCustomIcon] = useState<string>('')
 
   const refresh = async (): Promise<void> => {
     try {
@@ -73,6 +116,19 @@ export function ProjectsSidebar(): JSX.Element {
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [confirmingId])
+
+  // Mesmo padrão do confirmingId acima: clicar fora do seletor de ícone aberto (fora do
+  // ork-sidebar-icon-wrap daquele projeto) fecha o popover sem trocar o ícone.
+  useEffect(() => {
+    if (!iconPickerId) return undefined
+    const handlePointerDown = (e: MouseEvent): void => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest(`[data-icon-picker-id="${iconPickerId}"]`)) return
+      setIconPickerId(null)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [iconPickerId])
 
   // Limpa o timer pendente se o componente desmontar com uma confirmação em aberto.
   useEffect(() => cancelConfirmTimer, [])
@@ -158,6 +214,44 @@ export function ProjectsSidebar(): JSX.Element {
     }
   }
 
+  // Fase 18 (Task 4): toggle do colapso + persistência em localStorage. Puramente cosmético —
+  // uma falha ao gravar (localStorage indisponível) não deve impedir o toggle de funcionar em
+  // memória pro resto da sessão.
+  const toggleCollapsed = (): void => {
+    setCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next))
+      } catch {
+        /* localStorage indisponível — segue só em memória */
+      }
+      return next
+    })
+  }
+
+  // Abre/fecha o seletor de ícone de um projeto; abrir o de outro fecha o anterior (um só
+  // iconPickerId). Reabrir sempre limpa o rascunho do input de texto livre.
+  const toggleIconPicker = (id: string): void => {
+    setIconPickerId((cur) => (cur === id ? null : id))
+    setCustomIcon('')
+  }
+
+  // Núcleo do seletor: usado tanto pelos botões da lista curada (ICON_CHOICES) quanto pelo
+  // input de texto livre — troca o ícone e re-lista; erro de IPC/disco vira mensagem amigável
+  // (mesmo padrão try/catch de todo handler desta sidebar) em vez de propagar.
+  const handlePickIcon = async (id: string, icon: string): Promise<void> => {
+    const trimmed = icon.trim()
+    if (!trimmed) return
+    try {
+      await window.orkestra.projects.setIcon(id, trimmed)
+      setIconPickerId(null)
+      setCustomIcon('')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const startRename = (p: Project): void => {
     cancelConfirmTimer()
     setConfirmingId(null)
@@ -224,93 +318,202 @@ export function ProjectsSidebar(): JSX.Element {
   }
 
   return (
-    <div className="ork-sidebar">
+    <div className={`ork-sidebar${collapsed ? ' ork-sidebar--collapsed' : ''}`}>
       <div className="ork-sidebar-brand">
-        <Logo size={18} />
-        <span className="ork-sidebar-brand-text">Orkestra</span>
-      </div>
-      {error && <div className="ork-sidebar-error">{error}</div>}
-      <div className="ork-sidebar-list">
-        {projects.length === 0 && !error && <div className="ork-sidebar-empty">Carregando projetos…</div>}
-        {projects.map((p) => (
-          <div
-            key={p.id}
-            className={`ork-sidebar-project${p.id === activeId ? ' ork-sidebar-project--active' : ''}`}
-            onClick={() => handleRowClick(p.id)}
-            onDoubleClick={() => startRename(p)}
-            title={p.cwd}
-          >
-            <div className="ork-sidebar-project-main">
-              {renamingId === p.id ? (
-                <input
-                  ref={renameInputRef}
-                  className="ork-sidebar-rename-input"
-                  value={renameValue}
-                  onClick={(e) => e.stopPropagation()}
-                  onDoubleClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => void commitRename()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      void commitRename()
-                    } else if (e.key === 'Escape') {
-                      e.preventDefault()
-                      setRenamingId(null)
-                    }
-                  }}
-                />
-              ) : (
-                <>
-                  <span className="ork-sidebar-project-name" title={p.name}>
-                    {p.name}
-                  </span>
-                  {/* Fase 17 (Task 2): basename discreto da pasta vinculada — path completo já
-                      está no title da linha (acima). Sem cwd: rótulo fraco convidando a usar o
-                      botão "pasta" ao lado. */}
-                  {p.cwd ? (
-                    <span className="ork-sidebar-project-cwd">{basename(p.cwd)}</span>
-                  ) : (
-                    <span className="ork-sidebar-project-cwd ork-sidebar-project-cwd--empty">sem pasta</span>
-                  )}
-                </>
-              )}
-            </div>
-            <div className="ork-sidebar-project-actions">
-              <button
-                className="ork-sidebar-folder"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void handleSetCwd(p.id)
-                }}
-                onDoubleClick={(e) => e.stopPropagation()}
-                aria-label={`Definir pasta de ${p.name}`}
-                title="Definir pasta do projeto"
-              >
-                📁
-              </button>
-              <button
-                className={`ork-sidebar-remove${confirmingId === p.id ? ' ork-sidebar-remove--armed' : ''}`}
-                data-remove-id={p.id}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleRemoveClick(p.id)
-                }}
-                onDoubleClick={(e) => e.stopPropagation()}
-                aria-label={confirmingId === p.id ? `Confirmar remoção de ${p.name}` : `Remover ${p.name}`}
-                title={confirmingId === p.id ? 'Clique novamente para confirmar' : 'Remover projeto'}
-              >
-                {confirmingId === p.id ? 'Confirmar?' : '✕'}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="ork-sidebar-footer">
-        <button className="ork-sidebar-new-btn" onClick={() => void handleCreate()}>
-          + Novo projeto
+        {!collapsed && (
+          <>
+            <Logo size={18} />
+            <span className="ork-sidebar-brand-text">Orkestra</span>
+          </>
+        )}
+        {/* Fase 18 (Task 4): toggle sempre visível (expandido ou colapsado) — o estado persiste
+            em localStorage (SIDEBAR_COLLAPSED_KEY), sobrevive a reload/restart do app. */}
+        <button
+          className="ork-sidebar-collapse-btn"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+          title={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+        >
+          {collapsed ? '»' : '«'}
         </button>
       </div>
+      {!collapsed && error && <div className="ork-sidebar-error">{error}</div>}
+      {collapsed ? (
+        // Fase 18 (Task 4): trilho estreito (~52px) — só ícone por projeto (nome no title/hover),
+        // ativo destacado, e um "+" compacto. Clicar reusa handleRowClick (mesmo switchTo() da
+        // sidebar expandida); rename/pasta/remover exigem o modo expandido.
+        <div className="ork-sidebar-rail">
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`ork-sidebar-rail-item${p.id === activeId ? ' ork-sidebar-rail-item--active' : ''}`}
+              onClick={() => handleRowClick(p.id)}
+              title={p.name}
+              aria-label={p.name}
+            >
+              <ProjectIconGlyph p={p} />
+            </button>
+          ))}
+          <button
+            type="button"
+            className="ork-sidebar-rail-add"
+            onClick={() => void handleCreate()}
+            title="Novo projeto"
+            aria-label="Novo projeto"
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="ork-sidebar-list">
+            {projects.length === 0 && !error && <div className="ork-sidebar-empty">Carregando projetos…</div>}
+            {projects.map((p) => (
+              <div
+                key={p.id}
+                className={`ork-sidebar-project${p.id === activeId ? ' ork-sidebar-project--active' : ''}`}
+                onClick={() => handleRowClick(p.id)}
+                onDoubleClick={() => startRename(p)}
+                title={p.cwd}
+              >
+                {/* Fase 18 (Task 4): ícone do projeto — clicar abre o seletor inline (lista curada
+                    + input livre); nunca dispara handleRowClick/startRename da linha (stopPropagation
+                    nos handlers, como o botão de pasta/remover já fazem). */}
+                <div className="ork-sidebar-icon-wrap" data-icon-picker-id={p.id}>
+                  <button
+                    type="button"
+                    className="ork-sidebar-icon"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleIconPicker(p.id)
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    aria-label={`Escolher ícone de ${p.name}`}
+                    title="Escolher ícone"
+                  >
+                    <ProjectIconGlyph p={p} />
+                  </button>
+                  {iconPickerId === p.id && (
+                    <div
+                      className="ork-sidebar-icon-picker"
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="ork-sidebar-icon-picker-row">
+                        {ICON_CHOICES.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="ork-sidebar-icon-choice"
+                            onClick={() => void handlePickIcon(p.id, emoji)}
+                            aria-label={`Usar ${emoji} como ícone`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                      <form
+                        className="ork-sidebar-icon-picker-form"
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          void handlePickIcon(p.id, customIcon)
+                        }}
+                      >
+                        <input
+                          className="ork-sidebar-icon-picker-input"
+                          value={customIcon}
+                          onChange={(e) => setCustomIcon(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              e.preventDefault()
+                              setIconPickerId(null)
+                            }
+                          }}
+                          placeholder="Colar emoji…"
+                          maxLength={8}
+                          aria-label="Emoji personalizado"
+                        />
+                        <button type="submit" className="ork-sidebar-icon-picker-confirm" aria-label="Confirmar ícone">
+                          ✓
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+                <div className="ork-sidebar-project-main">
+                  {renamingId === p.id ? (
+                    <input
+                      ref={renameInputRef}
+                      className="ork-sidebar-rename-input"
+                      value={renameValue}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => void commitRename()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void commitRename()
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          setRenamingId(null)
+                        }
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <span className="ork-sidebar-project-name" title={p.name}>
+                        {p.name}
+                      </span>
+                      {/* Fase 17 (Task 2): basename discreto da pasta vinculada — path completo já
+                          está no title da linha (acima). Sem cwd: rótulo fraco convidando a usar o
+                          botão "pasta" ao lado. */}
+                      {p.cwd ? (
+                        <span className="ork-sidebar-project-cwd">{basename(p.cwd)}</span>
+                      ) : (
+                        <span className="ork-sidebar-project-cwd ork-sidebar-project-cwd--empty">sem pasta</span>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="ork-sidebar-project-actions">
+                  <button
+                    className="ork-sidebar-folder"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleSetCwd(p.id)
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    aria-label={`Definir pasta de ${p.name}`}
+                    title="Definir pasta do projeto"
+                  >
+                    📁
+                  </button>
+                  <button
+                    className={`ork-sidebar-remove${confirmingId === p.id ? ' ork-sidebar-remove--armed' : ''}`}
+                    data-remove-id={p.id}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleRemoveClick(p.id)
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    aria-label={confirmingId === p.id ? `Confirmar remoção de ${p.name}` : `Remover ${p.name}`}
+                    title={confirmingId === p.id ? 'Clique novamente para confirmar' : 'Remover projeto'}
+                  >
+                    {confirmingId === p.id ? 'Confirmar?' : '✕'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="ork-sidebar-footer">
+            <button className="ork-sidebar-new-btn" onClick={() => void handleCreate()}>
+              + Novo projeto
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

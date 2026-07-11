@@ -48,6 +48,9 @@ const api = {
       ipcRenderer.invoke('projects:saveCanvas', id, snapshot),
     // Fase 17 (Task 1): troca a pasta de um projeto já existente (ex.: botão "pasta" na sidebar).
     setCwd: (id: string, cwd: string): Promise<void> => ipcRenderer.invoke('projects:setCwd', id, cwd),
+    // Fase 18 (Task 4): troca o ícone (emoji) de um projeto já existente (seletor inline na
+    // sidebar — lista curada + input de texto livre).
+    setIcon: (id: string, icon: string): Promise<void> => ipcRenderer.invoke('projects:setIcon', id, icon),
     // Abre o diálogo nativo de escolha de pasta (roda no main) -> path escolhido, ou null se o
     // usuário cancelar. Renderer nunca toca fs/dialog diretamente.
     pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('projects:pickDirectory')
