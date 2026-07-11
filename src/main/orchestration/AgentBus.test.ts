@@ -148,7 +148,7 @@ describe('AgentBus.waitForIdle', () => {
     await expect(p).resolves.toBe('ab')
   })
 
-  // Fix 4 (bug real, Fase 14 Task 1): a versão anterior chamava resetIdleTimer() na configuração
+  // Fix 5 (bug real, Fase 14 Task 1): a versão anterior chamava resetIdleTimer() na configuração
   // (antes de qualquer onData), então o silêncio ANTES do primeiro token do agente já contava
   // como ociosidade. Um agente de IA real que delibera por mais de idleMs (default 1500ms) antes
   // de imprimir o primeiro token fazia waitForIdle resolver cedo demais com delta vazio/parcial —

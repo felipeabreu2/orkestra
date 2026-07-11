@@ -43,7 +43,7 @@ export class AgentBus {
   // nova real. Correção: o próprio `waitForIdle` acumula seu delta (`delta`) dentro do callback
   // temporário de `onData`, independente do buffer compartilhado — imune à truncagem de MAX.
   //
-  // Fix 4 (bug de resolução prematura corrigido): a versão anterior chamava resetIdleTimer()
+  // Fix 5 (bug de resolução prematura corrigido): a versão anterior chamava resetIdleTimer()
   // já na configuração, antes de qualquer onData — então o silêncio ANTES do primeiro token do
   // agente contava como ociosidade. Um agente de IA real que delibera por mais de idleMs
   // (default 1500ms) antes de imprimir o primeiro token fazia waitForIdle resolver cedo demais
