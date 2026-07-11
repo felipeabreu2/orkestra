@@ -13,6 +13,14 @@ import './ProjectsSidebar.css'
 // Janela de confirmação inline do "Remover" (Fase 13).
 const REMOVE_CONFIRM_MS = 3000
 
+// Fase 17 (Task 2): último segmento não-vazio do path (funciona pra POSIX "/a/b/" e Windows
+// "C:\\a\\b\\") — só para exibição discreta na linha; o path completo (usado no title e passado
+// pra setCwd) permanece intacto em p.cwd.
+function basename(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? path
+}
+
 export function ProjectsSidebar(): JSX.Element {
   const [projects, setProjects] = useState<Project[]>([])
   const [activeId, setActiveId] = useState<string>('')
@@ -125,9 +133,26 @@ export function ProjectsSidebar(): JSX.Element {
     const name = window.prompt('Nome do projeto:')
     if (!name || !name.trim()) return
     try {
-      const project = await window.orkestra.projects.create(name.trim())
+      // Fase 17 (Task 2): abre o diálogo nativo de pasta antes de criar. Cancelar (pickDirectory
+      // devolve null) NÃO aborta a criação — o projeto nasce sem cwd e os terminais caem no
+      // fallback HOME já existente em PtyManager.spawn (ver ProjectManager.getActive().cwd).
+      const cwd = await window.orkestra.projects.pickDirectory()
+      const project = await window.orkestra.projects.create(name.trim(), cwd ?? undefined)
       await refresh()
       await switchTo(project.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Fase 17 (Task 2): troca a pasta de um projeto já existente via o botão "pasta" da linha.
+  // Cancelar o diálogo (null) é no-op — não mexe na pasta atual do projeto.
+  const handleSetCwd = async (id: string): Promise<void> => {
+    try {
+      const cwd = await window.orkestra.projects.pickDirectory()
+      if (!cwd) return
+      await window.orkestra.projects.setCwd(id, cwd)
+      await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -213,44 +238,71 @@ export function ProjectsSidebar(): JSX.Element {
             className={`ork-sidebar-project${p.id === activeId ? ' ork-sidebar-project--active' : ''}`}
             onClick={() => handleRowClick(p.id)}
             onDoubleClick={() => startRename(p)}
+            title={p.cwd}
           >
-            {renamingId === p.id ? (
-              <input
-                ref={renameInputRef}
-                className="ork-sidebar-rename-input"
-                value={renameValue}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={() => void commitRename()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void commitRename()
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    setRenamingId(null)
-                  }
+            <div className="ork-sidebar-project-main">
+              {renamingId === p.id ? (
+                <input
+                  ref={renameInputRef}
+                  className="ork-sidebar-rename-input"
+                  value={renameValue}
+                  onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => void commitRename()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void commitRename()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setRenamingId(null)
+                    }
+                  }}
+                />
+              ) : (
+                <>
+                  <span className="ork-sidebar-project-name" title={p.name}>
+                    {p.name}
+                  </span>
+                  {/* Fase 17 (Task 2): basename discreto da pasta vinculada — path completo já
+                      está no title da linha (acima). Sem cwd: rótulo fraco convidando a usar o
+                      botão "pasta" ao lado. */}
+                  {p.cwd ? (
+                    <span className="ork-sidebar-project-cwd">{basename(p.cwd)}</span>
+                  ) : (
+                    <span className="ork-sidebar-project-cwd ork-sidebar-project-cwd--empty">sem pasta</span>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="ork-sidebar-project-actions">
+              <button
+                className="ork-sidebar-folder"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleSetCwd(p.id)
                 }}
-              />
-            ) : (
-              <span className="ork-sidebar-project-name" title={p.name}>
-                {p.name}
-              </span>
-            )}
-            <button
-              className={`ork-sidebar-remove${confirmingId === p.id ? ' ork-sidebar-remove--armed' : ''}`}
-              data-remove-id={p.id}
-              onClick={(e) => {
-                e.stopPropagation()
-                handleRemoveClick(p.id)
-              }}
-              onDoubleClick={(e) => e.stopPropagation()}
-              aria-label={confirmingId === p.id ? `Confirmar remoção de ${p.name}` : `Remover ${p.name}`}
-              title={confirmingId === p.id ? 'Clique novamente para confirmar' : 'Remover projeto'}
-            >
-              {confirmingId === p.id ? 'Confirmar?' : '✕'}
-            </button>
+                onDoubleClick={(e) => e.stopPropagation()}
+                aria-label={`Definir pasta de ${p.name}`}
+                title="Definir pasta do projeto"
+              >
+                📁
+              </button>
+              <button
+                className={`ork-sidebar-remove${confirmingId === p.id ? ' ork-sidebar-remove--armed' : ''}`}
+                data-remove-id={p.id}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleRemoveClick(p.id)
+                }}
+                onDoubleClick={(e) => e.stopPropagation()}
+                aria-label={confirmingId === p.id ? `Confirmar remoção de ${p.name}` : `Remover ${p.name}`}
+                title={confirmingId === p.id ? 'Clique novamente para confirmar' : 'Remover projeto'}
+              >
+                {confirmingId === p.id ? 'Confirmar?' : '✕'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

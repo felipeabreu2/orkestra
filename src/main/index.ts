@@ -142,7 +142,14 @@ app.whenReady().then(async () => {
   // Fase 17 (Task 1): pickDirectory real — diálogo nativo do Electron (só existe aqui no main;
   // registerProjectIpc não importa `dialog` para continuar testável com um fake).
   registerProjectIpc(ipcMain, projectManager, async () => {
-    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    // Fase 17 (Task 2, polish cosmético): passa mainWindow como dono do diálogo quando ele já
+    // existe (sempre existe em uso normal, já que este callback só roda a partir de um clique na
+    // UI, depois de createWindow() abaixo) — no macOS isso faz o diálogo abrir como sheet anexado
+    // à janela em vez de solto. mainWindow é `let` nullable no escopo do módulo; guard evita
+    // passar null pro overload que exige BrowserWindow.
+    const r = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
   createWindow()
