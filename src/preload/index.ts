@@ -40,7 +40,14 @@ const api = {
     switch: (id: string): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('projects:switch', id),
     rename: (id: string, name: string): Promise<void> => ipcRenderer.invoke('projects:rename', id, name),
     remove: (id: string): Promise<{ activeId: string; snapshot: CanvasSnapshot | null }> =>
-      ipcRenderer.invoke('projects:remove', id)
+      ipcRenderer.invoke('projects:remove', id),
+    // Fase 15 (Task 3): flush explícito por id (awaitable) — usado por ProjectsSidebar.switchTo
+    // para salvar o canvas do projeto que está SAINDO por id, antes de chamar switch(). Ao
+    // contrário de persistence.save (fire-and-forget, sempre mira o projeto ativo do momento em
+    // que o handler roda), este grava sempre no projeto do `id` passado, então não há dependência
+    // de ordem entre o flush e a troca do ativo.
+    saveCanvas: (id: string, snapshot: CanvasSnapshot): Promise<void> =>
+      ipcRenderer.invoke('projects:saveCanvas', id, snapshot)
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),

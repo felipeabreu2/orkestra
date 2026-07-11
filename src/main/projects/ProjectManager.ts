@@ -159,4 +159,13 @@ export class ProjectManager {
     if (!idx.activeId) return
     this.writeCanvas(idx.activeId, snapshot)
   }
+
+  // Fase 15 (Task 3): grava o canvas de um projeto por id EXPLÍCITO, independente de qual projeto
+  // está ativo. Existe para o flush da troca de projeto (ProjectsSidebar.switchTo): o renderer
+  // precisa salvar o canvas do projeto que está SAINDO por id, sem depender da ordem entre esse
+  // flush e a mudança do ativo — diferente de saveActiveCanvas, que sempre mira o ativo do
+  // momento em que roda.
+  saveCanvas(id: string, snapshot: CanvasSnapshot): void {
+    this.writeCanvas(id, snapshot)
+  }
 }

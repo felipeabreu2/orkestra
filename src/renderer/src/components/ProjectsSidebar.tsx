@@ -75,16 +75,20 @@ export function ProjectsSidebar(): JSX.Element {
   }, [renamingId])
 
   // Núcleo compartilhado por clique-na-linha e por "+ Novo projeto": salva (flush) o canvas do
-  // projeto ainda ativo, troca o ativo no main, e hidrata o canvas do projeto recém-ativado.
-  // Ordem importa: o flush precisa acontecer ANTES do switch (window.orkestra.projects.switch
-  // já muda o ativo no main), senão o serialize() do canvas atual seria salvo no arquivo do
-  // projeto NOVO em vez do antigo. hydrate() desmonta os nós antigos (PTYs morrem) e monta os
-  // novos — intencional (ver notas de risco do brief).
+  // projeto que está SAINDO (o antigo) por id EXPLÍCITO e aguarda essa gravação terminar, só
+  // então troca o ativo no main e hidrata o canvas do projeto recém-ativado. saveCanvas(activeId,
+  // …) grava sempre no arquivo do projeto `activeId` (o que está sendo deixado), então isso não
+  // depende de ordem entre o flush e o switch — ao contrário do antigo persistence.save
+  // fire-and-forget, que só gravava no projeto certo porque o handler roda ANTES do switch mudar
+  // o ativo no main (verdade hoje pq IPC é FIFO e o fs do ProjectManager é síncrono, mas um futuro
+  // refactor pra fs.promises poderia inverter essa ordem e gravar o canvas antigo por cima do
+  // projeto novo — corrupção silenciosa entre projetos). hydrate() desmonta os nós antigos (PTYs
+  // morrem) e monta os novos — intencional (ver notas de risco do brief).
   const switchTo = async (id: string): Promise<void> => {
     if (switchingRef.current) return
     switchingRef.current = true
     try {
-      window.orkestra.persistence.save(useCanvasStore.getState().serialize())
+      await window.orkestra.projects.saveCanvas(activeId, useCanvasStore.getState().serialize())
       const snap = await window.orkestra.projects.switch(id)
       useCanvasStore.getState().hydrate(snap ?? { version: 2, nodes: [], edges: [] })
       setActiveId(id)

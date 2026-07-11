@@ -64,4 +64,42 @@ describe('ProjectManager', () => {
     expect(snap).toBeNull()
     expect(pm.list().activeId).toBe(first)
   })
+
+  // Fase 15 (Task 3): saveCanvas grava por id EXPLÍCITO — independe de qual projeto está ativo.
+  // É o que permite ao renderer fazer flush do projeto que está SAINDO (o antigo) sem depender de
+  // ordem entre o flush e a troca do ativo (ver switchTo em ProjectsSidebar.tsx).
+  it('saveCanvas grava no projeto pelo id explícito (não no ativo) e não afeta o canvas do projeto ativo', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const activeId = pm.list().activeId
+    const b = pm.create('B')
+    pm.saveActiveCanvas({ version: 2, nodes: [{ id: 'active-node' } as never], edges: [] })
+
+    pm.saveCanvas(b.id, { version: 2, nodes: [{ id: 'b-node' } as never], edges: [] })
+
+    // não trocou o ativo nem tocou no canvas dele
+    expect(pm.list().activeId).toBe(activeId)
+    expect(pm.loadActiveCanvas()?.nodes.map((n) => n.id)).toEqual(['active-node'])
+
+    // o projeto B recebeu o snapshot — só aparece ao trocar pra ele
+    const snap = pm.switch(b.id)
+    expect(snap?.nodes.map((n) => n.id)).toEqual(['b-node'])
+  })
+
+  // Trava o invariante do qual o remove-guard do renderer depende (ProjectsSidebar.handleRemove só
+  // re-hidrata quando o activeId de fato muda): remover um projeto que NÃO é o ativo não pode
+  // mexer nem no activeId nem no canvas do projeto que continua ativo.
+  it('remove de um projeto NÃO ativo mantém activeId e o canvas do ativo intactos', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const activeId = pm.list().activeId
+    const b = pm.create('B')
+    pm.saveActiveCanvas({ version: 2, nodes: [{ id: 'active-node' } as never], edges: [] })
+
+    const r = pm.remove(b.id) // remove o NÃO ativo
+
+    expect(r.activeId).toBe(activeId)
+    expect(pm.list().activeId).toBe(activeId)
+    expect(pm.list().projects.some((x) => x.id === b.id)).toBe(false)
+    expect(pm.loadActiveCanvas()?.nodes.map((n) => n.id)).toEqual(['active-node'])
+    expect(r.snapshot?.nodes.map((n) => n.id)).toEqual(['active-node'])
+  })
 })

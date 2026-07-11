@@ -28,7 +28,8 @@ function fakeMgr() {
     rename: vi.fn((_id: string, _name: string): void => {}),
     remove: vi.fn((_id: string) => ({ activeId: 'p1', snapshot: null })),
     loadActiveCanvas: vi.fn((): CanvasSnapshot | null => null),
-    saveActiveCanvas: vi.fn()
+    saveActiveCanvas: vi.fn(),
+    saveCanvas: vi.fn((_id: string, _snapshot: CanvasSnapshot): void => {})
   }
 }
 
@@ -85,5 +86,19 @@ describe('registerProjectIpc', () => {
 
     expect(mgr.remove).toHaveBeenCalledWith('p1')
     expect(result).toEqual({ activeId: 'p1', snapshot: null })
+  })
+
+  // Fase 15 (Task 3): flush explícito por id na troca de projeto — precisa ser awaitable
+  // (ipcMain.handle/invoke), diferente do persistence:save fire-and-forget, porque o renderer
+  // precisa aguardar a gravação do projeto ANTIGO terminar antes de trocar o ativo.
+  it('projects:saveCanvas chama pm.saveCanvas(id, snapshot)', async () => {
+    const mgr = fakeMgr()
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+
+    const snapshot: CanvasSnapshot = { version: 2, nodes: [], edges: [] }
+    await ipc.handlers.get('projects:saveCanvas')!({}, 'p1', snapshot)
+
+    expect(mgr.saveCanvas).toHaveBeenCalledWith('p1', snapshot)
   })
 })
