@@ -99,4 +99,52 @@ describe('AgentBus.waitForIdle', () => {
     clearInterval(spam)
     await expect(p).resolves.toBeTypeOf('string')
   })
+
+  // Fix 1 (bug de perda de dados, confirmado empiricamente): a implementação antiga resolvia
+  // com `this.read(ptyId).slice(startMark)` contra o buffer COMPARTILHADO que track() trunca
+  // para os últimos 8000 chars. Se o buffer estourar 8000 entre a chamada e a resolução, o
+  // slice fica errado — e se o buffer já está saturado em 8000 no momento da chamada (qualquer
+  // sessão com histórico: banner + prompt + saída anterior), o delta devolvido é a STRING VAZIA
+  // mesmo que o agente tenha produzido saída real. Os dois testes abaixo reproduzem exatamente
+  // os casos empíricos documentados na tarefa.
+  it('nao trunca o delta quando o buffer compartilhado estoura o limite de 8000 durante a espera (7000 pre-existentes + 2000 novos)', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('x'.repeat(7000)) // pré-preenche o buffer compartilhado (abaixo do limite, sem truncagem ainda)
+    const p = bus.waitForIdle(id, { idleMs: 1000, timeoutMs: 10000 })
+    const novo = 'y'.repeat(2000)
+    f.emit(novo) // buffer compartilhado passa a ter 9000 chars -> track() trunca para os últimos 8000
+    vi.advanceTimersByTime(1000)
+    await expect(p).resolves.toBe(novo) // implementação antiga devolvia só os últimos 1000 chars
+  })
+
+  it('nao retorna vazio quando o buffer compartilhado ja esta saturado em 8000 no momento da chamada (8000 pre-existentes + 500 novos)', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('x'.repeat(8000)) // buffer compartilhado já saturado no limite
+    const p = bus.waitForIdle(id, { idleMs: 1000, timeoutMs: 10000 })
+    const novo = 'y'.repeat(500)
+    f.emit(novo) // buffer compartilhado permanece em 8000 chars (últimos 8000); startMark ficaria fora dos limites
+    vi.advanceTimersByTime(1000)
+    await expect(p).resolves.toBe(novo) // implementação antiga devolvia string vazia
+  })
+
+  // Fix 3 (cobertura): o teste "resolve com o output apos idleMs de silencio" (acima) não
+  // distingue "reseta a ociosidade a cada chunk" de "nunca reseta", porque em ambos os casos a
+  // saída completa já estaria no buffer antes do timer original (agendado a partir do primeiro
+  // chunk) disparar. Este teste usa um flag `resolved` + avanços parciais de tempo para provar
+  // que CADA chunk empurra o prazo para frente — uma implementação sem reset resolveria cedo
+  // demais (1000ms depois do primeiro chunk 'a', não 1000ms depois do último chunk 'b').
+  it('reseta a ociosidade a cada chunk — nao resolve cedo', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    let resolved = false
+    const p = bus.waitForIdle(id, { idleMs: 1000, timeoutMs: 60000 }).then((o) => { resolved = true; return o })
+    f.emit('a')
+    await vi.advanceTimersByTimeAsync(800); expect(resolved).toBe(false)
+    f.emit('b')                                   // reseta o timer de ociosidade
+    await vi.advanceTimersByTimeAsync(800); expect(resolved).toBe(false)  // só 800ms desde 'b'; uma impl sem reset já teria resolvido em 1000ms desde 'a'
+    await vi.advanceTimersByTimeAsync(300); expect(resolved).toBe(true)   // 1100ms desde 'b'
+    await expect(p).resolves.toBe('ab')
+  })
 })

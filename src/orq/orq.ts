@@ -25,15 +25,19 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
     }
     if (cmd === 'ask') {
-      // --wait pode aparecer em qualquer posição depois do nome (ex.: "ask Dev --wait oi" ou
-      // "ask Dev oi --wait") — filtramos a flag fora das palavras do prompt em vez de exigir
-      // uma posição fixa. Sem --wait, o corpo e o retorno permanecem idênticos à Fase 6
-      // (fire-and-forget); com --wait, pedimos wait:true e imprimimos o output devolvido em
-      // vez do "ok" de sempre.
-      const words = rest.filter((w) => w !== '--wait')
-      const wait = words.length !== rest.length
-      const prompt = words.join(' ')
-      const body: { name: string; prompt: string; wait?: true } = { name: sub, prompt }
+      // --wait pode aparecer em QUALQUER posição depois de "ask" — inclusive logo após o
+      // comando, antes do nome do agente (ex.: "ask --wait Dev oi", "ask Dev --wait oi" ou
+      // "ask Dev oi --wait"). Por isso filtramos a flag fora de todas as palavras restantes
+      // (argv.slice(1), não apenas `rest`) antes de separar nome e prompt — usar `sub`/`rest`
+      // (desestruturados posicionalmente antes deste bloco) trataria "--wait" como o próprio
+      // nome do agente quando ele aparecesse imediatamente após "ask". Sem --wait, o corpo e o
+      // retorno permanecem idênticos à Fase 6 (fire-and-forget); com --wait, pedimos wait:true
+      // e imprimimos o output devolvido em vez do "ok" de sempre.
+      const argsAfterCmd = argv.slice(1)
+      const wait = argsAfterCmd.includes('--wait')
+      const [name, ...promptWords] = argsAfterCmd.filter((w) => w !== '--wait')
+      const prompt = promptWords.join(' ')
+      const body: { name: string; prompt: string; wait?: true } = { name, prompt }
       if (wait) body.wait = true
       const res = await fetch(`${base}/ask`, {
         method: 'POST',

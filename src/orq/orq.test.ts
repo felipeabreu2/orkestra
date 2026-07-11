@@ -80,6 +80,19 @@ describe('runOrq', () => {
     expect(askWait).toHaveBeenCalledWith('Dev', 'oi')
   })
 
+  // Fix 4: --wait também deve funcionar fora da posição final. O parsing original desestruturava
+  // argv posicionalmente ([cmd, sub, ...rest]) e usava `sub` (a palavra logo após "ask") como o
+  // nome do agente sem filtrar "--wait" dessa posição primeiro — então "ask --wait Dev oi"
+  // tratava "--wait" como o nome e nunca setava wait:true.
+  it('ask com --wait logo apos o comando (posição não-final) ainda envia {name, prompt, wait:true} corretamente', async () => {
+    const askWait = vi.fn().mockResolvedValue({ ok: true, output: 'saída acumulada do agente' })
+    const env = await startServer({ nodes: [] }, [], { askWait })
+    const { code, out } = await runOrq(['ask', '--wait', 'Dev', 'oi'], env)
+    expect(code).toBe(0)
+    expect(out).toBe('saída acumulada do agente')
+    expect(askWait).toHaveBeenCalledWith('Dev', 'oi')
+  })
+
   it('ask sem --wait continua fire-and-forget (não chama askWait)', async () => {
     const ask = vi.fn().mockReturnValue({ ok: true })
     const askWait = vi.fn().mockResolvedValue({ ok: true, output: 'não deveria ser usado' })
