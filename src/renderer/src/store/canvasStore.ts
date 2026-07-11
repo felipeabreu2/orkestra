@@ -38,6 +38,10 @@ interface CanvasState {
   updatePortalUrl: (id: string, url: string) => void
   updatePortalName: (id: string, name: string) => void
   removeNode: (id: string) => void
+  // Aplica novas posições em lote (Fase 18 Task 2: alinhar/distribuir/organizar em grade nós
+  // selecionados). `map` vem de arrange.ts (alignNodes/distributeNodes/gridArrange) — nós cujo
+  // id não está no map ficam intocados (permite mexer só num subconjunto, ex.: a seleção atual).
+  setNodePositions: (map: Record<string, { x: number; y: number }>) => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (connection: Connection) => void
@@ -133,6 +137,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => ({
       nodes: state.nodes.filter((n) => n.id !== id),
       edges: state.edges.filter((e) => e.source !== id && e.target !== id)
+    })),
+  setNodePositions: (map): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (map[n.id] ? { ...n, position: map[n.id] } : n))
     })),
   onNodesChange: (changes): void => set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) })),
   onEdgesChange: (changes): void => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),

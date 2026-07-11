@@ -10,6 +10,7 @@ import { CommandPalette } from './CommandPalette'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
+import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
 
 const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode, portal: PortalFlowNode }
 
@@ -42,9 +43,22 @@ export function Canvas(): JSX.Element {
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
+  const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [minimapOn, setMinimapOn] = useState(true)
   const { fitView } = useReactFlow()
+
+  // Barra de alinhar/distribuir/organizar em grade (Fase 18 Task 2): só aparece com 2+ nós
+  // selecionados (node.selected, setado pelo próprio React Flow no clique/box-select). Cada
+  // botão converte a seleção pro PosNode puro (id/position/width/height) que arrange.ts espera,
+  // roda a função pura correspondente e aplica o resultado via setNodePositions — nenhuma
+  // lógica de geometria vive aqui, só a ponte store<->arrange.
+  const selectedNodes = nodes.filter((n) => n.selected)
+  const toPosNodes = (): PosNode[] =>
+    selectedNodes.map((n) => ({ id: n.id, position: n.position, width: n.width, height: n.height }))
+  const runAlign = (axis: AlignAxis): void => setNodePositions(alignNodes(toPosNodes(), axis))
+  const runDistribute = (axis: DistributeAxis): void => setNodePositions(distributeNodes(toPosNodes(), axis))
+  const runGrid = (): void => setNodePositions(gridArrange(toPosNodes()))
 
   // Atalho global do command palette (Fase 12): Cmd+K no mac, Ctrl+K em win/linux. Compara
   // e.key em minúsculo para não perder o atalho quando o sistema reporta 'K' (ex.: Shift
@@ -110,6 +124,79 @@ export function Canvas(): JSX.Element {
       </div>
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
+      {selectedNodes.length >= 2 && (
+        <div className="ork-toolbar ork-arrange-toolbar" role="toolbar" aria-label="Alinhar e organizar seleção">
+          <button
+            className="ork-toolbar-btn"
+            title="Alinhar à esquerda"
+            aria-label="Alinhar à esquerda"
+            onClick={() => runAlign('left')}
+          >
+            Esq
+          </button>
+          <button
+            className="ork-toolbar-btn"
+            title="Alinhar centro horizontal"
+            aria-label="Alinhar centro horizontal"
+            onClick={() => runAlign('hcenter')}
+          >
+            Centro H
+          </button>
+          <button
+            className="ork-toolbar-btn"
+            title="Alinhar à direita"
+            aria-label="Alinhar à direita"
+            onClick={() => runAlign('right')}
+          >
+            Dir
+          </button>
+          <button
+            className="ork-toolbar-btn"
+            title="Alinhar ao topo"
+            aria-label="Alinhar ao topo"
+            onClick={() => runAlign('top')}
+          >
+            Topo
+          </button>
+          <button
+            className="ork-toolbar-btn"
+            title="Alinhar centro vertical"
+            aria-label="Alinhar centro vertical"
+            onClick={() => runAlign('vcenter')}
+          >
+            Centro V
+          </button>
+          <button
+            className="ork-toolbar-btn"
+            title="Alinhar à base"
+            aria-label="Alinhar à base"
+            onClick={() => runAlign('bottom')}
+          >
+            Base
+          </button>
+          <span className="ork-toolbar-divider" />
+          <button
+            className="ork-toolbar-btn"
+            title="Distribuir horizontalmente"
+            aria-label="Distribuir horizontalmente"
+            onClick={() => runDistribute('horizontal')}
+          >
+            Dist H
+          </button>
+          <button
+            className="ork-toolbar-btn"
+            title="Distribuir verticalmente"
+            aria-label="Distribuir verticalmente"
+            onClick={() => runDistribute('vertical')}
+          >
+            Dist V
+          </button>
+          <span className="ork-toolbar-divider" />
+          <button className="ork-toolbar-btn" title="Organizar em grade" aria-label="Organizar em grade" onClick={runGrid}>
+            Grade
+          </button>
+        </div>
+      )}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       <ReactFlow
         nodes={nodes}

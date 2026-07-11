@@ -102,6 +102,19 @@
   background: var(--border);
 }
 
+/* Barra de alinhar/distribuir/organizar em grade (Fase 18 Task 2): mesmo visual da
+   .ork-toolbar de criação (fundo/borda/raio/sombra via --bg-1/--border/--radius/--shadow-1,
+   herdados por reaproveitar a classe) — só a âncora muda, pra topo-centro em vez de
+   topo-esquerda, e só existe no DOM quando há 2+ nós selecionados (ver Canvas.tsx). */
+.ork-arrange-toolbar {
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-wrap: wrap;
+  max-width: calc(100% - 24px);
+  justify-content: center;
+}
+
 /* Wordmark removido daqui (Fase 15 Task 3): movido para o topo da ProjectsSidebar
    (ProjectsSidebar.css .ork-sidebar-brand*) — isso também resolve a antiga sobreposição
    wordmark/Controls do React Flow. */

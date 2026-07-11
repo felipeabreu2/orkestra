@@ -323,4 +323,27 @@ describe('canvasStore', () => {
     useCanvasStore.getState().setSwitching(false)
     expect(useCanvasStore.getState().switching).toBe(false)
   })
+
+  it('setNodePositions atualiza a posição do nó indicado sem tocar os demais (Fase 18 Task 2)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 100 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().setNodePositions({ [a.id]: { x: 40, y: 50 } })
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes.find((n) => n.id === a.id)?.position).toEqual({ x: 40, y: 50 })
+    // O outro nó (não presente no map) permanece intocado.
+    expect(nodes.find((n) => n.id === b.id)?.position).toEqual({ x: 100, y: 100 })
+  })
+
+  it('setNodePositions aplica múltiplas posições de uma vez (uso real: alinhar/distribuir/grade)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 10, y: 10 })
+    useCanvasStore.getState().addTerminalNode({ x: 20, y: 20 })
+    const [a, b, c] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().setNodePositions({ [a.id]: { x: 1, y: 1 }, [c.id]: { x: 3, y: 3 } })
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes.find((n) => n.id === a.id)?.position).toEqual({ x: 1, y: 1 })
+    expect(nodes.find((n) => n.id === b.id)?.position).toEqual({ x: 10, y: 10 })
+    expect(nodes.find((n) => n.id === c.id)?.position).toEqual({ x: 3, y: 3 })
+  })
 })
