@@ -55,13 +55,15 @@ export function Canvas(): JSX.Element {
   // (incluindo o Cmd+K existente) são ignorados via isTypingTarget — ver comentário acima.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
-      if (isTypingTarget(e)) return
-
+      // Cmd/Ctrl+K (palette toggle) is a command chord, not text — always works, even while typing.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
         return
       }
+      // Guard remaining shortcuts (Shift+1/2/M) to prevent them firing while typing.
+      if (isTypingTarget(e)) return
+
       if (e.shiftKey && e.code === 'Digit1') {
         e.preventDefault()
         fitView({ duration: 300 })
