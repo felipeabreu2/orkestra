@@ -17,8 +17,7 @@ function fakeIndex(): ProjectIndex {
 }
 
 // Fake mínimo do ProjectManager: só os métodos que registerProjectIpc chama, como vi.fn()
-// espiáveis — mesma técnica de fakeMgr() em registerFloorIpc.test.ts (cast via `as unknown as
-// ProjectManager` porque a classe real tem campos privados).
+// espiáveis (cast via `as unknown as ProjectManager` porque a classe real tem campos privados).
 function fakeMgr() {
   return {
     bootstrap: vi.fn(),

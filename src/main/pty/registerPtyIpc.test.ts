@@ -105,59 +105,6 @@ describe('registerPtyIpc', () => {
     expect(typeof id).toBe('string')
   })
 
-  it('pty:spawn resolve cwd via resolveCwd quando floorId é passado (Fase 8)', async () => {
-    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
-    const mgr = new PtyManager(spawner)
-    const ipc = fakeIpcMain()
-    const resolveCwd = vi.fn((floorId: string) => (floorId === 'f1' ? '/floors/f1/worktree' : undefined))
-    registerPtyIpc(ipc as any, mgr, () => null, undefined, undefined, resolveCwd)
-
-    await ipc.handlers.get('pty:spawn')!({}, { floorId: 'f1' })
-
-    expect(resolveCwd).toHaveBeenCalledWith('f1')
-    const call = spawner.mock.calls[0]
-    expect(call[2].cwd).toBe('/floors/f1/worktree')
-  })
-
-  it('pty:spawn cai para opts.cwd quando floorId não resolve (floor removido/desconhecido)', async () => {
-    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
-    const mgr = new PtyManager(spawner)
-    const ipc = fakeIpcMain()
-    const resolveCwd = vi.fn(() => undefined)
-    registerPtyIpc(ipc as any, mgr, () => null, undefined, undefined, resolveCwd)
-
-    await ipc.handlers.get('pty:spawn')!({}, { floorId: 'ghost', cwd: '/fallback' })
-
-    const call = spawner.mock.calls[0]
-    expect(call[2].cwd).toBe('/fallback')
-  })
-
-  it('pty:spawn sem floorId usa opts.cwd normalmente e não chama resolveCwd', async () => {
-    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
-    const mgr = new PtyManager(spawner)
-    const ipc = fakeIpcMain()
-    const resolveCwd = vi.fn(() => '/should-not-be-used')
-    registerPtyIpc(ipc as any, mgr, () => null, undefined, undefined, resolveCwd)
-
-    await ipc.handlers.get('pty:spawn')!({}, { cwd: '/explicit' })
-
-    expect(resolveCwd).not.toHaveBeenCalled()
-    const call = spawner.mock.calls[0]
-    expect(call[2].cwd).toBe('/explicit')
-  })
-
-  it('pty:spawn com floorId mas sem resolveCwd injetado não quebra (usa opts.cwd)', async () => {
-    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
-    const mgr = new PtyManager(spawner)
-    const ipc = fakeIpcMain()
-    registerPtyIpc(ipc as any, mgr, () => null)
-
-    await ipc.handlers.get('pty:spawn')!({}, { floorId: 'f1', cwd: '/explicit' })
-
-    const call = spawner.mock.calls[0]
-    expect(call[2].cwd).toBe('/explicit')
-  })
-
   it('a assinatura onData do streaming (renderer) e a do AgentBus.track coexistem no mesmo pty (multi-subscriber)', async () => {
     const fake = makeMultiSubFakePty()
     const mgr = new PtyManager(() => fake.pty)

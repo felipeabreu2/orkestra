@@ -25,7 +25,7 @@ interface CanvasState {
   setSwitching: (v: boolean) => void
   addTerminalNode: (
     position?: { x: number; y: number } | undefined,
-    opts?: { preset?: string; role?: string; name?: string; floorId?: string }
+    opts?: { preset?: string; role?: string; name?: string }
   ) => void
   addNoteNode: (position?: { x: number; y: number }) => void
   addPortalNode: (
@@ -35,7 +35,6 @@ interface CanvasState {
   updateNoteContent: (id: string, content: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
-  updateTerminalFloor: (id: string, floorId: string) => void
   updatePortalUrl: (id: string, url: string) => void
   updatePortalName: (id: string, name: string) => void
   removeNode: (id: string) => void
@@ -65,7 +64,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               name: opts?.name ?? `Terminal ${terminalSeq++}`,
               preset: opts?.preset ?? 'shell',
               role: opts?.role ?? '',
-              floorId: opts?.floorId ?? '',
               // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
               // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
               // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
@@ -122,10 +120,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   updateTerminalRole: (id, role): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, role } } : n))
-    })),
-  updateTerminalFloor: (id, floorId): void =>
-    set((state) => ({
-      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, floorId } } : n))
     })),
   updatePortalUrl: (id, url): void =>
     set((state) => ({

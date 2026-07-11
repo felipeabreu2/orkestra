@@ -17,7 +17,6 @@ Inspirado por ferramentas de orquestração de agentes, o Orkestra não embute n
 - **CLI `orq`** — injetada automaticamente no `PATH` de todo terminal do canvas, fala com um servidor HTTP local (ver [Arquitetura](#arquitetura)) para listar nós e interagir com o canvas.
 - **Comunicação agente↔agente** — terminais têm nomes; `orq ask "<nome>" "<prompt>"` envia texto a outro terminal, `orq check "<nome>"` lê a saída recente dele.
 - **Modo Maestro** — presets de agente (`Shell`, `Claude Code`, `Codex CLI`, `Gemini CLI`) com auto-run do comando na criação e papéis editáveis; um agente pode montar e coordenar sua própria equipe com `orq recruit "<nome>" "<preset>" ["<papel>"]`, `orq connect "<A>" "<B>"` e `orq dismiss "<nome>"`.
-- **Floors** — ambientes de trabalho isolados via `git worktree`: criar um floor a partir de um repositório git, atribuir terminais a ele (rodam com `cwd` no worktree), depois `land` (merge de volta ao repo base) ou `remove`. Painel dedicado na UI.
 - **Portais** — um `<webview>` embutido e dirigível por comando: `orq portal open/navigate/click/fill/eval/snapshot "<nome>" ...` para automatizar ou inspecionar uma página web a partir de um terminal.
 - **Rotinas** — um agendador cron interno; `orq routine add "<nome>" "<cron>" "<alvo>" "<comando>"` dispara comandos sozinho, num terminal alvo, no horário programado. Painel dedicado na UI.
 - **Command palette** (`Cmd/Ctrl+K`) — busca nós e ações do canvas por texto, com navegação por teclado.
@@ -25,7 +24,7 @@ Inspirado por ferramentas de orquestração de agentes, o Orkestra não embute n
 
 ## Rodar em dev
 
-Pré-requisitos: Node.js e npm. Para usar Floors, o `git` também precisa estar no `PATH` do sistema.
+Pré-requisitos: Node.js e npm.
 
 ```bash
 npm install
@@ -66,7 +65,7 @@ Ver [`docs/BUILD.md`](docs/BUILD.md) para compilar e empacotar o app (macOS/Wind
 
 ## Arquitetura
 
-O Orkestra segue a separação padrão de um app Electron: um processo **main** (Node.js) concentra tudo que é sensível — `node-pty` (os shells reais), acesso a git/sistema de arquivos (Floors, persistência do canvas) e o `OrchestrationServer`, um servidor HTTP que só escuta em `127.0.0.1` e exige um token aleatório gerado por sessão (header `x-orkestra-token`) para expor list/note/ask/check/recruit/connect/dismiss/portal/routines; um **preload** expõe apenas uma API restrita (`window.orkestra`) via `contextBridge`; e o **renderer**, sandboxed (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`), desenha o canvas (React Flow) e nunca acessa Node/FS/child_process diretamente. Isso mantém a superfície de ataque pequena mesmo com terminais reais e automação de navegador rodando dentro do app.
+O Orkestra segue a separação padrão de um app Electron: um processo **main** (Node.js) concentra tudo que é sensível — `node-pty` (os shells reais), acesso a sistema de arquivos (persistência do canvas) e o `OrchestrationServer`, um servidor HTTP que só escuta em `127.0.0.1` e exige um token aleatório gerado por sessão (header `x-orkestra-token`) para expor list/note/ask/check/recruit/connect/dismiss/portal/routines; um **preload** expõe apenas uma API restrita (`window.orkestra`) via `contextBridge`; e o **renderer**, sandboxed (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`), desenha o canvas (React Flow) e nunca acessa Node/FS/child_process diretamente. Isso mantém a superfície de ataque pequena mesmo com terminais reais e automação de navegador rodando dentro do app.
 
 ## Status
 

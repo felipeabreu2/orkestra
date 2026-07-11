@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -9,8 +9,6 @@ import { registerProjectIpc } from './projects/registerProjectIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
-import { FloorManager } from './floors/FloorManager'
-import { registerFloorIpc } from './floors/registerFloorIpc'
 import { RoutineScheduler } from './routines/RoutineScheduler'
 import { registerRoutineIpc } from './routines/registerRoutineIpc'
 import { setupAutoUpdater } from './updater'
@@ -137,15 +135,6 @@ app.whenReady().then(async () => {
     portalStates.set(s.name, { url: s.url, title: s.title, text: s.text })
   })
 
-  // Floors (Fase 8): worktrees git isolados por tarefa, persistidos em
-  // ~/.orkestra/floors/floors.json e recarregados no boot.
-  const floorManager = new FloorManager(join(app.getPath('home'), '.orkestra', 'floors'))
-  await floorManager.loadPersisted()
-  registerFloorIpc(ipcMain, floorManager, async () => {
-    const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-    return r.canceled ? null : r.filePaths[0]
-  })
-
   // Rotinas (Fase 10): comandos agendados via cron (RoutineScheduler.tick, a cada 30s) que
   // disparam num terminal existente via AgentBus.ask. Persistidas em ~/.orkestra/routines.json
   // e recarregadas no boot; alvo resolvido por nome (resolvePtyByName) a cada disparo — se o
@@ -172,8 +161,7 @@ app.whenReady().then(async () => {
     ptyManager,
     () => mainWindow?.webContents ?? null,
     () => orchestrationEnv,
-    (id) => agentBus.track(id),
-    (floorId) => floorManager.get(floorId)?.worktreePath
+    (id) => agentBus.track(id)
   )
   // Projetos (Fase 15 Task 2): cada projeto tem seu próprio canvas; bootstrap() cria o índice na
   // primeira vez (migrando o canvas.json legado single-projeto) e é idempotente depois disso.

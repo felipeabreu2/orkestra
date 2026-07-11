@@ -9,8 +9,8 @@ import './CommandPalette.css'
 // search.test.ts) faz o filtro/ordenação por label — este componente só monta a lista de
 // itens (fechando `run` sobre o store e sobre `useReactFlow`) e cuida do teclado
 // (↑/↓ navegam, Enter executa, Esc fecha). Precisa renderizar dentro do contexto do React
-// Flow (ReactFlowProvider em App.tsx envolve todo o Canvas, então basta montar ao lado de
-// FloorsPanel/RoutinesPanel) para que `useReactFlow()` funcione. Estilo mínimo (polish é
+// Flow (ReactFlowProvider em App.tsx envolve todo o Canvas, então basta montar ao lado dos
+// demais painéis) para que `useReactFlow()` funcione. Estilo mínimo (polish é
 // Fase 13).
 export interface PaletteItem {
   id: string

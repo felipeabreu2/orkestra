@@ -1,5 +1,5 @@
 /* Custom scrollbars (refinamento visual): thin dark webkit scrollbars for the app's scrollable
-   surfaces — Floors/Routines panel bodies, the command palette's result list, the note
+   surfaces — the Routines panel body, the command palette's result list, the note
    textarea, and the terminal's internal xterm viewport. Electron ships Chromium, so
    ::-webkit-scrollbar is safe here (no other engine to worry about). Scoped to these selectors
    instead of applied globally so we don't reach into anything unexpected; purely cosmetic

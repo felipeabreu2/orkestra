@@ -1,7 +1,6 @@
-/* Shared floating-panel styling (Fase 13 Task 2), consumed by FloorsPanel and RoutinesPanel.
-   Both panels share the same card chrome/header/row/status idiom and only differ in position
-   (top vs. bottom) and size — those two differences live in the `--floors`/`--routines`
-   modifier classes below, everything else is common. */
+/* Shared floating-panel styling (Fase 13 Task 2), consumed by RoutinesPanel — card chrome/
+   header/row/status idiom, with position/size isolated in the `--routines` modifier class
+   below; everything else here is common. */
 
 .ork-panel {
   position: absolute;
@@ -17,11 +16,6 @@
   font-size: 12px;
   overflow: hidden;
   animation: ork-fade-in var(--dur-2) var(--ease);
-}
-.ork-panel--floors {
-  top: 12px;
-  width: 220px;
-  max-height: 60vh;
 }
 .ork-panel--routines {
   bottom: 12px;
@@ -182,9 +176,9 @@
   color: var(--err);
   border-color: var(--err);
 }
-/* Floor "Remover" armed for a confirming 2nd click (see FloorsPanel confirmingId) — reuses the
-   existing confirmation state to also flag the button as already in its destructive state,
-   instead of only reacting on :hover. */
+/* "Remover" armed for a confirming 2nd click (see confirmingId in panels using this pattern) —
+   reuses the existing confirmation state to also flag the button as already in its destructive
+   state, instead of only reacting on :hover. */
 .ork-panel-action--armed {
   color: var(--err);
   border-color: var(--err);

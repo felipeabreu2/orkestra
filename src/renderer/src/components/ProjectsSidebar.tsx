@@ -7,10 +7,10 @@ import './ProjectsSidebar.css'
 // Menu esquerdo de projetos (Fase 15 Task 3): cada projeto tem seu próprio canvas persistido
 // (ver ProjectManager no main, Fase 15 Task 2) — esta barra lista/cria/renomeia/remove projetos
 // e troca o canvas montado no meio da tela. Toda chamada a window.orkestra.projects.* pode
-// rejeitar (IPC/disco) e é envolvida em try/catch, igual ao FloorsPanel (nunca deixamos uma
+// rejeitar (IPC/disco) e é envolvida em try/catch (nunca deixamos uma
 // rejeição estourar pro React e derrubar o canvas). Estilo mínimo, consistente com os tokens.
 
-// Janela de confirmação inline do "Remover" — mesmo padrão do antigo FloorsPanel (Fase 13).
+// Janela de confirmação inline do "Remover" (Fase 13).
 const REMOVE_CONFIRM_MS = 3000
 
 export function ProjectsSidebar(): JSX.Element {
@@ -53,7 +53,7 @@ export function ProjectsSidebar(): JSX.Element {
 
   // Clicar fora do botão "Confirmar?" pendente cancela a confirmação — mousedown (não click)
   // dispara antes do click do alvo, então um clique em OUTRO botão/linha já vê confirmingId
-  // limpo e trata como 1º clique, não como confirmação (mesmo padrão do FloorsPanel, Fase 13).
+  // limpo e trata como 1º clique, não como confirmação (Fase 13).
   useEffect(() => {
     if (!confirmingId) return undefined
     const handlePointerDown = (e: MouseEvent): void => {
@@ -182,7 +182,7 @@ export function ProjectsSidebar(): JSX.Element {
 
   // Descarta o canvas do projeto (sem confirmação nativa, que bloqueia o processo): 1º clique só
   // arma confirmingId e troca o label pra "Confirmar?"; um 2º clique dentro de REMOVE_CONFIRM_MS
-  // remove de fato; timeout ou clique fora cancela (mesmo padrão do antigo FloorsPanel, Fase 13).
+  // remove de fato; timeout ou clique fora cancela (Fase 13).
   const handleRemoveClick = (id: string): void => {
     if (confirmingId === id) {
       cancelConfirmTimer()
