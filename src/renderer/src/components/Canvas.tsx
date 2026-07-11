@@ -241,11 +241,13 @@ export function Canvas(): JSX.Element {
           const groupIds = toDelete.filter((n) => n.type === 'group').map((n) => n.id)
           if (groupIds.length === 0) return true
           ungroupGroupsById(groupIds) // filhos sobrevivem, reparentados pro canvas
+          const finalNodes = toDelete.filter(
+            (n) => n.type === 'group' || !(n.parentId && groupIds.includes(n.parentId))
+          )
+          const finalIds = new Set(finalNodes.map((n) => n.id))
           return {
-            nodes: toDelete.filter(
-              (n) => n.type === 'group' || !(n.parentId && groupIds.includes(n.parentId))
-            ),
-            edges: edgesToDelete
+            nodes: finalNodes,
+            edges: edgesToDelete.filter((e) => finalIds.has(e.source) || finalIds.has(e.target))
           }
         }}
         proOptions={{ hideAttribution: true }}
