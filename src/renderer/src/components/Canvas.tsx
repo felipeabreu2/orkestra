@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ReactFlow, Background, Controls } from '@xyflow/react'
+import { ReactFlow, Background, Controls, MiniMap, useReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
 import { useCanvasStore } from '../store/canvasStore'
@@ -13,6 +13,24 @@ import { PRESETS } from '../../../shared/presets'
 
 const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode, portal: PortalFlowNode }
 
+// Atalhos de teclado globais (Cmd/Ctrl+K da Fase 12 + foco/zoom/minimap da Fase 18) não podem
+// disparar enquanto o usuário está digitando — nem num input/textarea/select/contentEditable
+// (nome de terminal, nota, campo do palette) nem dentro de um terminal xterm.js (que captura
+// teclado via uma <textarea> escondida — já cairia no primeiro check, mas o closest('.xterm')
+// cobre qualquer outro elemento focável que a lib venha a usar dentro do terminal). Sem isso,
+// por ex. Backspace apagaria o nó do terminal enquanto o usuário só queria apagar um caractere
+// no shell.
+function isTypingTarget(e: KeyboardEvent): boolean {
+  const target = e.target as HTMLElement | null
+  if (target) {
+    const tag = target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+      return true
+    }
+  }
+  return Boolean(document.activeElement?.closest('.xterm'))
+}
+
 export function Canvas(): JSX.Element {
   useCanvasPersistence()
   useOrchestrationSync()
@@ -25,20 +43,45 @@ export function Canvas(): JSX.Element {
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [minimapOn, setMinimapOn] = useState(true)
+  const { fitView } = useReactFlow()
 
   // Atalho global do command palette (Fase 12): Cmd+K no mac, Ctrl+K em win/linux. Compara
   // e.key em minúsculo para não perder o atalho quando o sistema reporta 'K' (ex.: Shift
   // pressionado junto ou layouts que capitalizam com Cmd/Ctrl ativo).
+  // Fase 18: o mesmo handler ganhou os atalhos de foco/zoom/minimap. Usa e.code (não e.key)
+  // para os dígitos porque Shift+1/Shift+2 produz caracteres diferentes por layout de teclado
+  // (ex.: "!"/"@" em US e ABNT2) — e.code é a tecla física, estável entre layouts. Todos
+  // (incluindo o Cmd+K existente) são ignorados via isTypingTarget — ver comentário acima.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
+      if (isTypingTarget(e)) return
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
+        return
+      }
+      if (e.shiftKey && e.code === 'Digit1') {
+        e.preventDefault()
+        fitView({ duration: 300 })
+        return
+      }
+      if (e.shiftKey && e.code === 'Digit2') {
+        e.preventDefault()
+        const sel = useCanvasStore.getState().nodes.filter((n) => n.selected)
+        if (sel.length) fitView({ nodes: sel.map((n) => ({ id: n.id })), duration: 300 })
+        return
+      }
+      if (e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        setMinimapOn((o) => !o)
+        return
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [fitView])
 
   return (
     // width/height:100% (não 100vw/100vh, Fase 15 Task 3): este <div> agora preenche o wrapper
@@ -75,10 +118,28 @@ export function Canvas(): JSX.Element {
         nodeTypes={nodeTypes}
         minZoom={0.2}
         maxZoom={2}
+        snapToGrid
+        snapGrid={[20, 20]}
+        deleteKeyCode={['Backspace', 'Delete']}
         proOptions={{ hideAttribution: true }}
       >
         <Background />
         <Controls />
+        {/* MiniMap ancora bottom-right por padrão (Controls fica bottom-left) — sem colisão.
+            nodeColor usa --text-3 (cinza neutro de "chrome", já usado em scrollbars.css) em
+            vez de --accent, que já é reservado p/ estados interativos/seleção (handles, edge
+            selecionada, caixa de seleção) — reaproveitar --accent aqui competiria com esses
+            usos. maskColor é --bg-0 traduzido p/ rgba (a mesma cor do fundo do canvas, só
+            translúcida) p/ a área fora do viewport ler bem no dark. */}
+        {minimapOn && (
+          <MiniMap
+            pannable
+            zoomable
+            className="ork-minimap"
+            maskColor="rgba(11, 13, 18, 0.6)"
+            nodeColor="var(--text-3)"
+          />
+        )}
       </ReactFlow>
     </div>
   )
