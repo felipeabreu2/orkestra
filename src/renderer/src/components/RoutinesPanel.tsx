@@ -112,7 +112,12 @@ export function RoutinesPanel(): JSX.Element {
         </div>
       )}
       <div className="ork-panel-body">
-        {routines.length === 0 && <div className="ork-panel-empty">Nenhuma rotina</div>}
+        {routines.length === 0 && (
+          <div className="ork-panel-empty">
+            <div className="ork-panel-empty-title">Nenhuma rotina agendada</div>
+            <div className="ork-panel-empty-hint">Preencha o formulário acima para criar a primeira</div>
+          </div>
+        )}
         {routines.map((r) => (
           <div key={r.id} className="ork-panel-row" style={{ opacity: r.enabled ? 1 : 0.5 }}>
             <div className="ork-panel-row-main">
@@ -126,6 +131,7 @@ export function RoutinesPanel(): JSX.Element {
                 className={`ork-panel-action ${r.enabled ? 'ork-panel-action--ok' : 'ork-panel-action--muted'}`}
                 onClick={() => handleToggle(r)}
                 aria-label={`${r.enabled ? 'Desabilitar' : 'Habilitar'} ${r.name}`}
+                title={r.enabled ? 'Desativar' : 'Ativar'}
               >
                 {r.enabled ? 'On' : 'Off'}
               </button>
@@ -133,6 +139,7 @@ export function RoutinesPanel(): JSX.Element {
                 className="ork-panel-action ork-panel-action--danger"
                 onClick={() => handleRemove(r.id)}
                 aria-label={`Remover ${r.name}`}
+                title="Remover rotina"
               >
                 Remover
               </button>

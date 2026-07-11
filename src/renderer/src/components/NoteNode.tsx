@@ -15,7 +15,12 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
         <div className="ork-node-header">
           <span className="ork-node-dot ork-node-dot--note" aria-hidden="true" />
           <span className="ork-node-title">Nota</span>
-          <button className="nodrag ork-node-iconbtn" onClick={() => removeNode(id)} aria-label="Fechar nota">
+          <button
+            className="nodrag ork-node-iconbtn"
+            onClick={() => removeNode(id)}
+            aria-label="Fechar nota"
+            title="Remover nó"
+          >
             ×
           </button>
         </div>

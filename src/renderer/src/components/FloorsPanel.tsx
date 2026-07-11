@@ -134,7 +134,12 @@ export function FloorsPanel(): JSX.Element {
         </div>
       )}
       <div className="ork-panel-body">
-        {floors.length === 0 && <div className="ork-panel-empty">Nenhum floor</div>}
+        {floors.length === 0 && (
+          <div className="ork-panel-empty">
+            <div className="ork-panel-empty-title">Nenhum floor ainda</div>
+            <div className="ork-panel-empty-hint">Crie um a partir de um repositório git</div>
+          </div>
+        )}
         {floors.map((f) => (
           <div key={f.id} className="ork-panel-row">
             <div className="ork-panel-row-main">
@@ -146,6 +151,7 @@ export function FloorsPanel(): JSX.Element {
                 className="ork-panel-action ork-panel-action--ok"
                 onClick={() => handleLand(f.id)}
                 aria-label={`Aterrissar ${f.name}`}
+                title="Aterrissar (merge) de volta"
               >
                 Land
               </button>
@@ -154,6 +160,7 @@ export function FloorsPanel(): JSX.Element {
                 onClick={() => handleRemoveClick(f.id)}
                 data-remove-id={f.id}
                 aria-label={confirmingId === f.id ? `Confirmar remoção de ${f.name}` : `Remover ${f.name}`}
+                title={confirmingId === f.id ? 'Clique novamente para confirmar' : 'Remover (descarta o worktree)'}
               >
                 {confirmingId === f.id ? 'Confirmar?' : 'Remover'}
               </button>

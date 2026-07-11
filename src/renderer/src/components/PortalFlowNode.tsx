@@ -42,7 +42,12 @@ export function PortalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
             onChange={(e) => updatePortalName(id, e.target.value)}
             aria-label="Nome do portal"
           />
-          <button className="nodrag ork-node-iconbtn" onClick={() => removeNode(id)} aria-label="Fechar portal">
+          <button
+            className="nodrag ork-node-iconbtn"
+            onClick={() => removeNode(id)}
+            aria-label="Fechar portal"
+            title="Remover nó"
+          >
             ×
           </button>
         </div>
@@ -57,7 +62,7 @@ export function PortalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
             placeholder="https://..."
             aria-label="URL do portal"
           />
-          <button className="nodrag ork-node-go" onClick={go} aria-label="Ir">
+          <button className="nodrag ork-node-go" onClick={go} aria-label="Ir" title="Navegar">
             ir
           </button>
         </div>

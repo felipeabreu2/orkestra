@@ -113,11 +113,20 @@
   padding: 0 4px;
   transition:
     color var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease);
+    background var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
 .ork-node-iconbtn:hover {
   color: var(--err);
   background: var(--bg-1);
+}
+.ork-node-iconbtn:active {
+  transform: translateY(1px);
+}
+.ork-node-iconbtn:disabled,
+.ork-node-iconbtn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ork-node-body {
@@ -168,10 +177,20 @@
   font-size: 12px;
   padding: 4px 10px;
   cursor: pointer;
-  transition: filter var(--dur-1) var(--ease);
+  transition:
+    filter var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
 .ork-node-go:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.18);
+}
+.ork-node-go:active {
+  transform: translateY(1px);
+}
+.ork-node-go:disabled,
+.ork-node-go[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Note body */

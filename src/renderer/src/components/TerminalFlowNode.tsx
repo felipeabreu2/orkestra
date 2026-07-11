@@ -71,6 +71,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             className="nodrag ork-node-iconbtn"
             onClick={() => removeNode(id)}
             aria-label="Fechar terminal"
+            title="Remover nó"
           >
             ×
           </button>

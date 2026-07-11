@@ -55,10 +55,20 @@
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
-  transition: filter var(--dur-1) var(--ease);
+  transition:
+    filter var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
 .ork-panel-primary-btn:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.18);
+}
+.ork-panel-primary-btn:active {
+  transform: translateY(1px);
+}
+.ork-panel-primary-btn:disabled,
+.ork-panel-primary-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ork-panel-status {
@@ -85,8 +95,18 @@
 }
 
 .ork-panel-empty {
-  padding: 8px 6px;
+  padding: 22px 12px;
   color: var(--text-3);
+  text-align: center;
+}
+.ork-panel-empty-title {
+  color: var(--text-3);
+}
+.ork-panel-empty-hint {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 11px;
+  opacity: 0.8;
 }
 
 .ork-panel-row {
@@ -137,11 +157,20 @@
   transition:
     color var(--dur-1) var(--ease),
     border-color var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease);
+    background var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
 .ork-panel-action:hover {
   background: var(--bg-2);
   border-color: var(--border-strong);
+}
+.ork-panel-action:active {
+  transform: translateY(1px);
+}
+.ork-panel-action:disabled,
+.ork-panel-action[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .ork-panel-action--ok {
   color: var(--ok);

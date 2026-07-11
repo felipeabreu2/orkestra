@@ -65,11 +65,20 @@
   white-space: nowrap;
   transition:
     background var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease);
+    color var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
 .ork-toolbar-btn:hover {
   background: var(--bg-2);
   color: var(--text-1);
+}
+.ork-toolbar-btn:active {
+  transform: translateY(1px);
+}
+.ork-toolbar-btn:disabled,
+.ork-toolbar-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .ork-toolbar-divider {
