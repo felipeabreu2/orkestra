@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { cronMatches } from '../../shared/cron'
 import type { Routine } from '../../shared/routines'
@@ -87,10 +87,13 @@ export class RoutineScheduler {
 
   private async persist(): Promise<void> {
     if (!this.persistPath) return
+    const tmp = `${this.persistPath}.tmp`
     try {
       await mkdir(dirname(this.persistPath), { recursive: true })
-      await writeFile(this.persistPath, JSON.stringify([...this.routines.values()], null, 2))
+      await writeFile(tmp, JSON.stringify([...this.routines.values()], null, 2))
+      await rename(tmp, this.persistPath)
     } catch {
+      await rm(tmp, { force: true }).catch(() => {})
       // não-fatal: falha ao persistir não deve derrubar a rotina em memória (mesmo padrão do FloorManager)
     }
   }

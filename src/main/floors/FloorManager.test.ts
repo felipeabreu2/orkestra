@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FloorManager } from './FloorManager'
@@ -94,5 +94,21 @@ describe('FloorManager', () => {
     rmSync(f.worktreePath, { recursive: true, force: true })
     await mgr.remove(f.id)
     expect(mgr.list()).toHaveLength(0)
+  })
+
+  it('persist grava floors.json atomicamente (tmp+rename): arquivo válido, sem .tmp residual, e round-trip via loadPersisted', async () => {
+    const f = await mgr.create(repo, 'atomic')
+    const floorsJsonPath = join(floorsDir, 'floors.json')
+    const tmpPath = `${floorsJsonPath}.tmp`
+
+    expect(existsSync(floorsJsonPath)).toBe(true)
+    const raw = readFileSync(floorsJsonPath, 'utf8')
+    expect(() => JSON.parse(raw)).not.toThrow()
+    expect(Array.isArray(JSON.parse(raw))).toBe(true)
+    expect(existsSync(tmpPath)).toBe(false) // escrita bem-sucedida não deixa .tmp para trás
+
+    const fresh = new FloorManager(floorsDir)
+    await fresh.loadPersisted()
+    expect(fresh.get(f.id)).toMatchObject({ id: f.id, name: f.name, branch: f.branch })
   })
 })

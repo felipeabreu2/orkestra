@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Floor } from '../../shared/floors'
@@ -64,7 +64,15 @@ export class FloorManager {
 
   private async persist(): Promise<void> {
     await mkdir(this.floorsDir, { recursive: true })
-    await writeFile(join(this.floorsDir, 'floors.json'), JSON.stringify([...this.floors.values()], null, 2))
+    const path = join(this.floorsDir, 'floors.json')
+    const tmp = `${path}.tmp`
+    try {
+      await writeFile(tmp, JSON.stringify([...this.floors.values()], null, 2))
+      await rename(tmp, path)
+    } catch (e) {
+      await rm(tmp, { force: true }).catch(() => {})
+      throw e // preserva semântica existente: persist() não tinha try/catch, create()/remove() (que dão await nela) continuam vendo o erro
+    }
   }
 
   async loadPersisted(): Promise<void> {
