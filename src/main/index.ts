@@ -50,6 +50,15 @@ const orchestration = new OrchestrationServer({
     agentBus.ask(p, prompt)
     return { ok: true }
   },
+  // Fase 14 (Task 1): variante bloqueante de ask — envia o prompt e só resolve quando o
+  // terminal alvo ficar ocioso (ver AgentBus.waitForIdle), devolvendo o output acumulado.
+  askWait: async (name, prompt) => {
+    const p = resolvePtyByName(name)
+    if (!p) return { ok: false, error: 'not found' }
+    agentBus.ask(p, prompt)
+    const output = await agentBus.waitForIdle(p)
+    return { ok: true, output }
+  },
   check: (name) => {
     const p = resolvePtyByName(name)
     return p ? { output: agentBus.read(p) } : null

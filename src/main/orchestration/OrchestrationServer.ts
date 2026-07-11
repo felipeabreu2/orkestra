@@ -7,6 +7,9 @@ interface Opts {
   getMirror: () => CanvasMirror
   onCommand: (cmd: OrchestrationCommand) => void
   ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
+  // Fase 14 (Task 1): variante bloqueante de ask — usada por POST /ask quando o body traz
+  // wait:true. Aguarda o agente ficar ocioso (ver AgentBus.waitForIdle) antes de responder.
+  askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
   check?: (name: string) => { output: string } | null
   getPortalState?: (name: string) => PortalState | null
   // Fase 10 (Rotinas): CRUD fino sobre o RoutineScheduler do main. add() é o validador
@@ -294,21 +297,40 @@ export class OrchestrationServer {
       req.on('data', (c) => { body += c })
       req.on('error', () => { res.writeHead(400).end('bad request') })
       req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { name?: unknown; prompt?: unknown }
-          if (typeof parsed.name !== 'string' || typeof parsed.prompt !== 'string') {
-            res.writeHead(400).end('bad request')
-            return
+        // Fase 14 (Task 1): wait:true bifurca para askWait (bloqueante — espera o agente
+        // ficar ocioso) e responde {output}. Sem wait (ou wait:false), segue o caminho ask
+        // fire-and-forget de sempre, byte-a-byte igual à Fase 6.
+        void (async () => {
+          try {
+            const parsed = JSON.parse(body) as { name?: unknown; prompt?: unknown; wait?: unknown }
+            if (typeof parsed.name !== 'string' || typeof parsed.prompt !== 'string') {
+              res.writeHead(400).end('bad request')
+              return
+            }
+            if (parsed.wait === true) {
+              if (!this.opts.askWait) {
+                res.writeHead(404).end('not found')
+                return
+              }
+              const result = await this.opts.askWait(parsed.name, parsed.prompt)
+              if (result.ok) {
+                res.writeHead(200, { 'content-type': 'application/json' })
+                res.end(JSON.stringify({ output: result.output ?? '' }))
+              } else {
+                res.writeHead(404).end(result.error ?? 'not found')
+              }
+              return
+            }
+            const result = this.opts.ask?.(parsed.name, parsed.prompt) ?? { ok: false, error: 'not available' }
+            if (result.ok) {
+              res.writeHead(200).end('ok')
+            } else {
+              res.writeHead(404).end(result.error ?? 'not found')
+            }
+          } catch {
+            res.writeHead(400).end('bad json')
           }
-          const result = this.opts.ask?.(parsed.name, parsed.prompt) ?? { ok: false, error: 'not available' }
-          if (result.ok) {
-            res.writeHead(200).end('ok')
-          } else {
-            res.writeHead(404).end(result.error ?? 'not found')
-          }
-        } catch {
-          res.writeHead(400).end('bad json')
-        }
+        })()
       })
       return
     }

@@ -12,6 +12,7 @@ async function startServer(
   commands: OrchestrationCommand[],
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
+    askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     check?: (name: string) => { output: string } | null
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
     routines?: {
@@ -65,6 +66,35 @@ describe('runOrq', () => {
   it('ask retorna código != 0 quando o servidor responde not-found', async () => {
     const env = await startServer({ nodes: [] }, [], { ask: () => ({ ok: false, error: 'not found' }) })
     const { code } = await runOrq(['ask', 'Fantasma', 'oi'], env)
+    expect(code).not.toBe(0)
+  })
+
+  // Fase 14 (Task 1): --wait faz orq bloquear até o agente ficar ocioso e imprime o output
+  // acumulado devolvido pelo servidor, em vez do "ok" fire-and-forget de sempre.
+  it('ask com --wait chama POST /ask com wait:true e imprime o output retornado', async () => {
+    const askWait = vi.fn().mockResolvedValue({ ok: true, output: 'saída acumulada do agente' })
+    const env = await startServer({ nodes: [] }, [], { askWait })
+    const { code, out } = await runOrq(['ask', 'Dev', 'oi', '--wait'], env)
+    expect(code).toBe(0)
+    expect(out).toBe('saída acumulada do agente')
+    expect(askWait).toHaveBeenCalledWith('Dev', 'oi')
+  })
+
+  it('ask sem --wait continua fire-and-forget (não chama askWait)', async () => {
+    const ask = vi.fn().mockReturnValue({ ok: true })
+    const askWait = vi.fn().mockResolvedValue({ ok: true, output: 'não deveria ser usado' })
+    const env = await startServer({ nodes: [] }, [], { ask, askWait })
+    const { code, out } = await runOrq(['ask', 'Dev', 'oi'], env)
+    expect(code).toBe(0)
+    expect(out).toBe('ok')
+    expect(ask).toHaveBeenCalledWith('Dev', 'oi')
+    expect(askWait).not.toHaveBeenCalled()
+  })
+
+  it('ask com --wait retorna código != 0 quando o servidor responde not-found', async () => {
+    const askWait = vi.fn().mockResolvedValue({ ok: false, error: 'not found' })
+    const env = await startServer({ nodes: [] }, [], { askWait })
+    const { code } = await runOrq(['ask', 'Fantasma', 'oi', '--wait'], env)
     expect(code).not.toBe(0)
   })
 

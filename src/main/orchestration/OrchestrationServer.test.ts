@@ -11,6 +11,7 @@ function makeServer(
   commands: OrchestrationCommand[],
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
+    askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     check?: (name: string) => { output: string } | null
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
     routines?: {
@@ -107,6 +108,47 @@ describe('OrchestrationServer', () => {
       body: JSON.stringify({ name: 'agente-desconhecido', prompt: 'olá' })
     })
     expect(res.status).toBe(404)
+  })
+
+  // Fase 14 (Task 1): POST /ask com wait:true bloqueia na askWait (a versão que espera o
+  // terminal ficar ocioso) em vez do ask fire-and-forget de sempre.
+  it('POST /ask com {name, prompt, wait:true} chama opts.askWait e responde {output}', async () => {
+    const askWait = vi.fn().mockResolvedValue({ ok: true, output: 'saída acumulada' })
+    const s = makeServer({ nodes: [] }, [], { askWait })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/ask`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'agente-1', prompt: 'olá agente', wait: true })
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ output: 'saída acumulada' })
+    expect(askWait).toHaveBeenCalledWith('agente-1', 'olá agente')
+  })
+
+  it('POST /ask com wait:true e askWait respondendo {ok:false} retorna 404', async () => {
+    const askWait = vi.fn().mockResolvedValue({ ok: false, error: 'not found' })
+    const s = makeServer({ nodes: [] }, [], { askWait })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/ask`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'fantasma', prompt: 'oi', wait: true })
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('POST /ask com wait:true mas sem askWait configurado retorna 404', async () => {
+    const ask = vi.fn().mockReturnValue({ ok: true })
+    const s = makeServer({ nodes: [] }, [], { ask })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/ask`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'agente-1', prompt: 'oi', wait: true })
+    })
+    expect(res.status).toBe(404)
+    expect(ask).not.toHaveBeenCalled()
   })
 
   it('GET /check?name=X chama opts.check e responde {output}', async () => {

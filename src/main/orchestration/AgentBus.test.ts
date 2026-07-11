@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AgentBus } from './AgentBus'
 import { PtyManager, type IPtyLike } from '../pty/PtyManager'
 
@@ -70,5 +70,33 @@ describe('AgentBus', () => {
     expect(bus.read(id)).toContain('antes de sair')
     f.emitExit(0)
     expect(bus.read(id)).toBe('')
+  })
+})
+
+// Fase 14 (Task 1): waitForIdle bloqueia até o pty ficar em silêncio por idleMs — ou até
+// timeoutMs estourar, o que vier primeiro — para permitir um "orq ask --wait" síncrono.
+describe('AgentBus.waitForIdle', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('resolve com o output apos idleMs de silencio', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    const p = bus.waitForIdle(id, { idleMs: 1000, timeoutMs: 10000 })
+    f.emit('resposta parte 1\n')
+    vi.advanceTimersByTime(500)     // ainda não ocioso
+    f.emit('resposta parte 2\n')    // reseta o timer de ociosidade
+    vi.advanceTimersByTime(1000)    // agora 1000ms de silêncio
+    await expect(p).resolves.toContain('resposta parte 2')
+  })
+
+  it('resolve no timeoutMs mesmo sem ficar ocioso', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({}); bus.track(id)
+    const p = bus.waitForIdle(id, { idleMs: 5000, timeoutMs: 2000 })
+    const spam = setInterval(() => f.emit('x'), 100)  // nunca fica ocioso
+    vi.advanceTimersByTime(2000)
+    clearInterval(spam)
+    await expect(p).resolves.toBeTypeOf('string')
   })
 })

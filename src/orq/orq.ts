@@ -25,12 +25,26 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
     }
     if (cmd === 'ask') {
-      const prompt = rest.join(' ')
+      // --wait pode aparecer em qualquer posição depois do nome (ex.: "ask Dev --wait oi" ou
+      // "ask Dev oi --wait") — filtramos a flag fora das palavras do prompt em vez de exigir
+      // uma posição fixa. Sem --wait, o corpo e o retorno permanecem idênticos à Fase 6
+      // (fire-and-forget); com --wait, pedimos wait:true e imprimimos o output devolvido em
+      // vez do "ok" de sempre.
+      const words = rest.filter((w) => w !== '--wait')
+      const wait = words.length !== rest.length
+      const prompt = words.join(' ')
+      const body: { name: string; prompt: string; wait?: true } = { name: sub, prompt }
+      if (wait) body.wait = true
       const res = await fetch(`${base}/ask`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: sub, prompt })
+        body: JSON.stringify(body)
       })
+      if (wait) {
+        if (!res.ok) return { code: 1, out: `orq: erro ${res.status}` }
+        const data = (await res.json()) as { output: string }
+        return { code: 0, out: data.output }
+      }
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
     }
     if (cmd === 'check') {
@@ -166,7 +180,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>" | orq routine list | orq routine add "<nome>" "<cron>" "<alvo>" "<comando...>" | orq routine remove "<id>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. Rotinas: schedule é cron de 5 campos (minuto/hora/dia/mês/dia-da-semana) com granularidade de 1 minuto; toda rotina nasce habilitada.'
+        'orq: comando desconhecido.\nUso: orq list | orq note write "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>" | orq routine list | orq routine add "<nome>" "<cron>" "<alvo>" "<comando...>" | orq routine remove "<id>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. Rotinas: schedule é cron de 5 campos (minuto/hora/dia/mês/dia-da-semana) com granularidade de 1 minuto; toda rotina nasce habilitada. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }
