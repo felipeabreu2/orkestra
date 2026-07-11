@@ -17,6 +17,12 @@ let portalSeq = 1
 interface CanvasState {
   nodes: Node[]
   edges: Edge[]
+  // true enquanto uma troca de projeto está em voo (flush→switch→hydrate em ProjectsSidebar) —
+  // usado por useCanvasPersistence para suspender o autosave debounced nessa janela, senão um
+  // timer de 500ms pendente do projeto ANTIGO pode disparar depois que o main já setou o projeto
+  // NOVO como ativo e gravar o conteúdo errado por cima do arquivo do projeto novo (Fase 15 Task 3).
+  switching: boolean
+  setSwitching: (v: boolean) => void
   addTerminalNode: (
     position?: { x: number; y: number } | undefined,
     opts?: { preset?: string; role?: string; name?: string; floorId?: string }
@@ -43,6 +49,8 @@ interface CanvasState {
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
+  switching: false,
+  setSwitching: (v): void => set({ switching: v }),
   addTerminalNode: (position, opts): void =>
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }

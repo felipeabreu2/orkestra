@@ -87,16 +87,30 @@ export function ProjectsSidebar(): JSX.Element {
   const switchTo = async (id: string): Promise<void> => {
     if (switchingRef.current) return
     switchingRef.current = true
+    // Suspende o autosave debounced de useCanvasPersistence pra toda a janela flush→switch→
+    // hydrate: sem isso, um timer de 500ms armado com o conteúdo do projeto ANTIGO poderia
+    // disparar depois que o main já trocou o ativo pro projeto NOVO mas antes do hydrate() abaixo
+    // rodar, gravando o conteúdo errado por cima do arquivo do projeto novo (Fase 15 Task 3,
+    // fix complementar ao flush explícito por id já existente).
+    useCanvasStore.getState().setSwitching(true)
     try {
       await window.orkestra.projects.saveCanvas(activeId, useCanvasStore.getState().serialize())
       const snap = await window.orkestra.projects.switch(id)
-      useCanvasStore.getState().hydrate(snap ?? { version: 2, nodes: [], edges: [] })
+      if (snap === null) {
+        // id inválido (não deveria acontecer em uso normal, ver review Fase 15 Task 3, Minor #2):
+        // não hidrata canvas vazio nem seta um activeId local bogus — early-return preserva o
+        // canvas e o projeto ativo atuais intactos.
+        setError('Não foi possível trocar de projeto (id inválido).')
+        return
+      }
+      useCanvasStore.getState().hydrate(snap)
       setActiveId(id)
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       switchingRef.current = false
+      useCanvasStore.getState().setSwitching(false)
     }
   }
 
@@ -141,6 +155,11 @@ export function ProjectsSidebar(): JSX.Element {
   }
 
   const handleRemove = async (id: string): Promise<void> => {
+    // Mesma suspensão do autosave debounced usada em switchTo (Fase 15 Task 3): remove() também
+    // pode trocar o projeto ativo no main (quando o removido era o ativo), então a mesma janela
+    // de corrida entre um timer de autosave pendente do projeto antigo e o hydrate abaixo existe
+    // aqui também.
+    useCanvasStore.getState().setSwitching(true)
     try {
       // remove() já decide/troca o ativo no main quando o removido era o ativo, devolvendo
       // {activeId, snapshot} do projeto que ficou ativo — só refletimos isso no renderer.
@@ -156,6 +175,8 @@ export function ProjectsSidebar(): JSX.Element {
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      useCanvasStore.getState().setSwitching(false)
     }
   }
 

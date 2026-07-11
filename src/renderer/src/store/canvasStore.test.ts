@@ -328,4 +328,12 @@ describe('canvasStore', () => {
     const newNode = nodes[1]
     expect((newNode.data as { name?: string }).name).toBe('Portal 1000')
   })
+
+  it('switching começa false e setSwitching alterna a flag (guarda de autosave durante troca de projeto, Fase 15 Task 3)', () => {
+    expect(useCanvasStore.getState().switching).toBe(false)
+    useCanvasStore.getState().setSwitching(true)
+    expect(useCanvasStore.getState().switching).toBe(true)
+    useCanvasStore.getState().setSwitching(false)
+    expect(useCanvasStore.getState().switching).toBe(false)
+  })
 })
