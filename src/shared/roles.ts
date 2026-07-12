@@ -5,7 +5,7 @@ export interface Role {
   hint: string
 }
 
-export const PRESET_ROLES: Role[] = [
+export const PRESET_ROLES: readonly Role[] = [
   { id: 'lider', label: 'Líder', color: 'var(--accent)', hint: 'Coordena os demais agentes e decide a estratégia.' },
   { id: 'dev', label: 'Dev', color: 'var(--ok)', hint: 'Implementa o código conforme o plano.' },
   { id: 'revisor', label: 'Revisor', color: 'var(--warn)', hint: 'Revisa o código em busca de bugs e melhorias.' },
@@ -16,5 +16,5 @@ export function roleMeta(role: string): { label: string; color: string; hint: st
   const norm = role.trim().toLowerCase()
   const p = PRESET_ROLES.find((r) => r.id === norm || r.label.toLowerCase() === norm)
   if (p) return { label: p.label, color: p.color, hint: p.hint }
-  return { label: role, color: 'var(--text-2)', hint: '' }
+  return { label: role.trim(), color: 'var(--text-2)', hint: '' }
 }

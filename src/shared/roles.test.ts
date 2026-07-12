@@ -31,4 +31,9 @@ describe('roleMeta', () => {
   it('papel vazio é neutro', () => {
     expect(roleMeta('').color).toBe('var(--text-2)')
   })
+  it('resolve pelo id em minúsculas e por label em maiúsculas (case-insensitive real)', () => {
+    expect(roleMeta('lider').color).toBe('var(--accent)')   // bare id
+    expect(roleMeta('LÍDER').color).toBe('var(--accent)')   // label uppercased (acentuado)
+    expect(roleMeta('  dev  ').label).toBe('Dev')            // trim + match
+  })
 })
