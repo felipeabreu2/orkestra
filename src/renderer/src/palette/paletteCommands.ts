@@ -4,6 +4,7 @@ export interface PaletteItem {
   kind: 'action' | 'node' | 'context' | 'connect' | 'disconnect'
   run?: () => void
   input?: { placeholder: string; initial: string; submit: (value: string) => void }
+  ask?: { nodeId: string; label: string }
 }
 export interface PaletteNode {
   id: string
@@ -76,6 +77,12 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
         label: `Definir papel de ${name}`,
         kind: 'context',
         input: { placeholder: 'Papel (ex.: Revisor)', initial: (n.data?.role as string) || '', submit: (v) => actions.setTerminalRole(n.id, v) }
+      })
+      items.push({
+        id: `ctx:ask:${n.id}`,
+        label: `Perguntar ao agente ${name}`,
+        kind: 'context',
+        ask: { nodeId: n.id, label: name }
       })
     }
     for (const other of nodes) {
