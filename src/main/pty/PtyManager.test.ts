@@ -131,6 +131,23 @@ describe('PtyManager', () => {
     expect(call[2].cwd).toBe('/explicit/cwd')
   })
 
+  // Fase 27 (Task 1): base para SSH remoto — spawn precisa repassar args ao spawner sem
+  // concatenar em string (evita shell injection; vai direto para node-pty como (file, args[])).
+  it('spawn com file e args passa-os ao spawner (caminho ssh)', () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    mgr.spawn({ file: 'ssh', args: ['user@host'] })
+    const call = spawner.mock.calls[0]
+    expect(call[0]).toBe('ssh')
+    expect(call[1]).toEqual(['user@host'])
+  })
+  it('spawn sem args mantém o array vazio (shell local)', () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    mgr.spawn({})
+    expect(spawner.mock.calls[0][1]).toEqual([])
+  })
+
   it('registra nodeId->ptyId e resolve com ptyIdForNode', () => {
     const mgr = new PtyManager(() => makeFakePty().pty)
     const id = mgr.spawn({ nodeId: 'node-A' })
