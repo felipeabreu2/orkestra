@@ -10,8 +10,14 @@ import type { PortalState } from '../../../shared/orchestration'
 // (useOrchestrationSync) alcança este webview a partir do nome do portal — e (b) reporta
 // {name,url,title,text} ao main a cada did-finish-load, via window.orkestra.portalState (canal
 // IPC 'portal:state'); o main guarda por nome, servindo de estado para `orq portal snapshot`.
-export const PortalNode = forwardRef<WebviewTag, { url: string; nodeId: string; name: string }>(
-  function PortalNode({ url, nodeId, name }, forwardedRef) {
+// Fase 25 (Task 2): `partition` (calculada pelo pai via partitionForPortal) vai direto pro
+// atributo do <webview> — é o Electron quem isola/compartilha cookies e storage por partition;
+// este componente só repassa a string, sem lógica própria de sessão.
+export const PortalNode = forwardRef<
+  WebviewTag,
+  { url: string; nodeId: string; name: string; partition: string }
+>(
+  function PortalNode({ url, nodeId, name, partition }, forwardedRef) {
     const localRef = useRef<WebviewTag | null>(null)
 
     // Combina o ref local (usado pelos efeitos abaixo, que precisam do elemento de verdade) com
@@ -57,6 +63,8 @@ export const PortalNode = forwardRef<WebviewTag, { url: string; nodeId: string; 
       }
     }, [name])
 
-    return <webview ref={setRef} src={url} style={{ width: '100%', height: '100%' }} />
+    return (
+      <webview ref={setRef} src={url} partition={partition} style={{ width: '100%', height: '100%' }} />
+    )
   }
 )

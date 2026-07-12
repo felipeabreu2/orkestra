@@ -54,6 +54,10 @@ interface CanvasState {
   updateTerminalRole: (id: string, role: string) => void
   updatePortalUrl: (id: string, url: string) => void
   updatePortalName: (id: string, name: string) => void
+  // Fase 25 (Task 1): "linka" um portal a outro (data.linkedTo = nodeId do portal-fonte) para que
+  // ambos compartilhem a mesma partition de sessão (ver portalPartition.ts) — chamar com
+  // linkedTo=undefined desfaz o link (portal volta a usar a própria sessão isolada).
+  updatePortalLink: (id: string, linkedTo?: string) => void
   updateFileTreeRoot: (id: string, rootPath: string) => void
   removeNode: (id: string) => void
   // Aplica novas posições em lote (Fase 18 Task 2: alinhar/distribuir/organizar em grade nós
@@ -199,6 +203,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   updatePortalName: (id, name): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
+  updatePortalLink: (id, linkedTo): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, linkedTo } } : n))
     })),
   updateFileTreeRoot: (id, rootPath): void =>
     set((state) => ({

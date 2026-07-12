@@ -17,6 +17,7 @@ declare global {
       // a API de automação real (loadURL/executeJavaScript/...) é acessada via ref: WebviewTag.
       webview: DetailedHTMLProps<HTMLAttributes<WebviewTag>, WebviewTag> & {
         src?: string
+        partition?: string
       }
     }
   }
