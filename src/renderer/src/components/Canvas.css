@@ -139,3 +139,11 @@
 .react-flow__edge.ork-edge--link .react-flow__edge-path {
   stroke: var(--border-strong);
 }
+/* Feedback de seleção: as regras por-tipo acima têm a mesma especificidade que a
+   regra `.selected` interna do React Flow e venceriam por ordem de import, apagando
+   o realce ao selecionar. Esta regra vem depois e destaca a conexão selecionada
+   (cor de acento + traço mais grosso) sobre qualquer cor de tipo. */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
