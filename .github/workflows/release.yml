@@ -1,0 +1,43 @@
+name: Release
+
+# Dispara ao empurrar uma tag de versão (ex.: git tag v1.0.0 && git push origin v1.0.0).
+# Cada SO empacota os instaladores da sua própria plataforma e os publica no
+# GitHub Release da tag (via electron-builder --publish always → npm run release).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # necessário para o electron-builder criar/atualizar o Release
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Empacotar e publicar
+        run: npm run release
+        env:
+          # Token automático do Actions — permissão de escrita em Releases (ver `permissions` acima)
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Assinatura + notarização macOS — configurar em Settings → Secrets and variables → Actions.
+          # Ausentes, o build macOS sai não-assinado (funciona; Gatekeeper avisa).
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

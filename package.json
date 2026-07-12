@@ -1,6 +1,6 @@
 {
   "name": "orkestra",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Canvas de orquestração de agentes de código de IA",
   "keywords": [
     "electron",
@@ -29,7 +29,9 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "rebuild": "electron-rebuild -f -w node-pty",
-    "package": "electron-vite build && electron-builder --dir"
+    "package": "electron-vite build && electron-builder --dir",
+    "dist": "electron-vite build && electron-builder",
+    "release": "electron-vite build && electron-builder --publish always"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",

@@ -7,9 +7,8 @@ files:
   - out/**/*
   - package.json
 npmRebuild: true
-# TODO (Fase 13): icone customizado (build/icon.png -> electron-builder deriva o .icns/.ico a
-# partir dele). O arquivo ainda nao existe neste repo; ate la o empacotamento cai no icone
-# padrao do Electron em vez de falhar.
+# build/icon.png (1024x1024, exportado de resources/icon.svg) — electron-builder deriva
+# o .icns (mac) e .ico (win) a partir dele automaticamente.
 icon: build/icon.png
 mac:
   target:
@@ -18,6 +17,16 @@ mac:
     - target: zip
       arch: x64
   category: public.app-category.developer-tools
+  # Assinatura + notarizacao ativam AUTOMATICAMENTE quando as variaveis de ambiente estao
+  # presentes (CSC_LINK/CSC_KEY_PASSWORD p/ assinar; APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/
+  # APPLE_TEAM_ID p/ notarizar). hardenedRuntime + entitlements sao exigidos pela notarizacao.
+  # Sem as variaveis, o build sai NAO-assinado (Gatekeeper avisa) mas funciona.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # NOTA: arch e x64 (roda em Apple Silicon via Rosetta 2). arm64 nativo/universal e um
+  # upgrade futuro — precisa validar o empacotamento do node-pty (nativo) por arch.
 win:
   target:
     - target: nsis
