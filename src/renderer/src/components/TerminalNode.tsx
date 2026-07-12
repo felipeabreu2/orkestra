@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
+import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
 
 export function TerminalNode({
   nodeId,
@@ -48,6 +49,7 @@ export function TerminalNode({
           return
         }
         ptyId = id
+        if (nodeId) registerTerminalPty(nodeId, id)
         disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
         term.onData((data) => window.orkestra.pty.write(id, data))
         term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
@@ -63,6 +65,7 @@ export function TerminalNode({
       disposed = true
       ro.disconnect()
       disposeData()
+      if (nodeId) unregisterTerminalPty(nodeId)
       if (ptyId) window.orkestra.pty.kill(ptyId)
       term.dispose()
     }
