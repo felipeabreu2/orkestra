@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildPaletteItems, nodeLabel, type PaletteContext, type PaletteActions } from './paletteCommands'
+import { buildPaletteItems, nodeLabel, type PaletteActions } from './paletteCommands'
 
 function noopActions(): PaletteActions {
   return {
@@ -78,5 +78,31 @@ describe('buildPaletteItems', () => {
     expect(disc?.label).toContain('B')
     disc?.run?.()
     expect(actions.removeEdge).toHaveBeenCalledWith('e1')
+  })
+
+  it('nó não-terminal selecionado não oferece renomear/definir papel', () => {
+    const note = { id: 'n1', type: 'note', data: { content: 'oi' }, selected: true }
+    const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [note], actions: noopActions() })
+    expect(items.some((i) => i.id.startsWith('ctx:rename:'))).toBe(false)
+    expect(items.some((i) => i.id.startsWith('ctx:role:'))).toBe(false)
+    expect(items.some((i) => i.id === 'ctx:focus:n1')).toBe(true)
+    expect(items.some((i) => i.id === 'ctx:remove:n1')).toBe(true)
+  })
+
+  it('nodeLabel cobre portal, filetree, group e fallback', () => {
+    expect(nodeLabel({ id: 'p', type: 'portal', data: {} })).toBe('Portal')
+    expect(nodeLabel({ id: 'p', type: 'portal', data: { name: 'Docs' } })).toBe('Docs')
+    expect(nodeLabel({ id: 'f', type: 'filetree', data: {} })).toBe('Arquivos')
+    expect(nodeLabel({ id: 'g', type: 'group', data: {} })).toBe('Grupo')
+    expect(nodeLabel({ id: 'x', type: undefined, data: {} })).toBe('Nó')
+  })
+
+  it('desconectar tem id único quando ambos os endpoints estão selecionados', () => {
+    const a = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
+    const b = { id: 't2', type: 'terminal', data: { name: 'B' }, selected: true }
+    const edges = [{ id: 'e1', source: 't1', target: 't2' }]
+    const items = buildPaletteItems({ nodes: [a, b], edges, selectedNodes: [a, b], actions: noopActions() })
+    const discIds = items.filter((i) => i.kind === 'disconnect').map((i) => i.id)
+    expect(new Set(discIds).size).toBe(discIds.length) // todos únicos
   })
 })

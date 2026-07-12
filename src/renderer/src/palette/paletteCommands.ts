@@ -93,7 +93,7 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
       const otherId = e.source === n.id ? e.target : e.source
       const other = nodes.find((x) => x.id === otherId)
       items.push({
-        id: `disconnect:${e.id}`,
+        id: `disconnect:${n.id}:${e.id}`,
         label: `Desconectar ${name} ↔ ${other ? nodeLabel(other) : otherId}`,
         kind: 'disconnect',
         run: () => actions.removeEdge(e.id)
