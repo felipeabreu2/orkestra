@@ -24,6 +24,10 @@ interface CanvasState {
   // NOVO como ativo e gravar o conteúdo errado por cima do arquivo do projeto novo (Fase 15 Task 3).
   switching: boolean
   setSwitching: (v: boolean) => void
+  // Fase 30: caminho (cwd) do projeto ativo, exibido na barra superior. Setado pela
+  // ProjectsSidebar ao carregar/trocar de projeto (o cwd vive no ProjectManager, no main).
+  activeCwd: string | null
+  setActiveCwd: (cwd: string | null) => void
   // Fase 20 (Task 2): indicador de "atenção do agente" — ids de nós (terminal) cujo agente
   // produziu output e depois ficou ocioso (watcher no AgentBus do main, avisado via
   // window.orkestra.onAgentAttention em Canvas.tsx). Puramente efêmero/UI: nunca serializado
@@ -100,6 +104,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: [],
   switching: false,
   setSwitching: (v): void => set({ switching: v }),
+  activeCwd: null,
+  setActiveCwd: (cwd): void => set({ activeCwd: cwd }),
   attention: new Set(),
   setAttention: (nodeId, on): void =>
     set((state) => {

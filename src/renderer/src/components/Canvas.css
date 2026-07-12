@@ -107,7 +107,7 @@
    herdados por reaproveitar a classe) — só a âncora muda, pra topo-centro em vez de
    topo-esquerda, e só existe no DOM quando há 2+ nós selecionados (ver Canvas.tsx). */
 .ork-arrange-toolbar {
-  top: 12px;
+  top: 56px; /* abaixo da barra superior (Fase 30, header de 44px) */
   left: 50%;
   transform: translateX(-50%);
   flex-wrap: wrap;
