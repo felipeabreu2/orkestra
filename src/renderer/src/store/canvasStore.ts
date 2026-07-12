@@ -10,6 +10,7 @@ import {
   type Connection
 } from '@xyflow/react'
 import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapshot'
+import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -80,6 +81,9 @@ interface CanvasState {
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (connection: Connection) => void
+  // Fase 22 (Task 1): remove uma edge pelo id — usado pelo badge/UI da edge tipada (Task 2) para
+  // desconectar sem passar por onEdgesChange (que espera EdgeChange[] do próprio React Flow).
+  removeEdge: (id: string) => void
   serialize: () => CanvasSnapshot
   hydrate: (snapshot: CanvasSnapshot) => void
 }
@@ -321,7 +325,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }),
   onNodesChange: (changes): void => set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) })),
   onEdgesChange: (changes): void => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
-  onConnect: (connection): void => set((state) => ({ edges: addEdge(connection, state.edges) })),
+  onConnect: (connection): void =>
+    set((state) => {
+      // Fase 22 (Task 1): kind deriva dos TIPOS dos nós extremos (não da própria connection),
+      // então funciona tanto para o arraste no canvas quanto para o path `orq connect`
+      // (useOrchestrationSync.ts chama onConnect com um Connection puro, sem tocar nos nós).
+      const sourceType = state.nodes.find((n) => n.id === connection.source)?.type
+      const targetType = state.nodes.find((n) => n.id === connection.target)?.type
+      const kind: EdgeKind = deriveEdgeKind(sourceType, targetType)
+      const edge = { ...connection, type: 'typed', data: { kind }, className: `ork-edge--${kind}` }
+      return { edges: addEdge(edge, state.edges) }
+    }),
+  removeEdge: (id): void => set((state) => ({ edges: state.edges.filter((e) => e.id !== id) })),
   serialize: (): CanvasSnapshot => ({
     version: 2,
     nodes: get().nodes.map((n) => {
@@ -370,25 +385,37 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       portalSeq = Math.max(portalSeq, maxPortalNum + 1)
     }
 
+    const hydratedNodes: Node[] = snapshot.nodes.map((p) => {
+      const node: Node = {
+        id: p.id,
+        type: p.type,
+        position: p.position,
+        data: p.data,
+        width: p.width,
+        height: p.height
+      }
+      // Grupos (Fase 18 Task 3): restaura parentId/extent quando presentes no snapshot — a
+      // ordem de p.nodes já vem pai-antes-do-filho (serialize preserva a ordem de get().nodes,
+      // que groupSelected já escreve nessa ordem), então o React Flow recebe os nós na ordem
+      // que exige sem precisamos reordenar aqui.
+      if (p.parentId) node.parentId = p.parentId
+      if (p.extent === 'parent') node.extent = 'parent'
+      return node
+    })
+    // Fase 22 (Task 1): recomputa o kind (não confia em nenhum kind eventualmente salvo no
+    // snapshot — a fonte da verdade são sempre os tipos dos nós JÁ hidratados acima) e re-anexa
+    // type/data/className, igual ao onConnect. serialize() continua enxuto ({id,source,target}),
+    // então isso é puramente derivado na hidratação, nunca persistido.
+    const hydratedEdges: Edge[] = (snapshot.edges ?? []).map((e) => {
+      const sourceType = hydratedNodes.find((n) => n.id === e.source)?.type
+      const targetType = hydratedNodes.find((n) => n.id === e.target)?.type
+      const kind: EdgeKind = deriveEdgeKind(sourceType, targetType)
+      return { id: e.id, source: e.source, target: e.target, type: 'typed', data: { kind }, className: `ork-edge--${kind}` }
+    })
+
     set({
-      nodes: snapshot.nodes.map((p) => {
-        const node: Node = {
-          id: p.id,
-          type: p.type,
-          position: p.position,
-          data: p.data,
-          width: p.width,
-          height: p.height
-        }
-        // Grupos (Fase 18 Task 3): restaura parentId/extent quando presentes no snapshot — a
-        // ordem de p.nodes já vem pai-antes-do-filho (serialize preserva a ordem de get().nodes,
-        // que groupSelected já escreve nessa ordem), então o React Flow recebe os nós na ordem
-        // que exige sem precisamos reordenar aqui.
-        if (p.parentId) node.parentId = p.parentId
-        if (p.extent === 'parent') node.extent = 'parent'
-        return node
-      }),
-      edges: (snapshot.edges ?? []).map((e) => ({ id: e.id, source: e.source, target: e.target }))
+      nodes: hydratedNodes,
+      edges: hydratedEdges
     })
   }
 }))
