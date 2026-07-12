@@ -21,14 +21,21 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
   const autostart = (data as { autostart?: boolean })?.autostart
-  // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `rmeta` resolve o
-  // preset (por id OU label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre.
-  // `customRole` decide se o <select> mostra "Personalizado…" com o <input> de texto revelado;
-  // derivado uma vez do `role` atual no mount (não é preset -> já começa em modo personalizado),
-  // e depois só muda via interação do próprio seletor — ver nota de risco no brief da Fase 26.
-  const rmeta = roleMeta(role)
-  const isPresetRole = PRESET_ROLES.some((r) => r.label === role)
-  const [customRole, setCustomRole] = useState(role.trim() !== '' && !isPresetRole)
+  // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o
+  // preset (por id OU label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre;
+  // `isPresetRole` reaproveita essa cor (neutra == não é preset) em vez de comparar `role` contra
+  // os labels de novo — assim um preset gravado com casing não-canônico (ex.: "dev" via orq)
+  // ainda é reconhecido. `showCustom`/`selectValue` são DERIVADOS de `role` a cada render — não
+  // um estado travado no mount — porque o papel pode mudar por FORA do seletor (Command Palette
+  // "Definir papel de X" chama updateTerminalRole no node já montado; um estado latched uma vez
+  // deixaria o <select> em branco quando o novo valor não bate com nenhuma <option>).
+  // `customToggle` só cobre o caso "Personalizado…" com role ainda vazio, onde não há valor
+  // algum para derivar o modo custom.
+  const resolved = roleMeta(role)
+  const isPresetRole = resolved.color !== 'var(--text-2)'
+  const [customToggle, setCustomToggle] = useState(false)
+  const showCustom = customToggle || (role.trim() !== '' && !isPresetRole)
+  const selectValue = showCustom ? '__custom__' : isPresetRole ? resolved.label : role
 
   // Limpa a atenção QUANDO o usuário de fato volta a usar este terminal — dispara ao focar
   // qualquer coisa dentro do wrapper (o mais comum: a <textarea> escondida que o xterm.js usa
@@ -69,22 +76,22 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           {role.trim() !== '' && (
             <span
               className="ork-role-badge"
-              style={{ color: rmeta.color, borderColor: rmeta.color }}
-              title={rmeta.hint || undefined}
+              style={{ color: resolved.color, borderColor: resolved.color }}
+              title={resolved.hint || undefined}
             >
-              {rmeta.label}
+              {resolved.label}
             </span>
           )}
           <select
             className="nodrag ork-role-select"
-            value={customRole ? '__custom__' : role}
+            value={selectValue}
             onChange={(e) => {
               const v = e.target.value
               if (v === '__custom__') {
-                setCustomRole(true)
+                setCustomToggle(true)
                 return
               }
-              setCustomRole(false)
+              setCustomToggle(false)
               updateTerminalRole(id, v)
             }}
             aria-label="Papel do terminal"
@@ -98,7 +105,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             ))}
             <option value="__custom__">Personalizado…</option>
           </select>
-          {customRole && (
+          {showCustom && (
             <input
               className="nodrag ork-role-input"
               value={role}

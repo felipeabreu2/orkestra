@@ -132,10 +132,6 @@
 .ork-node-input::placeholder {
   color: var(--text-3);
 }
-.ork-node-input--secondary {
-  color: var(--text-2);
-  text-align: right;
-}
 .ork-node-input--select {
   flex: 0 0 auto;
   max-width: 74px;
