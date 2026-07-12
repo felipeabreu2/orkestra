@@ -28,6 +28,7 @@ export interface PaletteActions {
   setTerminalRole: (id: string, role: string) => void
   connect: (source: string, target: string) => void
   removeEdge: (id: string) => void
+  addSshTerminal: (host: string) => void
 }
 export interface PaletteContext {
   nodes: PaletteNode[]
@@ -60,6 +61,22 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
     { id: 'action:portal', label: 'Criar Portal', kind: 'action', run: actions.addPortalNode },
     { id: 'action:filetree', label: 'Criar Árvore de Arquivos', kind: 'action', run: actions.addFileTreeNode }
   ]
+
+  // Fase 27 (Task 4): "Criar terminal SSH remoto" é uma ação global (não depende de seleção),
+  // igual às 4 acima, mas pede um valor (destino) — por isso usa `input` em vez de `run`, o mesmo
+  // mecanismo já usado por renomear/definir papel (Fase 23). O submit chama `addSshTerminal` com
+  // o texto digitado; a validação de formato (isValidSshHost) e o addTerminalNode({sshHost}) ficam
+  // no lado do CommandPalette (Task 4 Step 2), não aqui — esta função só monta a lista.
+  items.push({
+    id: 'action:ssh',
+    label: 'Criar terminal SSH remoto',
+    kind: 'action',
+    input: {
+      placeholder: 'destino (ex.: user@host ou alias do ~/.ssh/config)',
+      initial: '',
+      submit: (v) => actions.addSshTerminal(v)
+    }
+  })
 
   for (const n of selectedNodes) {
     const name = nodeLabel(n)

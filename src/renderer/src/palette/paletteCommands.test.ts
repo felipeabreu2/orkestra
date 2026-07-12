@@ -12,7 +12,8 @@ function noopActions(): PaletteActions {
     renameTerminal: vi.fn(),
     setTerminalRole: vi.fn(),
     connect: vi.fn(),
-    removeEdge: vi.fn()
+    removeEdge: vi.fn(),
+    addSshTerminal: vi.fn()
   }
 }
 
@@ -31,6 +32,16 @@ describe('buildPaletteItems', () => {
     expect(labels).toContain('Criar Nota')
     expect(labels).toContain('Criar Portal')
     expect(labels).toContain('Criar Árvore de Arquivos')
+  })
+
+  it('item global "Criar terminal SSH remoto" tem input e input.submit aciona addSshTerminal', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions })
+    const ssh = items.find((i) => i.id === 'action:ssh')
+    expect(ssh?.label).toBe('Criar terminal SSH remoto')
+    expect(ssh?.input).toBeTruthy()
+    ssh?.input?.submit('user@host')
+    expect(actions.addSshTerminal).toHaveBeenCalledWith('user@host')
   })
 
   it('sem seleção, não há itens de contexto/connect/disconnect', () => {
