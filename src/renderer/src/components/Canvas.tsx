@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ReactFlow, Background, Controls, MiniMap, useReactFlow } from '@xyflow/react'
+import { useEffect, useRef, useState } from 'react'
+import { ReactFlow, Background, Controls, MiniMap, useReactFlow, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
 import { useCanvasStore } from '../store/canvasStore'
@@ -23,9 +23,9 @@ const nodeTypes = {
 }
 
 // isTypingTarget guarda os atalhos que SÃO sensíveis a texto (foco/zoom/minimap da Fase 18:
-// Shift+1/2/M) — Cmd/Ctrl+K (Fase 12) e Cmd/Ctrl+G / Cmd/Ctrl+Shift+G (Fase 18 Task 3) são
-// comandos, não texto, e rodam ANTES deste guard (ver handleKeyDown abaixo), então não passam
-// por aqui. Esta função cobre: nem num input/textarea/select/contentEditable (nome de
+// Shift+1/2/M; foco em nó com atenção da Fase 20 Task 2: Shift+A) — Cmd/Ctrl+K (Fase 12) e
+// Cmd/Ctrl+G / Cmd/Ctrl+Shift+G (Fase 18 Task 3) são comandos, não texto, e rodam ANTES deste
+// guard (ver handleKeyDown abaixo), então não passam por aqui. Esta função cobre: nem num input/textarea/select/contentEditable (nome de
 // terminal, nota, campo do palette) nem dentro de um terminal xterm.js (que captura teclado via
 // uma <textarea> escondida — já cairia no primeiro check, mas o closest('.xterm') cobre
 // qualquer outro elemento focável que a lib venha a usar dentro do terminal). Sem isso, por ex.
@@ -55,9 +55,24 @@ export function Canvas(): JSX.Element {
   const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
+  const setAttention = useCanvasStore((s) => s.setAttention)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [minimapOn, setMinimapOn] = useState(true)
   const { fitView } = useReactFlow()
+  // Fase 20 (Task 2): índice de qual nó em `attention` o Shift+A deve focar na PRÓXIMA vez que
+  // for pressionado (ciclo entre múltiplos agentes ociosos). Ref (não state) porque não precisa
+  // re-renderizar nada por si só — só é lido/escrito dentro do handler de keydown.
+  const attentionCycleRef = useRef(0)
+
+  // Assina window.orkestra.onAgentAttention (Fase 20 Task 1, main/preload): dispara com o nodeId
+  // de um terminal cujo agente produziu output e depois ficou ocioso. Só ACENDE o indicador aqui
+  // (setAttention(nodeId, true)) — apagar é responsabilidade do próprio TerminalFlowNode/
+  // TerminalNode ao focar aquele terminal específico (clearAgentAttention + setAttention false),
+  // não deste efeito global. Cleanup desinscreve (a própria função retornada pelo preload).
+  useEffect(() => {
+    const off = window.orkestra.onAgentAttention((nodeId) => setAttention(nodeId, true))
+    return off
+  }, [setAttention])
 
   // Barra de alinhar/distribuir/organizar em grade (Fase 18 Task 2): só aparece com 2+ nós
   // selecionados (node.selected, setado pelo próprio React Flow no clique/box-select). Cada
@@ -79,7 +94,8 @@ export function Canvas(): JSX.Element {
   // teclado (ex.: "!"/"@" em US e ABNT2) — e.code é a tecla física, estável entre layouts.
   // Fase 18 Task 3: Cmd/Ctrl+G (agrupar) e Cmd/Ctrl+Shift+G (desagrupar) entraram no mesmo
   // padrão do Cmd+K — comandos, não texto, então rodam ANTES do isTypingTarget guard (ver
-  // comentário na própria função, acima). Só Shift+1/2/M passam pelo guard.
+  // comentário na própria função, acima). Fase 20 Task 2: Shift+A (focar próximo agente com
+  // atenção pendente) entrou no grupo Shift+1/2/M — sensível a texto, roda DEPOIS do guard.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Cmd/Ctrl+K (palette toggle) is a command chord, not text — always works, even while typing.
@@ -119,10 +135,35 @@ export function Canvas(): JSX.Element {
         setMinimapOn((o) => !o)
         return
       }
+      // Shift+A (Fase 20 Task 2): foca o próximo nó em `attention` (agentes ociosos aguardando o
+      // usuário) — cicla pelos ids presentes no Set a cada pressionar repetido, via
+      // attentionCycleRef. Não faz nada (no-op) se `attention` estiver vazio. Só ENQUADRA
+      // (fitView) e SELECIONA o nó (via onNodesChange, mesmo mecanismo do React Flow usado em
+      // todo o resto do arquivo) — não limpa a atenção: limpar é obra do foco de fato no
+      // terminal (TerminalFlowNode.onFocusCapture), não deste atalho de navegação.
+      if (e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        const ids = Array.from(useCanvasStore.getState().attention)
+        if (ids.length === 0) return
+        const idx = attentionCycleRef.current % ids.length
+        attentionCycleRef.current = idx + 1
+        const targetId = ids[idx]
+        fitView({ nodes: [{ id: targetId }], duration: 300 })
+        const changes: NodeChange[] = []
+        for (const n of useCanvasStore.getState().nodes) {
+          if (n.id === targetId) {
+            if (!n.selected) changes.push({ id: n.id, type: 'select', selected: true })
+          } else if (n.selected) {
+            changes.push({ id: n.id, type: 'select', selected: false })
+          }
+        }
+        if (changes.length) onNodesChange(changes)
+        return
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [fitView])
+  }, [fitView, onNodesChange])
 
   return (
     // width/height:100% (não 100vw/100vh, Fase 15 Task 3): este <div> agora preenche o wrapper

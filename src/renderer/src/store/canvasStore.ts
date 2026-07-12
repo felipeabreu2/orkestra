@@ -23,6 +23,14 @@ interface CanvasState {
   // NOVO como ativo e gravar o conteúdo errado por cima do arquivo do projeto novo (Fase 15 Task 3).
   switching: boolean
   setSwitching: (v: boolean) => void
+  // Fase 20 (Task 2): indicador de "atenção do agente" — ids de nós (terminal) cujo agente
+  // produziu output e depois ficou ocioso (watcher no AgentBus do main, avisado via
+  // window.orkestra.onAgentAttention em Canvas.tsx). Puramente efêmero/UI: nunca serializado
+  // (não entra em serialize()/hydrate(), ao contrário de data.* dos nós). setAttention SEMPRE
+  // atribui uma NOVA instância de Set (nunca muta a existente) — zustand compara referência, e
+  // mutar um Set no lugar não dispararia re-render em nenhum componente que o selecione.
+  attention: Set<string>
+  setAttention: (nodeId: string, on: boolean) => void
   addTerminalNode: (
     position?: { x: number; y: number } | undefined,
     opts?: { preset?: string; role?: string; name?: string }
@@ -81,6 +89,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: [],
   switching: false,
   setSwitching: (v): void => set({ switching: v }),
+  attention: new Set(),
+  setAttention: (nodeId, on): void =>
+    set((state) => {
+      const next = new Set(state.attention)
+      if (on) next.add(nodeId)
+      else next.delete(nodeId)
+      return { attention: next }
+    }),
   addTerminalNode: (position, opts): void =>
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }

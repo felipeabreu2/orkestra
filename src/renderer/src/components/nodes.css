@@ -61,6 +61,45 @@
   background: var(--ok);
 }
 
+/* Attention indicator (Fase 20 Task 2): small pulsing dot shown in the terminal header while
+   the node's id is present in canvasStore's `attention` Set (an agent produced output, then
+   went idle — AgentBus watcher in the main process, wired to the renderer via
+   window.orkestra.onAgentAttention). Conditionally RENDERED (see TerminalFlowNode), not just
+   hidden via CSS — mounts/unmounts as the id enters/leaves the Set, so "disappears when
+   attention clears" needs no extra CSS state here.
+   The fading ring color mirrors --warn (#e0a13a) translated to rgba, same technique already
+   used for the MiniMap maskColor in Canvas.tsx — there is no --warn-weak token yet, and
+   box-shadow keyframes need an alpha channel a plain var() can't give them.
+   Pulse is fully DISABLED (not just shortened) under prefers-reduced-motion, leaving a plain
+   static dot — same spirit as tokens.css zeroing --dur-1/--dur-2, applied directly here since
+   a looping `animation` isn't controlled by those transition-duration tokens. */
+.ork-node-attention {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: ork-attention-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ork-attention-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(224, 161, 58, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(224, 161, 58, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(224, 161, 58, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ork-node-attention {
+    animation: none;
+  }
+}
+
 .ork-node-title {
   flex: 1;
   min-width: 0;

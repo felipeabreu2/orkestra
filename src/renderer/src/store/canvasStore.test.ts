@@ -4,7 +4,7 @@ import { useCanvasStore } from './canvasStore'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 
 beforeEach(() => {
-  useCanvasStore.setState({ nodes: [], edges: [] })
+  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set() })
 })
 
 describe('canvasStore', () => {
@@ -630,5 +630,48 @@ describe('canvasStore', () => {
     const before = useCanvasStore.getState().nodes
     useCanvasStore.getState().ungroupGroupsById(['id-inexistente'])
     expect(useCanvasStore.getState().nodes).toBe(before)
+  })
+
+  // --- Fase 20 (Task 2): indicador de "atenção do agente" — attention Set no store ---
+
+  it('attention começa como um Set vazio', () => {
+    const { attention } = useCanvasStore.getState()
+    expect(attention).toBeInstanceOf(Set)
+    expect(attention.size).toBe(0)
+  })
+
+  it('setAttention(id, true) adiciona o nodeId ao Set attention', () => {
+    useCanvasStore.getState().setAttention('n1', true)
+    expect(useCanvasStore.getState().attention.has('n1')).toBe(true)
+  })
+
+  it('setAttention(id, false) remove o nodeId do Set attention', () => {
+    useCanvasStore.getState().setAttention('n1', true)
+    useCanvasStore.getState().setAttention('n1', false)
+    expect(useCanvasStore.getState().attention.has('n1')).toBe(false)
+  })
+
+  it('setAttention não afeta outros ids já presentes no Set', () => {
+    useCanvasStore.getState().setAttention('n1', true)
+    useCanvasStore.getState().setAttention('n2', true)
+    useCanvasStore.getState().setAttention('n1', false)
+    const { attention } = useCanvasStore.getState()
+    expect(attention.has('n1')).toBe(false)
+    expect(attention.has('n2')).toBe(true)
+  })
+
+  it('setAttention(id, false) num id ausente é no-op seguro (não lança, Set continua sem o id)', () => {
+    expect(() => useCanvasStore.getState().setAttention('ausente', false)).not.toThrow()
+    expect(useCanvasStore.getState().attention.has('ausente')).toBe(false)
+  })
+
+  it('setAttention sempre atribui uma NOVA referência de Set (para o zustand re-renderizar mesmo em mutação de conteúdo interno)', () => {
+    const before = useCanvasStore.getState().attention
+    useCanvasStore.getState().setAttention('n1', true)
+    const afterAdd = useCanvasStore.getState().attention
+    expect(afterAdd).not.toBe(before)
+    useCanvasStore.getState().setAttention('n1', false)
+    const afterRemove = useCanvasStore.getState().attention
+    expect(afterRemove).not.toBe(afterAdd)
   })
 })
