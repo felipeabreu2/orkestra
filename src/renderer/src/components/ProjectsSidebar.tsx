@@ -186,14 +186,15 @@ export function ProjectsSidebar(): JSX.Element {
   }
 
   const handleCreate = async (): Promise<void> => {
-    const name = window.prompt('Nome do projeto:')
-    if (!name || !name.trim()) return
     try {
-      // Fase 17 (Task 2): abre o diálogo nativo de pasta antes de criar. Cancelar (pickDirectory
-      // devolve null) NÃO aborta a criação — o projeto nasce sem cwd e os terminais caem no
-      // fallback HOME já existente em PtyManager.spawn (ver ProjectManager.getActive().cwd).
+      // Abre o seletor de pasta nativo do SO PRIMEIRO — criar um projeto é escolher a pasta
+      // de trabalho dele (os terminais abrem nela). O nome do projeto vira o nome da pasta;
+      // dá pra renomear depois pelo botão de renomear da linha. (Electron não suporta
+      // window.prompt, então a seleção de pasta é o próprio fluxo de criação.)
       const cwd = await window.orkestra.projects.pickDirectory()
-      const project = await window.orkestra.projects.create(name.trim(), cwd ?? undefined)
+      if (!cwd) return // usuário cancelou o diálogo → não cria nada
+      const name = basename(cwd)
+      const project = await window.orkestra.projects.create(name, cwd)
       await refresh()
       await switchTo(project.id)
     } catch (err) {
