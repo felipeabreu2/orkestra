@@ -46,7 +46,10 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
         ) : (
           <div
             className="nodrag nowheel ork-note-preview"
-            onDoubleClick={() => setMode('edit')}
+            onDoubleClick={(e) => {
+              if ((e.target as HTMLElement).closest('a')) return
+              setMode('edit')
+            }}
             title="Duplo-clique para editar"
           >
             {content.trim() ? (

@@ -117,7 +117,7 @@ function createWindow(): void {
   // mecanismo do will-attach-webview acima (que só rege a tag <webview> dos portais); os dois
   // convivem sem conflito.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) {
+    if (/^(https?:\/\/|mailto:)/i.test(url)) {
       void shell.openExternal(url)
     }
     return { action: 'deny' }
