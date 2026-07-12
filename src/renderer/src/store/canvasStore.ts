@@ -32,11 +32,20 @@ interface CanvasState {
     position?: { x: number; y: number } | undefined,
     opts?: { name?: string; url?: string }
   ) => void
+  // Fase 19 (Task 2): nó explorador de arquivos (FileTreeNode) — rootPath opcional na criação
+  // (a resolução do default, cwd do projeto ativo, é feita pelo próprio componente no mount, não
+  // aqui no store). `updateFileTreeRoot` é usado tanto ao trocar de pasta pelo header do nó
+  // quanto ao escolher a primeira pasta (empty state), e persiste via o serialize genérico.
+  addFileTreeNode: (
+    position?: { x: number; y: number } | undefined,
+    opts?: { rootPath?: string }
+  ) => void
   updateNoteContent: (id: string, content: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
   updatePortalUrl: (id: string, url: string) => void
   updatePortalName: (id: string, name: string) => void
+  updateFileTreeRoot: (id: string, rootPath: string) => void
   removeNode: (id: string) => void
   // Aplica novas posições em lote (Fase 18 Task 2: alinhar/distribuir/organizar em grade nós
   // selecionados). `map` vem de arrange.ts (alignNodes/distributeNodes/gridArrange) — nós cujo
@@ -131,6 +140,26 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         ]
       }
     }),
+  addFileTreeNode: (position, opts): void =>
+    set((state) => {
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
+      return {
+        nodes: [
+          ...state.nodes,
+          {
+            id: `filetree-${crypto.randomUUID()}`,
+            type: 'filetree',
+            position: pos,
+            data: {
+              name: 'Arquivos',
+              rootPath: opts?.rootPath
+            },
+            width: 300,
+            height: 360
+          }
+        ]
+      }
+    }),
   updateNoteContent: (id, content): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, content } } : n))
@@ -150,6 +179,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   updatePortalName: (id, name): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
+  updateFileTreeRoot: (id, rootPath): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, rootPath } } : n))
     })),
   removeNode: (id): void =>
     set((state) => ({

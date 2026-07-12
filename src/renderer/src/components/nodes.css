@@ -1,7 +1,7 @@
 /* Shared node-card styling (Fase 13 Task 2), consumed by TerminalFlowNode/NoteNode/
-   PortalFlowNode. Purely visual — the markup each component renders (NodeResizer, Handle,
-   nodrag/nowheel wrappers) is unchanged; these classes just replace the old ad-hoc inline
-   hex colors with the design tokens from styles/tokens.css.
+   PortalFlowNode/FileTreeNode (Fase 19 Task 2). Purely visual — the markup each component
+   renders (NodeResizer, Handle, nodrag/nowheel wrappers) is unchanged; these classes just
+   replace the old ad-hoc inline hex colors with the design tokens from styles/tokens.css.
 
    React Flow adds `.selected` to the ancestor `.react-flow__node` wrapper (outside of what
    these components render) when a node is selected — `.react-flow__node.selected .ork-node`
@@ -56,6 +56,9 @@
 }
 .ork-node-dot--portal {
   background: var(--accent);
+}
+.ork-node-dot--filetree {
+  background: var(--ok);
 }
 
 .ork-node-title {

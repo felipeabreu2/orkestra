@@ -316,6 +316,79 @@ describe('canvasStore', () => {
     expect((newNode.data as { name?: string }).name).toBe('Portal 1000')
   })
 
+  // --- Fase 19 (Task 2): FileTreeNode — árvore de arquivos no canvas ---
+
+  it('addFileTreeNode cria um nó tipo filetree com data.rootPath e data.name "Arquivos"', () => {
+    useCanvasStore.getState().addFileTreeNode(undefined, { rootPath: '/home/user/project' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect(n.type).toBe('filetree')
+    expect((n.data as { rootPath?: string }).rootPath).toBe('/home/user/project')
+    expect((n.data as { name?: string }).name).toBe('Arquivos')
+  })
+
+  it('addFileTreeNode usa width:300 height:360 e a posição informada', () => {
+    useCanvasStore.getState().addFileTreeNode({ x: 3, y: 4 })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect(n.position).toEqual({ x: 3, y: 4 })
+    expect(n.width).toBe(300)
+    expect(n.height).toBe(360)
+  })
+
+  it('addFileTreeNode sem opts semeia rootPath undefined', () => {
+    useCanvasStore.getState().addFileTreeNode()
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { rootPath?: string }).rootPath).toBeUndefined()
+  })
+
+  it('addFileTreeNode cascata posição quando nenhuma é passada (mesma fórmula dos outros nós)', () => {
+    useCanvasStore.getState().addFileTreeNode()
+    useCanvasStore.getState().addFileTreeNode()
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes[0].position).toEqual({ x: 80, y: 80 })
+    expect(nodes[1].position).toEqual({ x: 80 + 36, y: 80 + 36 })
+  })
+
+  it('updateFileTreeRoot altera o rootPath de um nó filetree existente', () => {
+    useCanvasStore.getState().addFileTreeNode(undefined, { rootPath: '/a' })
+    const id = useCanvasStore.getState().nodes.at(-1)!.id
+    useCanvasStore.getState().updateFileTreeRoot(id, '/b')
+    expect((useCanvasStore.getState().nodes.at(-1)!.data as { rootPath?: string }).rootPath).toBe('/b')
+  })
+
+  it('updateFileTreeRoot não afeta outros nós', () => {
+    useCanvasStore.getState().addFileTreeNode(undefined, { rootPath: '/a' })
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const [fileTreeNode, terminalNode] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().updateFileTreeRoot(fileTreeNode.id, '/changed')
+    const { nodes } = useCanvasStore.getState()
+    expect((nodes.find((n) => n.id === fileTreeNode.id)!.data as { rootPath?: string }).rootPath).toBe('/changed')
+    const untouchedTerminal = nodes.find((n) => n.id === terminalNode.id)!
+    expect(untouchedTerminal.position).toEqual(terminalNode.position)
+    expect(untouchedTerminal.data).toEqual(terminalNode.data)
+  })
+
+  it('rootPath do filetree sobrevive ao round-trip serialize→hydrate', () => {
+    useCanvasStore.getState().addFileTreeNode(undefined, { rootPath: '/persist/me' })
+    const snap = useCanvasStore.getState().serialize()
+    useCanvasStore.getState().hydrate({ version: 1, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+    useCanvasStore.getState().hydrate(snap)
+    const restored = useCanvasStore.getState().nodes.at(-1)!
+    expect(restored.type).toBe('filetree')
+    expect((restored.data as { rootPath?: string; name?: string }).rootPath).toBe('/persist/me')
+    expect((restored.data as { rootPath?: string; name?: string }).name).toBe('Arquivos')
+  })
+
+  it('serialize inclui width/height/data do nó filetree', () => {
+    useCanvasStore.getState().addFileTreeNode({ x: 1, y: 2 }, { rootPath: '/x' })
+    const snap = useCanvasStore.getState().serialize()
+    const n = snap.nodes.at(-1)!
+    expect(n.type).toBe('filetree')
+    expect(n.width).toBe(300)
+    expect(n.height).toBe(360)
+    expect(n.position).toEqual({ x: 1, y: 2 })
+  })
+
   it('switching começa false e setSwitching alterna a flag (guarda de autosave durante troca de projeto, Fase 15 Task 3)', () => {
     expect(useCanvasStore.getState().switching).toBe(false)
     useCanvasStore.getState().setSwitching(true)

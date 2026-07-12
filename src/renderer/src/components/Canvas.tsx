@@ -6,6 +6,7 @@ import { useCanvasStore } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
+import { FileTreeNode } from './FileTreeNode'
 import { GroupNode } from './GroupNode'
 import { CommandPalette } from './CommandPalette'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
@@ -13,7 +14,13 @@ import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { PRESETS } from '../../../shared/presets'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
 
-const nodeTypes = { terminal: TerminalFlowNode, note: NoteNode, portal: PortalFlowNode, group: GroupNode }
+const nodeTypes = {
+  terminal: TerminalFlowNode,
+  note: NoteNode,
+  portal: PortalFlowNode,
+  filetree: FileTreeNode,
+  group: GroupNode
+}
 
 // isTypingTarget guarda os atalhos que SÃO sensíveis a texto (foco/zoom/minimap da Fase 18:
 // Shift+1/2/M) — Cmd/Ctrl+K (Fase 12) e Cmd/Ctrl+G / Cmd/Ctrl+Shift+G (Fase 18 Task 3) são
@@ -45,6 +52,7 @@ export function Canvas(): JSX.Element {
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
+  const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -137,6 +145,9 @@ export function Canvas(): JSX.Element {
         </button>
         <button className="ork-toolbar-btn" onClick={() => addPortalNode()}>
           + Portal
+        </button>
+        <button className="ork-toolbar-btn" onClick={() => addFileTreeNode()}>
+          + Arquivos
         </button>
       </div>
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
