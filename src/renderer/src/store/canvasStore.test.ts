@@ -356,6 +356,30 @@ describe('canvasStore', () => {
     expect((newNode.data as { name?: string }).name).toBe('Portal 1000')
   })
 
+  // --- Fase 25 (Task 1): updatePortalLink — sessão compartilhada entre portais linkados ---
+
+  it('updatePortalLink define e limpa o linkedTo do portal', () => {
+    useCanvasStore.getState().addPortalNode(undefined, { name: 'A' })
+    useCanvasStore.getState().addPortalNode(undefined, { name: 'B' })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().updatePortalLink(b.id, a.id)
+    expect((useCanvasStore.getState().nodes[1].data as { linkedTo?: string }).linkedTo).toBe(a.id)
+    useCanvasStore.getState().updatePortalLink(b.id, undefined)
+    expect((useCanvasStore.getState().nodes[1].data as { linkedTo?: string }).linkedTo).toBeUndefined()
+  })
+
+  it('linkedTo do portal sobrevive ao round-trip', () => {
+    useCanvasStore.getState().addPortalNode(undefined, { name: 'A' })
+    useCanvasStore.getState().addPortalNode(undefined, { name: 'B' })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().updatePortalLink(b.id, a.id)
+    const snap = useCanvasStore.getState().serialize()
+    useCanvasStore.setState({ nodes: [], edges: [] })
+    useCanvasStore.getState().hydrate(snap)
+    const restored = useCanvasStore.getState().nodes.find((n) => n.id === b.id)
+    expect((restored?.data as { linkedTo?: string }).linkedTo).toBe(a.id)
+  })
+
   // --- Fase 19 (Task 2): FileTreeNode — árvore de arquivos no canvas ---
 
   it('addFileTreeNode cria um nó tipo filetree com data.rootPath e data.name "Arquivos"', () => {
