@@ -94,3 +94,32 @@
   border-radius: var(--radius-sm);
   padding: 1px 6px;
 }
+
+/* Modo input (Fase 23 Task 2): segunda tela do palette para itens com `item.input` (renomear,
+   definir papel) — o Electron bloqueia `window.prompt`, então isso substitui a lista inteira
+   enquanto ativo (ver CommandPalette.tsx: `inputItem` alterna entre as duas telas). */
+.ork-palette-input-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.ork-palette-input-label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* O campo de texto do modo input reaproveita a classe .ork-palette-input (mesma fonte/cor da
+   busca), só que dentro da tela de input ela também precisa parecer um campo de fato — a busca
+   confia no scope do card pra isso (borda só embaixo); aqui, isolado, ganha borda própria. */
+.ork-palette-input-screen .ork-palette-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.ork-palette-input-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
