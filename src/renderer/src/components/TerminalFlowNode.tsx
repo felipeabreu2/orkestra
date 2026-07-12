@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { TerminalNode } from './TerminalNode'
 import { useCanvasStore } from '../store/canvasStore'
+import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
 import './nodes.css'
 
 export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
@@ -19,6 +21,14 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
   const autostart = (data as { autostart?: boolean })?.autostart
+  // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `rmeta` resolve o
+  // preset (por id OU label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre.
+  // `customRole` decide se o <select> mostra "Personalizado…" com o <input> de texto revelado;
+  // derivado uma vez do `role` atual no mount (não é preset -> já começa em modo personalizado),
+  // e depois só muda via interação do próprio seletor — ver nota de risco no brief da Fase 26.
+  const rmeta = roleMeta(role)
+  const isPresetRole = PRESET_ROLES.some((r) => r.label === role)
+  const [customRole, setCustomRole] = useState(role.trim() !== '' && !isPresetRole)
 
   // Limpa a atenção QUANDO o usuário de fato volta a usar este terminal — dispara ao focar
   // qualquer coisa dentro do wrapper (o mais comum: a <textarea> escondida que o xterm.js usa
@@ -56,13 +66,47 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             onChange={(e) => updateTerminalName(id, e.target.value)}
             aria-label="Nome do terminal"
           />
-          <input
-            className="nodrag ork-node-input ork-node-input--secondary"
-            value={role}
-            onChange={(e) => updateTerminalRole(id, e.target.value)}
+          {role.trim() !== '' && (
+            <span
+              className="ork-role-badge"
+              style={{ color: rmeta.color, borderColor: rmeta.color }}
+              title={rmeta.hint || undefined}
+            >
+              {rmeta.label}
+            </span>
+          )}
+          <select
+            className="nodrag ork-role-select"
+            value={customRole ? '__custom__' : role}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === '__custom__') {
+                setCustomRole(true)
+                return
+              }
+              setCustomRole(false)
+              updateTerminalRole(id, v)
+            }}
             aria-label="Papel do terminal"
-            placeholder="papel"
-          />
+            title="Papel do agente"
+          >
+            <option value="">Sem papel</option>
+            {PRESET_ROLES.map((r) => (
+              <option key={r.id} value={r.label}>
+                {r.label}
+              </option>
+            ))}
+            <option value="__custom__">Personalizado…</option>
+          </select>
+          {customRole && (
+            <input
+              className="nodrag ork-role-input"
+              value={role}
+              placeholder="Papel personalizado"
+              onChange={(e) => updateTerminalRole(id, e.target.value)}
+              aria-label="Papel personalizado"
+            />
+          )}
           <button
             className="nodrag ork-node-iconbtn"
             onClick={() => removeNode(id)}
