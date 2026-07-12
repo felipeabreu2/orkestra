@@ -118,3 +118,24 @@
 /* Wordmark removido daqui (Fase 15 Task 3): movido para o topo da ProjectsSidebar
    (ProjectsSidebar.css .ork-sidebar-brand*) — isso também resolve a antiga sobreposição
    wordmark/Controls do React Flow. */
+
+/* Traçado por tipo de conexão (Fase 22 Task 2): canvasStore (Task 1) grava `edge.className`
+   como `ork-edge--<kind>` (agent|chain|note|portal|link, ver deriveEdgeKind em edges/edgeKind.ts)
+   — o React Flow aplica essa classe no <g class="react-flow__edge …"> que envolve o path
+   desenhado por TypedEdge (BaseEdge), então o seletor abaixo mira o path dentro dele. */
+.react-flow__edge.ork-edge--agent .react-flow__edge-path {
+  stroke: var(--accent);
+}
+.react-flow__edge.ork-edge--chain .react-flow__edge-path {
+  stroke: var(--ok);
+}
+.react-flow__edge.ork-edge--note .react-flow__edge-path {
+  stroke: var(--warn);
+}
+.react-flow__edge.ork-edge--portal .react-flow__edge-path {
+  stroke: var(--border-strong);
+  stroke-dasharray: 6 4;
+}
+.react-flow__edge.ork-edge--link .react-flow__edge-path {
+  stroke: var(--border-strong);
+}

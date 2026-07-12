@@ -8,6 +8,7 @@ import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
 import { FileTreeNode } from './FileTreeNode'
 import { GroupNode } from './GroupNode'
+import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
@@ -20,6 +21,14 @@ const nodeTypes = {
   portal: PortalFlowNode,
   filetree: FileTreeNode,
   group: GroupNode
+}
+
+// Fase 22 (Task 2): registro de edge customizada, mesmo padrão do nodeTypes acima — constante
+// de módulo (não recriada a cada render) para o React Flow não thrashear/avisar sobre uma nova
+// referência de objeto em toda renderização. onConnect/hydrate (Task 1, canvasStore) já marcam
+// toda edge com type:'typed', então este é o único entry necessário no registro.
+const edgeTypes = {
+  typed: TypedEdge
 }
 
 // isTypingTarget guarda os atalhos que SÃO sensíveis a texto (foco/zoom/minimap da Fase 18:
@@ -274,6 +283,7 @@ export function Canvas(): JSX.Element {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         minZoom={0.2}
         maxZoom={2}
         snapToGrid

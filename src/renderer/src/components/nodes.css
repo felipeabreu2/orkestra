@@ -334,3 +334,67 @@
   color: var(--text-1);
   white-space: pre;
 }
+
+/* Badge + popover de TypedEdge (Fase 22 Task 2): renderizado via EdgeLabelRenderer, que
+   desativa pointer-events no seu container próprio (posicionado por cima de todo o canvas) —
+   o badge precisa reativar (`pointer-events: all`) para ser clicável; sem isso os cliques
+   vazam para o canvas por baixo. Cores por tipo espelham o traçado da própria conexão
+   (Canvas.css .ork-edge--<kind>), então o badge funciona como legenda do tipo. */
+.ork-edge-badge {
+  position: absolute;
+  pointer-events: all;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.ork-edge-badge--agent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ork-edge-badge--chain {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.ork-edge-badge--note {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.ork-edge-badge--portal,
+.ork-edge-badge--link {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+.ork-edge-pop {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+  z-index: 10;
+}
+.ork-edge-pop-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--text-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ork-edge-pop-btn:hover {
+  background: var(--bg-2);
+  color: var(--err);
+}
