@@ -22,6 +22,17 @@ export function AskAgentPanel({
   const nodes = useCanvasStore((s) => s.nodes)
   const { setCenter } = useReactFlow()
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   const send = (): void => {
     const ptyId = getTerminalPty(nodeId)
     if (!ptyId) {
@@ -70,9 +81,6 @@ export function AskAgentPanel({
             if (e.key === 'Enter' && prompt.trim()) {
               e.preventDefault()
               send()
-            } else if (e.key === 'Escape') {
-              e.preventDefault()
-              onClose()
             }
           }}
         />
