@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification } from 'electron'
 import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -18,7 +18,32 @@ let mainWindow: BrowserWindow | null = null
 const ptyManager = new PtyManager(nodePtySpawner)
 // Buffer de saída por pty + ask/read (Fase 6). track()/untrack() são geridos via o hook
 // onSpawn de registerPtyIpc (abaixo) e o auto-untrack interno do próprio AgentBus (onExit).
-const agentBus = new AgentBus(ptyManager)
+//
+// Fase 20 (Task 1): onAttention dispara quando um pty tracked produz output e depois fica
+// ocioso (ver watcher em AgentBus.track) — resolve ptyId -> nodeId (PtyManager.nodeForPty) e
+// avisa o renderer via IPC, além de notificar o SO quando a janela não está em foco.
+// `agentBus` é construído aqui, ANTES de mainWindow existir (mainWindow só é atribuído dentro
+// de createWindow(), chamada de dentro de app.whenReady() lá embaixo) — mas onAttention só é
+// CHAMADO bem depois, quando algum pty realmente ficar ocioso. Por isso o callback lê a
+// variável `mainWindow` no momento em que dispara (closure sobre a variável do módulo, `let`),
+// e não uma referência capturada agora — nunca ficaria presa a `null`.
+const agentBus = new AgentBus(ptyManager, {
+  onAttention: (ptyId) => {
+    const nodeId = ptyManager.nodeForPty(ptyId)
+    if (!nodeId) return
+    mainWindow?.webContents.send('agent:attention', nodeId)
+    if (mainWindow && !mainWindow.isFocused()) {
+      try {
+        new Notification({
+          title: 'Agente ocioso',
+          body: 'Um agente parou e pode precisar de você.'
+        }).show()
+      } catch {
+        // Notificações nativas podem faltar/ser negadas dependendo do SO — nunca travar o app.
+      }
+    }
+  }
+})
 
 // Espelho leve do canvas (renderer -> main via 'orchestration:sync'), servido em GET /list.
 let mirror: CanvasMirror = { nodes: [] }
@@ -120,6 +145,13 @@ app.whenReady().then(async () => {
   })
   ipcMain.on('portal:state', (_e, s: { name: string } & PortalState) => {
     portalStates.set(s.name, { url: s.url, title: s.title, text: s.text })
+  })
+  // Fase 20 (Task 1): o renderer manda isto quando o usuário foca o terminal daquele nó — limpa
+  // o watcher de atenção (ver AgentBus.clearAttention) para exigir NOVO output antes de disparar
+  // onAttention de novo para este pty.
+  ipcMain.on('agent:attention:clear', (_e, nodeId: string) => {
+    const p = ptyManager.ptyIdForNode(nodeId)
+    if (p) agentBus.clearAttention(p)
   })
 
   // Projetos (Fase 15 Task 2): cada projeto tem seu próprio canvas; bootstrap() cria o índice na

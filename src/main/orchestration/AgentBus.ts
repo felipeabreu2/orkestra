@@ -3,18 +3,56 @@ import type { PtyManager } from '../pty/PtyManager'
 const MAX = 8000
 const DEFAULT_IDLE_MS = 1500
 const DEFAULT_TIMEOUT_MS = 120000
+// Fase 20 (Task 1): default do watcher de atenção (abaixo) — distinto do DEFAULT_IDLE_MS do
+// waitForIdle acima (propósito diferente: um é polling bloqueante sob demanda, o outro é um
+// watcher contínuo e passivo). Valor empírico (mesma ressalva de DEFAULT_IDLE_MS).
+const DEFAULT_ATTENTION_IDLE_MS = 1200
+
+export interface AgentBusOptions {
+  // Fase 20 (Task 1): chamado quando um pty tracked produz output e depois fica `idleMs` sem
+  // nenhum novo onData — ou seja, "o agente falou e agora parou". Ver watcher em track().
+  onAttention?: (ptyId: string) => void
+  idleMs?: number
+}
 
 export class AgentBus {
   private buffers = new Map<string, string>()
   private tracked = new Set<string>()
-  constructor(private pty: PtyManager) {}
+  // Fase 20 (Task 1): estado do watcher de atenção, por ptyId. `sawOutput` marca "há output não
+  // confirmado como visto"; `attentionTimers` é o timer de ociosidade corrente (recriado a cada
+  // onData, cancelado em clearAttention/untrack).
+  private sawOutput = new Map<string, boolean>()
+  private attentionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  // opts é opcional e por padrão `{}` — construtor retrocompatível: `new AgentBus(ptyManager)`
+  // (uso pré-Fase 20) continua válido e nunca dispara onAttention (fica undefined).
+  constructor(
+    private pty: PtyManager,
+    private opts: AgentBusOptions = {}
+  ) {}
 
   track(ptyId: string): void {
     if (this.tracked.has(ptyId)) return
     this.tracked.add(ptyId)
+    const idleMs = this.opts.idleMs ?? DEFAULT_ATTENTION_IDLE_MS
     this.pty.onData(ptyId, (data) => {
       const cur = (this.buffers.get(ptyId) ?? '') + data
       this.buffers.set(ptyId, cur.length > MAX ? cur.slice(-MAX) : cur)
+
+      // Watcher de atenção (Fase 20, Task 1): vive dentro desta MESMA assinatura onData — sem
+      // segunda subscrição. Cada chunk de output marca "há output visto" e reagenda o timer de
+      // ociosidade; se nenhum novo chunk chegar em `idleMs`, dispara onAttention uma única vez.
+      // Não redispara sozinho: o timer só é recriado aqui, dentro de onData — então depois do
+      // disparo ele fica ocioso até um NOVO chunk chegar e reagendar um novo timer.
+      this.sawOutput.set(ptyId, true)
+      const existing = this.attentionTimers.get(ptyId)
+      if (existing) clearTimeout(existing)
+      this.attentionTimers.set(
+        ptyId,
+        setTimeout(() => {
+          if (this.sawOutput.get(ptyId)) this.opts.onAttention?.(ptyId)
+        }, idleMs)
+      )
     })
     // Auto-untrack: quando o pty sai (sozinho ou via kill), o buffer não deve sobreviver a ele.
     this.pty.onExit(ptyId, () => this.untrack(ptyId))
@@ -25,9 +63,22 @@ export class AgentBus {
   read(ptyId: string): string {
     return this.buffers.get(ptyId) ?? ''
   }
+  // Fase 20 (Task 1): "visto" — cancela o disparo pendente (se houver) e exige um NOVO output
+  // antes que onAttention possa disparar de novo. Chamado pelo renderer (via IPC) quando o
+  // usuário foca o terminal — ver 'agent:attention:clear' em main/index.ts.
+  clearAttention(ptyId: string): void {
+    this.sawOutput.set(ptyId, false)
+    const t = this.attentionTimers.get(ptyId)
+    if (t) clearTimeout(t)
+    this.attentionTimers.delete(ptyId)
+  }
   untrack(ptyId: string): void {
     this.buffers.delete(ptyId)
     this.tracked.delete(ptyId)
+    const t = this.attentionTimers.get(ptyId)
+    if (t) clearTimeout(t)
+    this.attentionTimers.delete(ptyId)
+    this.sawOutput.delete(ptyId)
   }
 
   // Fase 14 (Task 1): resolve quando o pty ficar `idleMs` sem nenhum onData, ou quando

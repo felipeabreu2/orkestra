@@ -77,7 +77,17 @@ const api = {
   // Fase 9 (Portais): o PortalNode reporta {name,url,title,text} ao main a cada did-finish-load
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
   // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.
-  portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state)
+  portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state),
+  // Fase 20 (Task 1): watcher de atenção (ver AgentBus no main) — avisa o renderer quando um
+  // terminal-agente produziu saída e depois ficou ocioso. onAgentAttention segue o mesmo padrão
+  // de assinatura com unsubscribe de orchestration.onCommand acima; clearAgentAttention é
+  // fire-and-forget, chamado ao focar o terminal daquele nó (Task 2, renderer).
+  onAgentAttention: (cb: (nodeId: string) => void): (() => void) => {
+    const listener = (_e: unknown, nodeId: string): void => cb(nodeId)
+    ipcRenderer.on('agent:attention', listener)
+    return () => ipcRenderer.removeListener('agent:attention', listener)
+  },
+  clearAgentAttention: (nodeId: string): void => ipcRenderer.send('agent:attention:clear', nodeId)
 }
 
 contextBridge.exposeInMainWorld('orkestra', api)

@@ -164,6 +164,35 @@ describe('PtyManager', () => {
     expect(call[2].env.PATH).toBe(process.env.PATH) // preserva o resto
   })
 
+  // Fase 20 (Task 1): nodeForPty é o reverso de ptyIdForNode — usado pelo watcher de atenção do
+  // AgentBus (que só conhece o ptyId) para descobrir a que nó do canvas avisar via IPC.
+  it('nodeForPty resolve o nodeId a partir do ptyId (reverso de ptyIdForNode)', () => {
+    const mgr = new PtyManager(() => makeFakePty().pty)
+    const id = mgr.spawn({ nodeId: 'n1' })
+    expect(mgr.nodeForPty(id)).toBe('n1')
+  })
+
+  it('nodeForPty volta undefined para um ptyId desconhecido', () => {
+    const mgr = new PtyManager(() => makeFakePty().pty)
+    expect(mgr.nodeForPty('id-inexistente')).toBeUndefined()
+  })
+
+  it('nodeForPty volta undefined depois do kill explicito', () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const id = mgr.spawn({ nodeId: 'n1' })
+    mgr.kill(id)
+    expect(mgr.nodeForPty(id)).toBeUndefined()
+  })
+
+  it('nodeForPty volta undefined depois do pty sair sozinho (exit)', () => {
+    const fake = makeFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const id = mgr.spawn({ nodeId: 'n1' })
+    fake.emitExit(0)
+    expect(mgr.nodeForPty(id)).toBeUndefined()
+  })
+
   it('escreve o comando inicial uma unica vez apos o primeiro output', () => {
     const f = makeFakePty() // fake com write: vi.fn(), emit(data)
     const mgr = new PtyManager(() => f.pty)

@@ -69,6 +69,17 @@ export class PtyManager {
     return this.ptyByNode.get(nodeId)
   }
 
+  // Fase 20 (Task 1): reverso de ptyIdForNode — o watcher de atenção do AgentBus só conhece o
+  // ptyId (é o que PtyManager.onData/onExit expõem), então precisa deste caminho de volta para
+  // achar a que nó do canvas avisar via IPC. Mesma varredura por valor de removeNodeMapping
+  // (abaixo); não vale a pena manter um segundo Map reverso só para isto.
+  nodeForPty(ptyId: string): string | undefined {
+    for (const [nodeId, id] of this.ptyByNode) {
+      if (id === ptyId) return nodeId
+    }
+    return undefined
+  }
+
   // Assinatura extra (multi-subscriber) para o exit de um pty específico, sem depender do
   // IPtyLike subjacente suportar múltiplos onExit — a limpeza interna acima já monopoliza o
   // único pty.onExit() e repassa para cá.

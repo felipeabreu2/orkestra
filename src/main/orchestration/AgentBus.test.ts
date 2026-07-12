@@ -181,3 +181,72 @@ describe('AgentBus.waitForIdle', () => {
     await expect(p).resolves.toBe('')
   })
 })
+
+// Fase 20 (Task 1): watcher contínuo de "atenção" — quando um pty tem output e depois fica
+// `idleMs` em silêncio, `onAttention(ptyId)` dispara uma vez. Vive DENTRO da assinatura onData
+// já existente em track() (nenhuma segunda assinatura). Semântica: só dispara de novo com NOVO
+// output após o disparo anterior (o timer só é reagendado dentro do onData); clearAttention()
+// cancela qualquer disparo pendente e exige novo output para poder disparar de novo.
+describe('AgentBus attention', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('dispara onAttention após output seguido de idleMs de silêncio', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onAttention = vi.fn()
+    const bus = new AgentBus(mgr, { onAttention, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')            // atividade
+    vi.advanceTimersByTime(1000)          // silêncio por idleMs
+    expect(onAttention).toHaveBeenCalledWith(id)
+  })
+
+  it('não redispara sem novo output (só uma vez até novo output)', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onAttention = vi.fn()
+    const bus = new AgentBus(mgr, { onAttention, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    vi.advanceTimersByTime(1000)
+    expect(onAttention).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(5000)          // segue em silêncio, bem além de idleMs
+    expect(onAttention).toHaveBeenCalledTimes(1) // não redisparou
+    f.emit('mais trabalho...\n')          // novo output -> pode disparar de novo
+    vi.advanceTimersByTime(1000)
+    expect(onAttention).toHaveBeenCalledTimes(2)
+  })
+
+  it('não dispara se não houve output desde a última limpeza', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onAttention = vi.fn()
+    const bus = new AgentBus(mgr, { onAttention, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    vi.advanceTimersByTime(400)           // ainda dentro da janela de idleMs (timer pendente)
+    bus.clearAttention(id)                // limpa ANTES do timer disparar
+    vi.advanceTimersByTime(5000)          // avança bem além do idleMs original, sem novo output
+    expect(onAttention).not.toHaveBeenCalled()
+  })
+
+  it('untrack cancela o timer de atenção pendente (pty saiu, não deve disparar depois)', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onAttention = vi.fn()
+    const bus = new AgentBus(mgr, { onAttention, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    f.emitExit(0)                         // auto-untrack via onExit
+    vi.advanceTimersByTime(5000)
+    expect(onAttention).not.toHaveBeenCalled()
+  })
+
+  it('construtor sem opts continua funcionando (retrocompatível) e nunca dispara onAttention', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const bus = new AgentBus(mgr) // sem segundo argumento, como no uso pré-Fase 20
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    vi.advanceTimersByTime(10000)
+    expect(bus.read(id)).toContain('trabalhando') // comportamento existente intacto
+    // nenhuma asserção de onAttention é possível aqui (não foi passado) — a ausência de
+    // exceção já comprova que o watcher não quebra o construtor de 1 argumento.
+  })
+})
