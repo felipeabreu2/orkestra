@@ -31,6 +31,9 @@ const agentBus = new AgentBus(ptyManager, {
   onAttention: (ptyId) => {
     const nodeId = ptyManager.nodeForPty(ptyId)
     if (!nodeId) return
+    // "Monitorar atividade" desligado (Fase 29, data.monitor === false via mirror): não sinaliza
+    // atenção nem notifica este terminal.
+    if (mirror.nodes.find((n) => n.id === nodeId)?.monitor === false) return
     mainWindow?.webContents.send('agent:attention', nodeId)
     if (mainWindow && !mainWindow.isFocused()) {
       try {

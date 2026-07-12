@@ -37,7 +37,7 @@ interface CanvasState {
     // Fase 27 (Task 3): sshHost opcional — quando presente, o nó nasce em modo SSH (ver
     // TerminalNode.tsx). String livre aqui (a validação de formato via isValidSshHost já
     // acontece no main, no spawn — Task 2); a UI de criação (Task 4) valida antes por UX.
-    opts?: { preset?: string; role?: string; name?: string; sshHost?: string }
+    opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
   ) => void
   addNoteNode: (position?: { x: number; y: number }) => void
   addPortalNode: (
@@ -127,6 +127,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               // rest.*` do serialize — precisa persistir e sobreviver ao round-trip
               // serialize→hydrate (ao contrário de `autostart`, que é efêmero).
               sshHost: opts?.sshHost,
+              // Monitorar atividade (Fase 29): quando false, o indicador de atenção e a
+              // notificação do SO NÃO disparam para este terminal. Persiste (default true).
+              monitor: opts?.monitor ?? true,
               // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
               // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
               // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
