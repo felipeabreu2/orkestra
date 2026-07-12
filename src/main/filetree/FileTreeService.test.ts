@@ -105,4 +105,23 @@ describe('FileTreeService', () => {
     const st = await svc.gitStatus(dir)
     expect(st['novo.txt']).toBe('??')
   })
+
+  it('gitStatus preserva nome de arquivo nao-ASCII (acentuado) como chave UTF-8 real', async () => {
+    const g = (a: string[]): void => {
+      execFileSync('git', a, { cwd: dir })
+    }
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t'])
+    g(['config', 'user.name', 't'])
+    // git default `core.quotePath=true` escaparia isto em octal ("caf\303\251.txt") no --porcelain;
+    // a chave precisa voltar como o nome UTF-8 real p/ casar com o path no renderer.
+    const accented = 'café.txt'
+    writeFileSync(join(dir, accented), 'a\n')
+    g(['add', '.'])
+    g(['commit', '-qm', 'i'])
+    writeFileSync(join(dir, accented), '# changed\n')
+    const st = await svc.gitStatus(dir)
+    expect(st[accented]).toBeTruthy() // 'M', com a chave exatamente 'café.txt'
+    expect(Object.keys(st).some((k) => k.includes('café'))).toBe(true)
+  })
 })

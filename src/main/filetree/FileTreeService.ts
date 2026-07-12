@@ -79,7 +79,18 @@ export class FileTreeService {
   async gitStatus(dir: string): Promise<Record<string, string>> {
     let stdout: string
     try {
-      const result = await execFileAsync('git', ['-C', dir, 'status', '--porcelain'])
+      // `core.quotePath=false`: sem isso, o git C-escapa bytes não-ASCII em OCTAL (ex.: `café.txt`
+      // -> `"caf\303\251.txt"`), e o cleanGitPath só desfaz escapes de 1 char -> a chave voltaria
+      // ilegível ("caf303251.txt") e nunca casaria com o path real. Com `false`, o git devolve o
+      // path em UTF-8 cru (só ainda envolve em aspas nomes com espaço, que o cleanGitPath resolve).
+      const result = await execFileAsync('git', [
+        '-c',
+        'core.quotePath=false',
+        '-C',
+        dir,
+        'status',
+        '--porcelain'
+      ])
       stdout = result.stdout
     } catch {
       return {}
