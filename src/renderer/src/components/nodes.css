@@ -176,6 +176,21 @@
   min-height: 0;
 }
 
+/* Seletor de sessão do portal (Fase 25 Task 2): isolada (partition própria) vs. compartilhar
+   (mesma partition de outro portal, via data.linkedTo). Vive no header, ao lado do nome. */
+.ork-portal-session {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  max-width: 160px;
+}
+.ork-portal-session:hover {
+  border-color: var(--border-strong);
+}
+
 /* Portal URL bar */
 .ork-node-urlbar {
   flex: 0 0 auto;
