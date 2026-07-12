@@ -1,5 +1,6 @@
 import type { IpcMain, WebContents } from 'electron'
 import type { PtyManager } from './PtyManager'
+import { isValidSshHost } from '../../shared/ssh'
 
 export function registerPtyIpc(
   ipcMain: IpcMain,
@@ -23,8 +24,13 @@ export function registerPtyIpc(
     rows?: number
     nodeId?: string
     initialCommand?: string
+    // Fase 27 (Task 2): destino SSH opcional — validado aqui dentro (isValidSshHost) e só então
+    // mapeado para file:'ssh', args:[host]. Nunca repassado cru; ver comentário no handler.
+    sshHost?: string
   }
-  ipcMain.handle('pty:spawn', (_e, opts: SpawnOpts) => {
+  ipcMain.handle('pty:spawn', async (_e, opts: SpawnOpts) => {
+    // async: garante que um throw síncrono (ex.: sshHost inválido) vire uma Promise rejeitada —
+    // é isso que o ipcRenderer.invoke() do renderer recebe como rejeição (ver TerminalNode.catch).
     const o = opts ?? {}
     // Segurança: allowlist explícito dos campos aceitos do renderer via destructure — NUNCA
     // espalhar o payload bruto (`{ ...o }`) aqui. PtyManager.spawn honra file/args (Fase 27
@@ -32,9 +38,19 @@ export function registerPtyIpc(
     // `{ file: '/bin/sh', args: [...] }` e conseguir RCE se esses campos vazassem sem filtro.
     // file/args só entram nesta lista quando forem validados aqui dentro (ex.: sshHost via
     // isValidSshHost, Fase 27 Task 2) — nunca repassados crus do IPC.
-    const { cols, rows, nodeId, initialCommand } = o
+    const { cols, rows, nodeId, initialCommand, sshHost } = o
     const cwd = o.cwd ?? getProjectCwd?.()
-    const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, cwd, env: getEnv() })
+    // sshHost, quando presente, é validado aqui (no main) e só então mapeado para file/args —
+    // o renderer nunca fornece file/args diretamente (allowlist acima), então este é o ÚNICO
+    // caminho pelo qual um binário diferente do shell padrão pode ser spawnado.
+    let sshFields: { file?: string; args?: string[] } = {}
+    if (sshHost !== undefined) {
+      if (!isValidSshHost(sshHost)) {
+        throw new Error('Destino SSH inválido')
+      }
+      sshFields = { file: 'ssh', args: [sshHost.trim()] }
+    }
+    const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, ...sshFields, cwd, env: getEnv() })
     ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
     onSpawn(id)
     return id

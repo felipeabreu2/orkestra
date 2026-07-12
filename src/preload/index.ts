@@ -12,6 +12,9 @@ const api = {
       rows?: number
       nodeId?: string
       initialCommand?: string
+      // Fase 27 (Task 2): destino SSH opcional — validado e mapeado p/ file:'ssh', args:[host]
+      // no main (registerPtyIpc); aqui é só o tipo, o objeto é repassado inteiro via invoke.
+      sshHost?: string
     }): Promise<string> => ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => ipcRenderer.send('pty:write', id, data),
     resize: (id: string, cols: number, rows: number): void =>

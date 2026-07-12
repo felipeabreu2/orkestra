@@ -148,6 +148,31 @@ describe('registerPtyIpc', () => {
     expect(call[1]).toEqual([])         // args vindos do renderer são ignorados
   })
 
+  // Fase 27 (Task 2): sshHost é validado no MAIN (isValidSshHost) e só então mapeado para
+  // file:'ssh', args:[host] — nunca repassado cru do renderer (ver allowlist acima).
+  it('sshHost válido spawna ssh com o host como arg (sem shell)', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+
+    await ipc.handlers.get('pty:spawn')!({}, { sshHost: 'user@host', nodeId: 'n1' })
+
+    const call = spawner.mock.calls[0]
+    expect(call[0]).toBe('ssh')
+    expect(call[1]).toEqual(['user@host'])
+  })
+
+  it('sshHost inválido é rejeitado e não spawna nada', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+
+    await expect(ipc.handlers.get('pty:spawn')!({}, { sshHost: 'a; rm -rf /' })).rejects.toThrow()
+    expect(spawner).not.toHaveBeenCalled()
+  })
+
   it('pty:spawn sem o.cwd e sem getProjectCwd deixa o PtyManager aplicar o fallback de HOME', async () => {
     const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)

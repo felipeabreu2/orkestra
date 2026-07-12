@@ -127,12 +127,12 @@ it('sshHost inválido é rejeitado e não spawna nada', async () => {
 
 - [ ] **Step 2: Implementar no `registerPtyIpc.ts`**
 
-Importar `isValidSshHost` de `../../shared/ssh`. No `SpawnOpts`, adicionar `sshHost?: string`. No handler `pty:spawn`:
+Importar `isValidSshHost` de `../../shared/ssh`. No `SpawnOpts`, adicionar `sshHost?: string`. **O handler já usa allowlist explícito** (destructure dos campos permitidos — endurecido no fix da Task 1, para que `file`/`args` do renderer NUNCA cheguem ao `spawn`). Adicionar `sshHost` a esse destructure e mapeá-lo, no main, para `{file:'ssh', args:[host]}` — **nunca** espalhar `o`/`rest`:
 ```ts
 ipcMain.handle('pty:spawn', (_e, opts: SpawnOpts) => {
   const o = opts ?? {}
+  const { cols, rows, nodeId, initialCommand, sshHost } = o
   const cwd = o.cwd ?? getProjectCwd?.()
-  const { sshHost, ...rest } = o
   let sshFields: { file?: string; args?: string[] } = {}
   if (sshHost !== undefined) {
     if (!isValidSshHost(sshHost)) {
@@ -140,13 +140,13 @@ ipcMain.handle('pty:spawn', (_e, opts: SpawnOpts) => {
     }
     sshFields = { file: 'ssh', args: [sshHost.trim()] }
   }
-  const id = ptyManager.spawn({ ...rest, ...sshFields, cwd, env: getEnv() })
+  const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, ...sshFields, cwd, env: getEnv() })
   ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
   onSpawn(id)
   return id
 })
 ```
-(Manter todo o resto do handler igual. O `throw` numa `ipcMain.handle` vira uma rejeição da `invoke` no renderer — o `TerminalNode` já tem `.catch` no spawn, então mostra o erro no terminal.)
+Aqui `file`/`args` só entram via `sshFields` (controlado pelo main, após validar) — o payload do renderer nunca os fornece. O `throw` numa `ipcMain.handle` vira rejeição da `invoke` — o `TerminalNode` tem `.catch` no spawn, então mostra o erro no terminal. **Manter o teste de allowlist da Task 1 passando** (file/args do renderer continuam ignorados).
 
 - [ ] **Step 3: Preload** — em `src/preload/index.ts`, adicionar `sshHost?: string` ao tipo de opts de `spawn` (o objeto é repassado inteiro via `invoke`, então só o tipo muda):
 ```ts
