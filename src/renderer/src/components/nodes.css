@@ -132,15 +132,44 @@
 .ork-node-input::placeholder {
   color: var(--text-3);
 }
-.ork-node-input--secondary {
-  color: var(--text-2);
-  text-align: right;
-}
 .ork-node-input--select {
   flex: 0 0 auto;
   max-width: 74px;
   font-size: 11px;
   color: var(--text-2);
+}
+
+/* Papel do agente (Fase 26 Task 2): badge colorido (cor do preset resolvida por roleMeta, ou
+   neutro --text-2 p/ texto livre) + seletor de papéis prontos/personalizado, no header do
+   terminal. Puramente visual/metadado — ver TerminalFlowNode.tsx. */
+.ork-role-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ork-role-select {
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  max-width: 130px;
+}
+.ork-role-select:hover {
+  border-color: var(--border-strong);
+}
+.ork-role-input {
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  max-width: 130px;
 }
 
 .ork-node-iconbtn {

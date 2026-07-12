@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { TerminalNode } from './TerminalNode'
 import { useCanvasStore } from '../store/canvasStore'
+import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
 import './nodes.css'
 
 export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
@@ -19,6 +21,21 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
   const autostart = (data as { autostart?: boolean })?.autostart
+  // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o
+  // preset (por id OU label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre;
+  // `isPresetRole` reaproveita essa cor (neutra == não é preset) em vez de comparar `role` contra
+  // os labels de novo — assim um preset gravado com casing não-canônico (ex.: "dev" via orq)
+  // ainda é reconhecido. `showCustom`/`selectValue` são DERIVADOS de `role` a cada render — não
+  // um estado travado no mount — porque o papel pode mudar por FORA do seletor (Command Palette
+  // "Definir papel de X" chama updateTerminalRole no node já montado; um estado latched uma vez
+  // deixaria o <select> em branco quando o novo valor não bate com nenhuma <option>).
+  // `customToggle` só cobre o caso "Personalizado…" com role ainda vazio, onde não há valor
+  // algum para derivar o modo custom.
+  const resolved = roleMeta(role)
+  const isPresetRole = resolved.color !== 'var(--text-2)'
+  const [customToggle, setCustomToggle] = useState(false)
+  const showCustom = customToggle || (role.trim() !== '' && !isPresetRole)
+  const selectValue = showCustom ? '__custom__' : isPresetRole ? resolved.label : role
 
   // Limpa a atenção QUANDO o usuário de fato volta a usar este terminal — dispara ao focar
   // qualquer coisa dentro do wrapper (o mais comum: a <textarea> escondida que o xterm.js usa
@@ -56,13 +73,47 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             onChange={(e) => updateTerminalName(id, e.target.value)}
             aria-label="Nome do terminal"
           />
-          <input
-            className="nodrag ork-node-input ork-node-input--secondary"
-            value={role}
-            onChange={(e) => updateTerminalRole(id, e.target.value)}
+          {role.trim() !== '' && (
+            <span
+              className="ork-role-badge"
+              style={{ color: resolved.color, borderColor: resolved.color }}
+              title={resolved.hint || undefined}
+            >
+              {resolved.label}
+            </span>
+          )}
+          <select
+            className="nodrag ork-role-select"
+            value={selectValue}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === '__custom__') {
+                setCustomToggle(true)
+                return
+              }
+              setCustomToggle(false)
+              updateTerminalRole(id, v)
+            }}
             aria-label="Papel do terminal"
-            placeholder="papel"
-          />
+            title="Papel do agente"
+          >
+            <option value="">Sem papel</option>
+            {PRESET_ROLES.map((r) => (
+              <option key={r.id} value={r.label}>
+                {r.label}
+              </option>
+            ))}
+            <option value="__custom__">Personalizado…</option>
+          </select>
+          {showCustom && (
+            <input
+              className="nodrag ork-role-input"
+              value={role}
+              placeholder="Papel personalizado"
+              onChange={(e) => updateTerminalRole(id, e.target.value)}
+              aria-label="Papel personalizado"
+            />
+          )}
           <button
             className="nodrag ork-node-iconbtn"
             onClick={() => removeNode(id)}
