@@ -139,6 +139,21 @@
   color: var(--text-2);
 }
 
+/* Badge "SSH" (Fase 27 Task 3): mostrado no header quando data.sshHost está presente (terminal
+   remoto, ver TerminalFlowNode/canvasStore.addTerminalNode). Preenchimento sólido --accent (ao
+   contrário do --ok/--warn de outros indicadores) para destacar que este NÃO é um shell local —
+   mesmo par --accent/--accent-text já usado nos botões primários (ProjectsSidebar.css) p/ manter
+   o contraste de texto sobre preenchimento sólido consistente em todo o app. */
+.ork-ssh-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
 /* Papel do agente (Fase 26 Task 2): badge colorido (cor do preset resolvida por roleMeta, ou
    neutro --text-2 p/ texto livre) + seletor de papéis prontos/personalizado, no header do
    terminal. Puramente visual/metadado — ver TerminalFlowNode.tsx. */

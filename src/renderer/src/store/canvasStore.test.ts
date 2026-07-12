@@ -258,6 +258,16 @@ describe('canvasStore', () => {
     expect((serializedData as { name?: string }).name).toMatch(/^Terminal \d+$/)
   })
 
+  it('addTerminalNode com sshHost guarda data.sshHost e sobrevive ao round-trip', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { name: 'SSH', sshHost: 'user@host' })
+    const n = useCanvasStore.getState().nodes[0]
+    expect((n.data as { sshHost?: string }).sshHost).toBe('user@host')
+    const snap = useCanvasStore.getState().serialize()
+    useCanvasStore.setState({ nodes: [], edges: [] })
+    useCanvasStore.getState().hydrate(snap)
+    expect((useCanvasStore.getState().nodes[0].data as { sshHost?: string }).sshHost).toBe('user@host')
+  })
+
   it('addTerminalNode cascata posição quando nenhuma é passada', () => {
     useCanvasStore.getState().addTerminalNode()
     useCanvasStore.getState().addTerminalNode()

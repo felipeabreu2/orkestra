@@ -22,6 +22,9 @@ export class PtyManager {
 
   spawn(opts: {
     file?: string
+    // Fase 27 (Task 1): base p/ SSH remoto — repassado direto ao spawner (node-pty), nunca
+    // concatenado em string, então não abre brecha de shell injection.
+    args?: string[]
     cwd?: string
     cols?: number
     rows?: number
@@ -33,7 +36,7 @@ export class PtyManager {
   }): string {
     const id = String(this.nextId++)
     const file = opts.file ?? process.env.SHELL ?? '/bin/bash'
-    const pty = this.spawner(file, [], {
+    const pty = this.spawner(file, opts.args ?? [], {
       cwd: opts.cwd ?? process.env.HOME ?? process.cwd(),
       env: { ...process.env, ...opts.env },
       cols: opts.cols ?? 80,

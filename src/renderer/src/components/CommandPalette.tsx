@@ -3,6 +3,7 @@ import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { rankItems } from '../search'
 import { buildPaletteItems, type PaletteItem } from '../palette/paletteCommands'
+import { isValidSshHost } from '../../../shared/ssh'
 import { AskAgentPanel } from './AskAgentPanel'
 import './CommandPalette.css'
 
@@ -84,6 +85,17 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
     }
   }
 
+  // Fase 27 (Task 4): cria o terminal SSH remoto a partir do texto digitado no modo input do
+  // palette (item `action:ssh` em paletteCommands.ts). `isValidSshHost` aqui é só validação de UX
+  // (evita spawnar um destino obviamente inválido) — o boundary de segurança real é a revalidação
+  // no main, no `pty:spawn` com `sshHost` (Task 2). Se o host não passar, simplesmente não cria
+  // nada (sem toast/erro — mesmo padrão silencioso de outras validações de input no palette).
+  const addSshTerminal = (host: string): void => {
+    const h = host.trim()
+    if (!isValidSshHost(h)) return
+    addTerminalNode(undefined, { name: `SSH: ${h}`, sshHost: h })
+  }
+
   const items = useMemo(
     () =>
       buildPaletteItems({
@@ -102,7 +114,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           renameTerminal: updateTerminalName,
           setTerminalRole: updateTerminalRole,
           connect: (source, target) => onConnect({ source, target, sourceHandle: null, targetHandle: null }),
-          removeEdge
+          removeEdge,
+          addSshTerminal
         }
       }),
     [
@@ -116,7 +129,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
       updateTerminalName,
       updateTerminalRole,
       onConnect,
-      removeEdge
+      removeEdge,
+      addSshTerminal
     ]
   )
 
