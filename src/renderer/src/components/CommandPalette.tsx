@@ -3,6 +3,7 @@ import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { rankItems } from '../search'
 import { buildPaletteItems, type PaletteItem } from '../palette/paletteCommands'
+import { AskAgentPanel } from './AskAgentPanel'
 import './CommandPalette.css'
 
 // Command palette (Cmd/Ctrl+K, Fase 12): busca unificada sobre ações de criação (terminal/
@@ -41,6 +42,11 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   const [inputItem, setInputItem] = useState<PaletteItem | null>(null)
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  // Modo "perguntar ao agente" (Fase 24): quando o item escolhido tem `ask` (ver
+  // paletteCommands.ts), a lista some e dá lugar ao AskAgentPanel — mesma posição/mecânica do
+  // modo input acima, mas com fases próprias (digitar prompt -> preview do stream) geridas
+  // inteiramente dentro do painel.
+  const [askTarget, setAskTarget] = useState<{ nodeId: string; label: string } | null>(null)
 
   const nodes = useCanvasStore((s) => s.nodes)
   const edges = useCanvasStore((s) => s.edges)
@@ -119,6 +125,10 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
 
   const runItem = (item: PaletteItem | undefined): void => {
     if (!item) return
+    if (item.ask) {
+      setAskTarget(item.ask)
+      return
+    }
     if (item.input) {
       setInputItem(item)
       setInputValue(item.input.initial)
@@ -165,6 +175,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
             />
             <div className="ork-palette-input-hint">Enter para confirmar · Esc para voltar</div>
           </div>
+        ) : askTarget ? (
+          <AskAgentPanel nodeId={askTarget.nodeId} label={askTarget.label} onClose={onClose} />
         ) : (
           <>
             <input

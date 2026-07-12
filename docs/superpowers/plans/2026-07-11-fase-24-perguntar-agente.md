@@ -1,0 +1,354 @@
+# Orkestra — Fase 24 (Perguntar ao Agente com Preview) — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
+
+**Goal:** Pelo command palette, com um terminal selecionado, escolher **"Perguntar ao agente"**, digitar uma pergunta, e ver a **resposta do agente streamar num preview** dentro da palette — sem precisar navegar até o terminal no canvas. O preview acumula o output do pty até o agente ficar ocioso (sinal de "terminou"), com **timeout e controles manuais** para não depender só da heurística de ociosidade.
+
+**Architecture:** Um registry no renderer `src/renderer/src/terminal/terminalRegistry.ts` (espelho do `portalRegistry.ts`) mapeia `nodeId → ptyId`; o `TerminalNode` registra ao spawnar e desregistra ao desmontar. Um utilitário puro `src/renderer/src/terminal/ansi.ts` (`stripAnsi`) limpa as sequências de escape para o preview. Um componente `AskAgentPanel.tsx` conduz duas fases: **input** (digitar a pergunta) → **preview** (envia via `pty.write`, assina o stream `pty.onData` do pty daquele terminal, acumula o texto, e encerra ao receber `onAgentAttention(nodeId)` OU timeout OU ação manual). O `CommandPalette` ganha um item contextual `ask` que monta o `AskAgentPanel`.
+
+**Tech Stack:** React 18, `@xyflow/react` (`useReactFlow().setCenter`), o preload existente (`pty.write`/`pty.onData`, `onAgentAttention`). Vitest (`*.test.ts`) — a lógica testável (registry, `stripAnsi`, item da palette) fica em módulos puros.
+
+## Global Constraints
+
+- **Sem novos canais IPC:** reusa `window.orkestra.pty.write/onData` e `onAgentAttention` já expostos. Nada novo no main/preload.
+- **Segurança:** o preview renderiza texto puro (`<pre>`, nunca HTML/`dangerouslySetInnerHTML`); `stripAnsi` remove sequências de controle. Renderer não importa `fs`/`http`/`node-pty`/`child_process`.
+- **Robustez à ociosidade:** o fim da resposta NÃO depende só de `onAgentAttention` (heurística de `idleMs`=1200, ainda não calibrada com agentes reais — checkpoint do usuário). Ter sempre: timeout (60 s) + botões "Ir ao terminal"/"Fechar". O painel sempre pode ser fechado.
+- **Cleanup obrigatório:** toda assinatura (`pty.onData`, `onAgentAttention`) e timer são desfeitos no cleanup do `useEffect`/ao fechar — sem vazamento de listeners.
+- Zero regressão ao palette (Fase 23), terminais, mensageria `orq`, seleção. PT-BR, sem marcas de terceiros.
+
+---
+
+### Task 1: `terminalRegistry.ts` + `stripAnsi` + fiação no `TerminalNode` — TDD
+
+**Files:**
+- Create: `src/renderer/src/terminal/terminalRegistry.ts` (+ `.test.ts`), `src/renderer/src/terminal/ansi.ts` (+ `.test.ts`)
+- Modify: `src/renderer/src/components/TerminalNode.tsx`
+
+**Interfaces:**
+- Produces:
+  ```ts
+  // terminalRegistry.ts
+  export function registerTerminalPty(nodeId: string, ptyId: string): void
+  export function unregisterTerminalPty(nodeId: string): void
+  export function getTerminalPty(nodeId: string): string | undefined
+  // ansi.ts
+  export function stripAnsi(input: string): string
+  ```
+
+- [ ] **Step 1: Testes do registry (falham primeiro)**
+
+`src/renderer/src/terminal/terminalRegistry.test.ts` (espelha `portalRegistry.test.ts`):
+```ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import { registerTerminalPty, unregisterTerminalPty, getTerminalPty } from './terminalRegistry'
+
+describe('terminalRegistry', () => {
+  beforeEach(() => {
+    unregisterTerminalPty('n1')
+    unregisterTerminalPty('n2')
+  })
+  it('register/get devolve o ptyId do nó', () => {
+    registerTerminalPty('n1', 'pty-1')
+    expect(getTerminalPty('n1')).toBe('pty-1')
+    expect(getTerminalPty('n2')).toBeUndefined()
+  })
+  it('unregister remove o mapeamento', () => {
+    registerTerminalPty('n1', 'pty-1')
+    unregisterTerminalPty('n1')
+    expect(getTerminalPty('n1')).toBeUndefined()
+  })
+  it('re-register sobrescreve', () => {
+    registerTerminalPty('n1', 'pty-1')
+    registerTerminalPty('n1', 'pty-2')
+    expect(getTerminalPty('n1')).toBe('pty-2')
+  })
+})
+```
+
+- [ ] **Step 2: Implementar `terminalRegistry.ts`** (molde do `portalRegistry.ts`):
+```ts
+const terminals = new Map<string, string>()
+
+export function registerTerminalPty(nodeId: string, ptyId: string): void {
+  terminals.set(nodeId, ptyId)
+}
+export function unregisterTerminalPty(nodeId: string): void {
+  terminals.delete(nodeId)
+}
+export function getTerminalPty(nodeId: string): string | undefined {
+  return terminals.get(nodeId)
+}
+```
+
+- [ ] **Step 3: Testes do `stripAnsi` (falham primeiro)**
+
+`src/renderer/src/terminal/ansi.test.ts`:
+```ts
+import { describe, it, expect } from 'vitest'
+import { stripAnsi } from './ansi'
+
+describe('stripAnsi', () => {
+  it('remove cores/SGR mantendo o texto', () => {
+    expect(stripAnsi('\x1b[31mvermelho\x1b[0m')).toBe('vermelho')
+  })
+  it('remove movimentos de cursor e limpeza de linha', () => {
+    expect(stripAnsi('a\x1b[2K\x1b[1Gb')).toBe('ab')
+  })
+  it('remove sequências OSC (título) terminadas por BEL', () => {
+    expect(stripAnsi('\x1b]0;titulo\x07texto')).toBe('texto')
+  })
+  it('preserva quebras de linha, tabs e retorno de carro', () => {
+    expect(stripAnsi('linha1\nlinha2\tx')).toBe('linha1\nlinha2\tx')
+  })
+  it('texto sem escapes fica intacto', () => {
+    expect(stripAnsi('olá mundo')).toBe('olá mundo')
+  })
+})
+```
+
+- [ ] **Step 4: Implementar `ansi.ts`**
+```ts
+/* eslint-disable no-control-regex */
+export function stripAnsi(input: string): string {
+  return input
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '') // OSC ... BEL ou ST
+    .replace(/\x1b[P^_][^\x1b]*\x1b\\/g, '') // DCS/PM/APC ... ST
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '') // CSI (cores, cursor, limpeza)
+    .replace(/\x1b[=>NODEc78]/g, '') // ESC + 1 char
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '') // controles (mantém \t \n \r)
+}
+```
+(O `eslint-disable no-control-regex` no topo evita erro de lint pelos ranges de controle. Confirmar que os testes do Step 3 passam — ajustar os ranges se algum caso falhar, sem enfraquecer os testes.)
+
+- [ ] **Step 5: Fiar o `TerminalNode.tsx`** — registrar/desregistrar
+
+Importar: `import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'`.
+- No `.then((id) => { … })` do spawn, logo após `ptyId = id`, adicionar: `if (nodeId) registerTerminalPty(nodeId, id)`.
+- No cleanup (o `return () => { … }` do `useEffect`), adicionar `if (nodeId) unregisterTerminalPty(nodeId)` (antes ou junto do `pty.kill`). Preservar toda a lógica existente (`disposed`, `disposeData()`, `pty.kill(ptyId)`, `term.dispose()`). O caso `disposed` (early-return em que `id` é morto sem virar `ptyId`) não registra — correto (só registramos após `ptyId = id`).
+
+- [ ] **Step 6: Testes + typecheck + build + lint** — `npm test` (verde, +6), `npm run typecheck`, `npm run build`, `npm run lint` — limpos.
+
+- [ ] **Step 7: Commit** — `git add -A && git commit -m "feat: terminalRegistry (nodeId->ptyId) + stripAnsi + registro no TerminalNode (Fase 24)"`
+
+---
+
+### Task 2: `AskAgentPanel` + item "Perguntar ao agente" na palette (+ checkpoint)
+
+**Files:**
+- Create: `src/renderer/src/components/AskAgentPanel.tsx`
+- Modify: `src/renderer/src/palette/paletteCommands.ts` (+ `.test.ts`), `src/renderer/src/components/CommandPalette.tsx`, `src/renderer/src/components/CommandPalette.css`
+
+**Interfaces:**
+- Consumes: `getTerminalPty` (Task 1), `stripAnsi` (Task 1), `window.orkestra.pty.write/onData`, `window.orkestra.onAgentAttention`, `useReactFlow().setCenter`, store `nodes`.
+- Produces: `PaletteItem.ask?: { nodeId: string; label: string }`; `AskAgentPanel` component.
+
+- [ ] **Step 1: Estender `paletteCommands.ts` (TDD)** — adicionar o campo `ask` e o item para terminais selecionados.
+
+Adicionar ao `PaletteItem`: `ask?: { nodeId: string; label: string }`. No bloco `if (n.type === 'terminal')` de `buildPaletteItems`, adicionar:
+```ts
+items.push({
+  id: `ctx:ask:${n.id}`,
+  label: `Perguntar ao agente ${name}`,
+  kind: 'context',
+  ask: { nodeId: n.id, label: name }
+})
+```
+Teste (adicionar a `paletteCommands.test.ts`):
+```ts
+it('terminal selecionado oferece "Perguntar ao agente" com o alvo', () => {
+  const t = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
+  const items = buildPaletteItems({ nodes: [t], edges: [], selectedNodes: [t], actions: noopActions() })
+  const ask = items.find((i) => i.id === 'ctx:ask:t1')
+  expect(ask?.ask).toEqual({ nodeId: 't1', label: 'A' })
+})
+it('nó não-terminal não oferece perguntar ao agente', () => {
+  const note = { id: 'n1', type: 'note', data: {}, selected: true }
+  const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [note], actions: noopActions() })
+  expect(items.some((i) => i.id.startsWith('ctx:ask:'))).toBe(false)
+})
+```
+Rodar `npm test -- paletteCommands` → verde.
+
+- [ ] **Step 2: `AskAgentPanel.tsx`**
+```tsx
+import { useEffect, useState } from 'react'
+import { useReactFlow } from '@xyflow/react'
+import { useCanvasStore } from '../store/canvasStore'
+import { getTerminalPty } from '../terminal/terminalRegistry'
+import { stripAnsi } from '../terminal/ansi'
+
+const ASK_TIMEOUT_MS = 60000
+
+export function AskAgentPanel({
+  nodeId,
+  label,
+  onClose
+}: {
+  nodeId: string
+  label: string
+  onClose: () => void
+}): JSX.Element {
+  const [phase, setPhase] = useState<'input' | 'preview'>('input')
+  const [prompt, setPrompt] = useState('')
+  const [output, setOutput] = useState('')
+  const [status, setStatus] = useState<'waiting' | 'done' | 'timeout' | 'error'>('waiting')
+  const nodes = useCanvasStore((s) => s.nodes)
+  const { setCenter } = useReactFlow()
+
+  const send = (): void => {
+    const ptyId = getTerminalPty(nodeId)
+    if (!ptyId) {
+      setStatus('error')
+      setPhase('preview')
+      return
+    }
+    window.orkestra.pty.write(ptyId, prompt + '\n')
+    setStatus('waiting')
+    setPhase('preview')
+  }
+
+  useEffect(() => {
+    if (phase !== 'preview') return
+    const ptyId = getTerminalPty(nodeId)
+    if (!ptyId) return
+    const offData = window.orkestra.pty.onData(ptyId, (chunk) => setOutput((o) => (o + chunk).slice(-8000)))
+    const offAtt = window.orkestra.onAgentAttention((nid) => {
+      if (nid === nodeId) setStatus((s) => (s === 'waiting' ? 'done' : s))
+    })
+    const timer = setTimeout(() => setStatus((s) => (s === 'waiting' ? 'timeout' : s)), ASK_TIMEOUT_MS)
+    return () => {
+      offData()
+      offAtt()
+      clearTimeout(timer)
+    }
+  }, [phase, nodeId])
+
+  const focusTerminal = (): void => {
+    const n = nodes.find((x) => x.id === nodeId)
+    if (n) setCenter(n.position.x + (n.width ?? 200) / 2, n.position.y + (n.height ?? 120) / 2, { zoom: 1.2, duration: 300 })
+    onClose()
+  }
+
+  if (phase === 'input') {
+    return (
+      <div className="ork-ask">
+        <div className="ork-ask-title">Perguntar ao agente: {label}</div>
+        <input
+          className="ork-palette-input"
+          autoFocus
+          value={prompt}
+          placeholder="Digite a pergunta e pressione Enter"
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && prompt.trim()) {
+              e.preventDefault()
+              send()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              onClose()
+            }
+          }}
+        />
+      </div>
+    )
+  }
+
+  const statusText =
+    status === 'waiting'
+      ? 'aguardando resposta…'
+      : status === 'done'
+        ? 'concluído'
+        : status === 'timeout'
+          ? 'sem resposta (tempo esgotado) — veja o terminal'
+          : 'este terminal ainda não tem um processo ativo'
+
+  return (
+    <div className="ork-ask">
+      <div className="ork-ask-title">
+        {label} — {statusText}
+      </div>
+      {status !== 'error' && <pre className="nowheel ork-ask-output">{stripAnsi(output) || '…'}</pre>}
+      <div className="ork-ask-actions">
+        <button className="ork-ask-btn" onClick={focusTerminal}>
+          Ir ao terminal
+        </button>
+        <button className="ork-ask-btn" onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 3: Montar no `CommandPalette.tsx`** — quando um item tem `ask`, mostrar o painel no lugar da lista.
+
+Adicionar estado `const [askTarget, setAskTarget] = useState<{ nodeId: string; label: string } | null>(null)`. No `runItem(item)`, ANTES do tratamento de `input`:
+```ts
+if (item.ask) {
+  setAskTarget(item.ask)
+  return
+}
+```
+Na renderização, quando `askTarget` é não-nulo, renderizar `<AskAgentPanel nodeId={askTarget.nodeId} label={askTarget.label} onClose={onClose} />` no lugar da lista/busca (mesma posição do modo input). Garantir que os handlers de teclado da lista (↑/↓/Enter) fiquem inertes enquanto `askTarget` está ativo (o `AskAgentPanel` tem os próprios inputs/botões). Importar `AskAgentPanel`.
+
+- [ ] **Step 4: CSS em `CommandPalette.css`** — painel de pergunta:
+```css
+.ork-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.ork-ask-title {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ork-ask-output {
+  margin: 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ork-ask-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.ork-ask-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ork-ask-btn:hover {
+  border-color: var(--border-strong);
+}
+```
+(Se `.ork-palette-input` já existir da Fase 23, reutilizar; senão adicionar um estilo simples para o input do painel.)
+
+- [ ] **Step 5: Testes + typecheck + build + lint** — `npm test` (verde), `npm run typecheck`, `npm run build`, `npm run lint` — limpos.
+
+- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: AskAgentPanel (perguntar ao agente com preview do stream) na palette (Fase 24)"`
+
+- [ ] **Step 7: CHECKPOINT VISUAL (humano)** — `npm run dev`. Num terminal com um agente/shell rodando: selecionar o terminal, Cmd+K → "Perguntar ao agente <nome>"; digitar uma pergunta + Enter → o preview mostra a saída streamando; ao ficar ocioso, o status vira "concluído". "Ir ao terminal" foca o nó; "Fechar" encerra. Testar também: perguntar a um terminal recém-criado sem processo → mensagem de "sem processo ativo"; uma pergunta que demora > 60 s → status "tempo esgotado" (o preview continua no terminal). **Calibração do `idleMs` (quando o "concluído" dispara) é o checkpoint central — ajustar se disparar cedo/tarde com agentes reais.**
+
+---
+
+## Notas de risco
+- **Heurística de ociosidade (risco central):** o "concluído" usa `onAgentAttention` (idleMs=1200). Com agentes que pausam no meio da resposta, pode marcar "concluído" cedo; o preview NÃO some quando isso ocorre (só muda o rótulo), e o output continua chegando enquanto o painel estiver aberto. Timeout (60 s) e "Ir ao terminal" cobrem os casos em que o sinal não vem. Ajuste fino do `idleMs` é checkpoint do usuário (compartilhado com a Fase 20).
+- **Preview de TUIs:** agentes que redesenham a tela (TUI) produzem muito escape; `stripAnsi` melhora a legibilidade mas o preview pode não reproduzir o layout do terminal fielmente. É um preview, não um espelho — "Ir ao terminal" leva à visão real. Limitação documentada.
+- **Eco da pergunta:** o pty ecoa o que foi escrito, então o início do preview pode conter a própria pergunta — aceitável no MVP.
+- **Sem novos IPC / sem vazamento:** reusa canais existentes; todas as assinaturas são desfeitas no cleanup do `useEffect` e ao fechar o painel. Fechar a palette (Esc/backdrop) desmonta o painel e limpa tudo.
+- **Buffer limitado:** o preview mantém os últimos 8000 caracteres (como o buffer do `AgentBus`), evitando crescer sem limite numa resposta longa.

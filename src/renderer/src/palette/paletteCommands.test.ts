@@ -97,6 +97,19 @@ describe('buildPaletteItems', () => {
     expect(nodeLabel({ id: 'x', type: undefined, data: {} })).toBe('Nó')
   })
 
+  it('terminal selecionado oferece "Perguntar ao agente" com o alvo', () => {
+    const t = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
+    const items = buildPaletteItems({ nodes: [t], edges: [], selectedNodes: [t], actions: noopActions() })
+    const ask = items.find((i) => i.id === 'ctx:ask:t1')
+    expect(ask?.ask).toEqual({ nodeId: 't1', label: 'A' })
+  })
+
+  it('nó não-terminal não oferece perguntar ao agente', () => {
+    const note = { id: 'n1', type: 'note', data: {}, selected: true }
+    const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [note], actions: noopActions() })
+    expect(items.some((i) => i.id.startsWith('ctx:ask:'))).toBe(false)
+  })
+
   it('desconectar tem id único quando ambos os endpoints estão selecionados', () => {
     const a = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
     const b = { id: 't2', type: 'terminal', data: { name: 'B' }, selected: true }
