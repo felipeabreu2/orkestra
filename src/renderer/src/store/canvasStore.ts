@@ -201,10 +201,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, rootPath } } : n))
     })),
   removeNode: (id): void =>
-    set((state) => ({
-      nodes: state.nodes.filter((n) => n.id !== id),
-      edges: state.edges.filter((e) => e.source !== id && e.target !== id)
-    })),
+    set((state) => {
+      // Fase 20 (Task 2): também remove o id do Set attention. Sem isso, fechar um terminal
+      // pulsante pelo × deixaria um id órfão em attention pelo resto da sessão — e o Shift+A
+      // (que cicla por attention) poderia panar para esse nó morto / virar um no-op silencioso.
+      // Imutável (o zustand compara referência, como em setAttention), mas só realoca uma nova
+      // instância de Set quando o id realmente está lá (senão preserva a mesma referência).
+      let attention = state.attention
+      if (attention.has(id)) {
+        attention = new Set(attention)
+        attention.delete(id)
+      }
+      return {
+        nodes: state.nodes.filter((n) => n.id !== id),
+        edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+        attention
+      }
+    }),
   setNodePositions: (map): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (map[n.id] ? { ...n, position: map[n.id] } : n))

@@ -674,4 +674,31 @@ describe('canvasStore', () => {
     const afterRemove = useCanvasStore.getState().attention
     expect(afterRemove).not.toBe(afterAdd)
   })
+
+  it('removeNode também limpa o id do Set attention (evita Shift+A apontar p/ nó morto)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().setAttention(id, true)
+    expect(useCanvasStore.getState().attention.has(id)).toBe(true)
+    useCanvasStore.getState().removeNode(id)
+    expect(useCanvasStore.getState().attention.has(id)).toBe(false)
+  })
+
+  it('removeNode de outro nó não descarta um id não relacionado presente em attention', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().setAttention(a.id, true)
+    useCanvasStore.getState().removeNode(b.id)
+    // remover b não deve mexer na atenção de a
+    expect(useCanvasStore.getState().attention.has(a.id)).toBe(true)
+  })
+
+  it('removeNode de um nó ausente do attention preserva a MESMA referência de Set (não realoca à toa)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    const before = useCanvasStore.getState().attention
+    useCanvasStore.getState().removeNode(id)
+    expect(useCanvasStore.getState().attention).toBe(before)
+  })
 })
