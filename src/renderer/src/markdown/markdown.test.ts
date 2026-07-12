@@ -16,6 +16,12 @@ describe('isSafeHref', () => {
     expect(isSafeHref('file:///etc/passwd')).toBe(false)
     expect(isSafeHref('vbscript:x')).toBe(false)
   })
+  it('rejeita esquemas ofuscados com caracteres de controle', () => {
+    expect(isSafeHref('java\tscript:alert(1)')).toBe(false)
+    expect(isSafeHref('java\nscript:alert(1)')).toBe(false)
+    expect(isSafeHref('java\rscript:alert(1)')).toBe(false)
+    expect(isSafeHref('JAVASCRIPT:alert(1)')).toBe(false)
+  })
 })
 
 describe('parseInline', () => {
@@ -46,6 +52,15 @@ describe('parseInline', () => {
   })
   it('código inline preserva asteriscos internos (não os interpreta)', () => {
     expect(parseInline('`a*b*c`')).toEqual([{ type: 'code', value: 'a*b*c' }])
+  })
+  it('link com parênteses balanceados na URL é reconhecido', () => {
+    expect(parseInline('[wiki](https://en.wikipedia.org/wiki/Foo_(disambiguation))')).toEqual([
+      { type: 'link', text: 'wiki', href: 'https://en.wikipedia.org/wiki/Foo_(disambiguation)' }
+    ])
+  })
+  it('link relativo e mailto são reconhecidos ponta a ponta', () => {
+    expect(parseInline('[doc](/docs/x)')).toEqual([{ type: 'link', text: 'doc', href: '/docs/x' }])
+    expect(parseInline('[mail](mailto:a@b.com)')).toEqual([{ type: 'link', text: 'mail', href: 'mailto:a@b.com' }])
   })
 })
 

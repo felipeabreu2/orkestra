@@ -14,10 +14,37 @@ export type Block =
   | { type: 'hr' }
 
 export function isSafeHref(href: string): boolean {
-  const m = href.trim().match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/)
+  const clean = href.replace(/[\x00-\x1F\x7F]/g, '').trim()
+  const m = clean.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/)
   if (!m) return true // sem esquema → relativo/âncora
   const scheme = m[1].toLowerCase()
   return scheme === 'http' || scheme === 'https' || scheme === 'mailto'
+}
+
+function scanLink(rest: string): { text: string; href: string; length: number } | null {
+  if (rest[0] !== '[') return null
+  const close = rest.indexOf(']')
+  if (close < 0 || rest[close + 1] !== '(') return null
+  const text = rest.slice(1, close)
+  let depth = 0
+  let href = ''
+  let j = close + 2
+  while (j < rest.length) {
+    const c = rest[j]
+    if (/\s/.test(c)) return null // href não pode conter espaço
+    if (c === '(') {
+      depth++
+      href += c
+    } else if (c === ')') {
+      if (depth === 0) return { text, href, length: j + 1 }
+      depth--
+      href += c
+    } else {
+      href += c
+    }
+    j++
+  }
+  return null // sem ) de fechamento
 }
 
 export function parseInline(text: string): InlineSpan[] {
@@ -39,11 +66,15 @@ export function parseInline(text: string): InlineSpan[] {
       i += m[0].length
       continue
     }
-    m = /^\[([^\]]*)\]\(([^)\s(]+)\)/.exec(rest)
-    if (m) {
+    const link = scanLink(rest)
+    if (link) {
       flush()
-      spans.push(isSafeHref(m[2]) ? { type: 'link', text: m[1], href: m[2] } : { type: 'text', value: m[0] })
-      i += m[0].length
+      spans.push(
+        isSafeHref(link.href)
+          ? { type: 'link', text: link.text, href: link.href }
+          : { type: 'text', value: rest.slice(0, link.length) }
+      )
+      i += link.length
       continue
     }
     m = /^\*\*([^*]+)\*\*/.exec(rest)
