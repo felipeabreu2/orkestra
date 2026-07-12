@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import type { WebviewTag } from 'electron'
+import { useShallow } from 'zustand/react/shallow'
 import { PortalNode } from './PortalNode'
 import { useCanvasStore } from '../store/canvasStore'
 import { partitionForPortal } from '../portalPartition'
@@ -13,7 +14,12 @@ export function PortalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
   const updatePortalLink = useCanvasStore((s) => s.updatePortalLink)
   // Fase 25 (Task 2): outros portais do canvas — listados no seletor de sessão como possíveis
   // fontes de "compartilhar" (linkedTo aponta pro nodeId de um destes).
-  const portals = useCanvasStore((s) => s.nodes.filter((n) => n.type === 'portal' && n.id !== id))
+  // useShallow é obrigatório aqui: zustand v5 não memoiza seletores (useSyncExternalStore puro),
+  // então um `.filter()` sem useShallow devolve um array novo a cada leitura -> loop infinito de
+  // render ("Maximum update depth exceeded") assim que um portal monta.
+  const portals = useCanvasStore(
+    useShallow((s) => s.nodes.filter((n) => n.type === 'portal' && n.id !== id))
+  )
   const name = (data as { name?: string })?.name ?? 'Portal'
   const url = (data as { url?: string })?.url ?? ''
   const linkedTo = data.linkedTo as string | undefined
