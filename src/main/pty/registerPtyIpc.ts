@@ -26,8 +26,15 @@ export function registerPtyIpc(
   }
   ipcMain.handle('pty:spawn', (_e, opts: SpawnOpts) => {
     const o = opts ?? {}
+    // Segurança: allowlist explícito dos campos aceitos do renderer via destructure — NUNCA
+    // espalhar o payload bruto (`{ ...o }`) aqui. PtyManager.spawn honra file/args (Fase 27
+    // Task 1, base p/ SSH remoto); um renderer comprometido poderia repassar
+    // `{ file: '/bin/sh', args: [...] }` e conseguir RCE se esses campos vazassem sem filtro.
+    // file/args só entram nesta lista quando forem validados aqui dentro (ex.: sshHost via
+    // isValidSshHost, Fase 27 Task 2) — nunca repassados crus do IPC.
+    const { cols, rows, nodeId, initialCommand } = o
     const cwd = o.cwd ?? getProjectCwd?.()
-    const id = ptyManager.spawn({ ...o, cwd, env: getEnv() })
+    const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, cwd, env: getEnv() })
     ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
     onSpawn(id)
     return id

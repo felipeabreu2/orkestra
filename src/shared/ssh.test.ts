@@ -22,4 +22,13 @@ describe('isValidSshHost', () => {
     expect(isValidSshHost('a b')).toBe(false)
     expect(isValidSshHost('a`b`')).toBe(false)
   })
+  it('rejeita quebras de linha, NUL e não-ASCII (propriedade de segurança)', () => {
+    expect(isValidSshHost('good\n; rm -rf /')).toBe(false) // JS $ (sem /m) não tolera payload após \n
+    expect(isValidSshHost('go\nod')).toBe(false)
+    expect(isValidSshHost('host\r\nx')).toBe(false)
+    expect(isValidSshHost('a\u0000b')).toBe(false) // NUL
+    expect(isValidSshHost('servidör')).toBe(false)         // não-ASCII
+    // @ts-expect-error tipo não-string em runtime
+    expect(isValidSshHost(123)).toBe(false)
+  })
 })

@@ -131,6 +131,23 @@ describe('registerPtyIpc', () => {
     expect(call[2].cwd).toBe('/tmp/explicito')
   })
 
+  // Segurança: o handler de pty:spawn deve fazer allowlist explícito dos campos vindos do
+  // renderer. Sem isto, `{ ...o }` repassaria file/args arbitrários direto ao PtyManager.spawn
+  // (que os repassa ao spawner real/node-pty), permitindo RCE a partir de um renderer
+  // comprometido — bypassando totalmente o gate de isValidSshHost.
+  it('ignora file/args vindos do renderer (allowlist) — não spawna binário arbitrário', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+
+    await ipc.handlers.get('pty:spawn')!({}, { file: '/bin/sh', args: ['-c', 'x'], nodeId: 'n1' })
+
+    const call = spawner.mock.calls[0]
+    expect(call[0]).not.toBe('/bin/sh') // usou o shell padrão, não o file vindo do renderer
+    expect(call[1]).toEqual([])         // args vindos do renderer são ignorados
+  })
+
   it('pty:spawn sem o.cwd e sem getProjectCwd deixa o PtyManager aplicar o fallback de HOME', async () => {
     const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
