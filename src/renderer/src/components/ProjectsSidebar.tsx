@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Project } from '../../../shared/project'
 import { useCanvasStore } from '../store/canvasStore'
 import { Logo } from './Logo'
+import { ThemeToggle } from './ThemeToggle'
 import './ProjectsSidebar.css'
 
 // Menu esquerdo de projetos (Fase 15 Task 3): cada projeto tem seu próprio canvas persistido
@@ -365,6 +366,8 @@ export function ProjectsSidebar(): JSX.Element {
           >
             +
           </button>
+          <div className="ork-sidebar-rail-spacer" />
+          <ThemeToggle collapsed />
         </div>
       ) : (
         <>
@@ -512,6 +515,7 @@ export function ProjectsSidebar(): JSX.Element {
             <button className="ork-sidebar-new-btn" onClick={() => void handleCreate()}>
               + Novo projeto
             </button>
+            <ThemeToggle />
           </div>
         </>
       )}

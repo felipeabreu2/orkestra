@@ -1,6 +1,7 @@
-/* Design tokens (Fase 13): paleta "dark premium" — única fonte de verdade para cor/forma/
-   tipografia/motion do app. Consumido via var(--token) nos componentes; nada aqui deve conter
-   seletores além de :root (mantém o arquivo puramente declarativo). */
+/* Design tokens (Fase 13): única fonte de verdade para cor/forma/tipografia/motion do app,
+   consumido via var(--token) nos componentes. O :root abaixo é o tema ESCURO (padrão). A
+   Fase 28 adicionou o tema CLARO como uma sobrecarga em :root[data-theme='light'] (só cor/
+   sombra mudam; forma/tipografia/motion herdam) — trocado via document.documentElement. */
 :root {
   /* superfícies */
   --bg-0: #0b0d12; /* fundo do canvas */
@@ -36,6 +37,29 @@
   --dur-1: 120ms;
   --dur-2: 200ms;
   --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+
+/* Tema claro (Fase 28): sobrecarga quando <html data-theme="light">. Só cor/sombra mudam —
+   forma/tipografia/motion herdam do :root. Contraste AA nos pares texto/fundo e texto-branco/
+   --accent. Ajustável (é só trocar valores aqui). */
+:root[data-theme='light'] {
+  --bg-0: #e9ebf0; /* canvas cinza-claro */
+  --bg-1: #ffffff; /* painéis/nós/modais */
+  --bg-2: #eef0f4; /* elevação/hover */
+  --bg-2-weak: #1a1e2710;
+  --border: #e2e5ec;
+  --border-strong: #cbd1db;
+  --text-1: #14171f;
+  --text-2: #545e74;
+  --text-3: #949cae;
+  --accent: #6b5cf5; /* roxo do app, levemente mais escuro p/ contraste com texto branco */
+  --accent-weak: #6b5cf518;
+  --accent-text: #ffffff; /* branco sobre --accent sólido (~4.6:1 AA) */
+  --ok: #1f9d63;
+  --warn: #b77e1e;
+  --err: #cf4b48;
+  --shadow-1: 0 1px 2px #0000000f, 0 2px 8px #0000000a;
+  --shadow-2: 0 10px 30px #00000022;
 }
 
 @media (prefers-reduced-motion: reduce) {

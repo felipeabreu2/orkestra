@@ -480,3 +480,37 @@
 .ork-sidebar-icon-picker-confirm:hover {
   filter: brightness(1.18);
 }
+
+/* Alternar tema claro/escuro (Fase 28) */
+.ork-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-theme-toggle:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+/* No trilho colapsado o toggle vira um botão-ícone quadrado, sem rótulo */
+.ork-sidebar-rail .ork-theme-toggle {
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  margin: 0 auto;
+}
+.ork-sidebar-rail-spacer {
+  flex: 1;
+}
