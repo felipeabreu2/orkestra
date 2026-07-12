@@ -5,6 +5,7 @@ export interface MirrorNode {
   content?: string
   role?: string
   preset?: string
+  monitor?: boolean
 }
 
 export interface CanvasMirror {

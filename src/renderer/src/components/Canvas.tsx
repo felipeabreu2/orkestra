@@ -10,9 +10,9 @@ import { FileTreeNode } from './FileTreeNode'
 import { GroupNode } from './GroupNode'
 import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
+import { NewTerminalModal } from './NewTerminalModal'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
-import { PRESETS } from '../../../shared/presets'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
 
 const nodeTypes = {
@@ -58,7 +58,6 @@ export function Canvas(): JSX.Element {
   const edges = useCanvasStore((s) => s.edges)
   const onEdgesChange = useCanvasStore((s) => s.onEdgesChange)
   const onConnect = useCanvasStore((s) => s.onConnect)
-  const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
@@ -66,6 +65,7 @@ export function Canvas(): JSX.Element {
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const setAttention = useCanvasStore((s) => s.setAttention)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [newTermOpen, setNewTermOpen] = useState(false)
   const [minimapOn, setMinimapOn] = useState(true)
   const { fitView } = useReactFlow()
   // Fase 20 (Task 2): índice de qual nó em `attention` o Shift+A deve focar na PRÓXIMA vez que
@@ -79,7 +79,14 @@ export function Canvas(): JSX.Element {
   // TerminalNode ao focar aquele terminal específico (clearAgentAttention + setAttention false),
   // não deste efeito global. Cleanup desinscreve (a própria função retornada pelo preload).
   useEffect(() => {
-    const off = window.orkestra.onAgentAttention((nodeId) => setAttention(nodeId, true))
+    const off = window.orkestra.onAgentAttention((nodeId) => {
+      // "Monitorar atividade" desligado (data.monitor === false, Fase 29) → não acende o
+      // indicador para este terminal. Lê o estado atual via getState (não põe `nodes` nas deps,
+      // evitando re-inscrever o listener a cada mudança do canvas).
+      const node = useCanvasStore.getState().nodes.find((n) => n.id === nodeId)
+      if (node && (node.data as { monitor?: boolean }).monitor === false) return
+      setAttention(nodeId, true)
+    })
     return off
   }, [setAttention])
 
@@ -180,15 +187,9 @@ export function Canvas(): JSX.Element {
     // cobriria a sidebar.
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div className="ork-toolbar">
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            className="ork-toolbar-btn"
-            onClick={() => addTerminalNode(undefined, { preset: p.id })}
-          >
-            + {p.label}
-          </button>
-        ))}
+        <button className="ork-toolbar-btn" onClick={() => setNewTermOpen(true)}>
+          + Terminal
+        </button>
         <span className="ork-toolbar-divider" />
         <button className="ork-toolbar-btn" onClick={() => addNoteNode()}>
           + Nota
@@ -200,6 +201,7 @@ export function Canvas(): JSX.Element {
           + Arquivos
         </button>
       </div>
+      {newTermOpen && <NewTerminalModal onClose={() => setNewTermOpen(false)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
       {selectedNodes.length >= 2 && (

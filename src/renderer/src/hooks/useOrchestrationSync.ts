@@ -32,7 +32,8 @@ export function useOrchestrationSync(): void {
         name: ((n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó').slice(0, 40),
         content: n.data?.content as string | undefined,
         role: (n.data?.role as string) ?? '',
-        preset: (n.data?.preset as string) ?? 'shell'
+        preset: (n.data?.preset as string) ?? 'shell',
+        monitor: n.data?.monitor as boolean | undefined
       }))
     }
     window.orkestra.orchestration.sync(mirror)
