@@ -1,0 +1,67 @@
+/* Barra superior (Fase 30): caminho da pasta do projeto ativo à esquerda + ferramentas de
+   criação de nós (ícones) à direita. Full-width, flutua sobre o topo do canvas. Tokens => tema. */
+
+.ork-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+}
+
+.ork-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-2);
+}
+.ork-topbar-path {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42vw;
+}
+
+.ork-topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ork-topbar-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-topbar-tool:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.ork-topbar-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--border);
+}

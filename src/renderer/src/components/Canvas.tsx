@@ -11,6 +11,7 @@ import { GroupNode } from './GroupNode'
 import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
 import { NewTerminalModal } from './NewTerminalModal'
+import { Topbar } from './Topbar'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
@@ -61,6 +62,7 @@ export function Canvas(): JSX.Element {
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
+  const activeCwd = useCanvasStore((s) => s.activeCwd)
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const setAttention = useCanvasStore((s) => s.setAttention)
@@ -186,21 +188,14 @@ export function Canvas(): JSX.Element {
     // flex:1 do App.tsx, ao lado da ProjectsSidebar — 100vw/100vh tomaria a viewport inteira e
     // cobriria a sidebar.
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <div className="ork-toolbar">
-        <button className="ork-toolbar-btn" onClick={() => setNewTermOpen(true)}>
-          + Terminal
-        </button>
-        <span className="ork-toolbar-divider" />
-        <button className="ork-toolbar-btn" onClick={() => addNoteNode()}>
-          + Nota
-        </button>
-        <button className="ork-toolbar-btn" onClick={() => addPortalNode()}>
-          + Portal
-        </button>
-        <button className="ork-toolbar-btn" onClick={() => addFileTreeNode()}>
-          + Arquivos
-        </button>
-      </div>
+      <Topbar
+        cwd={activeCwd}
+        onNewTerminal={() => setNewTermOpen(true)}
+        onNote={() => addNoteNode()}
+        onPortal={() => addPortalNode()}
+        onFiles={() => addFileTreeNode()}
+        onSearch={() => setPaletteOpen(true)}
+      />
       {newTermOpen && <NewTerminalModal onClose={() => setNewTermOpen(false)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}

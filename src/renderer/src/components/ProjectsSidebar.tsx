@@ -96,6 +96,13 @@ export function ProjectsSidebar(): JSX.Element {
     void refresh()
   }, [])
 
+  // Fase 30: mantém o cwd do projeto ativo no store para a barra superior do canvas exibir
+  // (reage a carregar/criar/trocar/renomear — tudo passa por activeId/projects).
+  useEffect(() => {
+    const active = projects.find((p) => p.id === activeId)
+    useCanvasStore.getState().setActiveCwd(active?.cwd ?? null)
+  }, [activeId, projects])
+
   const cancelConfirmTimer = (): void => {
     if (confirmTimerRef.current) {
       clearTimeout(confirmTimerRef.current)
