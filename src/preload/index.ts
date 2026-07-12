@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Project, ProjectIndex } from '../shared/project'
+import type { FileEntry } from '../shared/filetree'
 
 const api = {
   pty: {
@@ -54,6 +55,16 @@ const api = {
     // Abre o diálogo nativo de escolha de pasta (roda no main) -> path escolhido, ou null se o
     // usuário cancelar. Renderer nunca toca fs/dialog diretamente.
     pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('projects:pickDirectory')
+  },
+  // Fase 19 (Task 1): árvore de arquivos (canvas file-explorer node) — read-only, delega tudo ao
+  // FileTreeService no main (ver registerFileTreeIpc). O renderer nunca importa `fs`/`child_process`
+  // diretamente; list/read/gitStatus podem rejeitar (dir/arquivo inexistente etc.) — quem chama trata.
+  filetree: {
+    list: (dir: string): Promise<FileEntry[]> => ipcRenderer.invoke('filetree:list', dir),
+    read: (path: string): Promise<{ content: string; truncated: boolean; binary: boolean }> =>
+      ipcRenderer.invoke('filetree:read', path),
+    gitStatus: (dir: string): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('filetree:gitStatus', dir)
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),

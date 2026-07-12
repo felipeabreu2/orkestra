@@ -6,6 +6,8 @@ import { registerPtyIpc } from './pty/registerPtyIpc'
 import { registerPersistenceIpc } from './persistence/registerPersistenceIpc'
 import { ProjectManager } from './projects/ProjectManager'
 import { registerProjectIpc } from './projects/registerProjectIpc'
+import { FileTreeService } from './filetree/FileTreeService'
+import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
@@ -152,6 +154,10 @@ app.whenReady().then(async () => {
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
+  // Árvore de arquivos (Fase 19 Task 1): serviço read-only de fs + git status para o nó de
+  // file-explorer do canvas (renderer, Task 2). Sem estado próprio — não precisa de bootstrap.
+  const fileTreeService = new FileTreeService()
+  registerFileTreeIpc(ipcMain, fileTreeService)
   createWindow()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
   // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver
