@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, shell } from 'electron'
 import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -108,6 +108,19 @@ function createWindow(): void {
     delete webPreferences.preload
     webPreferences.nodeIntegration = false
     webPreferences.contextIsolation = true
+  })
+
+  // Fase 21 (Task 2): nenhum conteúdo do renderer pode abrir uma nova janela Electron (ex.:
+  // target="_blank" nos links renderizados a partir do Markdown das notas, ou qualquer
+  // window.open futuro). http(s) vira aba no navegador padrão do SO via shell.openExternal;
+  // qualquer outro esquema é apenas descartado. Sempre `{ action: 'deny' }` — não é o mesmo
+  // mecanismo do will-attach-webview acima (que só rege a tag <webview> dos portais); os dois
+  // convivem sem conflito.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url)
+    }
+    return { action: 'deny' }
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
