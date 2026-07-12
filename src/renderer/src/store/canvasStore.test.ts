@@ -126,6 +126,46 @@ describe('canvasStore', () => {
     expect(edges[0].target).toBe(b.id)
   })
 
+  // --- Fase 22 (Task 1): kind derivado de conexão (deriveEdgeKind) ---
+
+  it('onConnect deriva o kind da edge pelos tipos dos nós', () => {
+    // dois terminais → agent
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const e = useCanvasStore.getState().edges[0]
+    expect(e.data).toMatchObject({ kind: 'agent' })
+    expect(e.type).toBe('typed')
+    expect(e.className).toContain('ork-edge--agent')
+  })
+
+  it('removeEdge remove a edge por id', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().removeEdge(id)
+    expect(useCanvasStore.getState().edges).toHaveLength(0)
+  })
+
+  it('hydrate recomputa o kind das edges a partir dos nós', () => {
+    const snap: CanvasSnapshot = {
+      version: 2,
+      nodes: [
+        { id: 'note-1', type: 'note', position: { x: 0, y: 0 }, width: 240, height: 180, data: { content: 'a' } },
+        { id: 'note-2', type: 'note', position: { x: 300, y: 0 }, width: 240, height: 180, data: { content: 'b' } }
+      ],
+      edges: [{ id: 'e1', source: 'note-1', target: 'note-2' }]
+    }
+    useCanvasStore.getState().hydrate(snap)
+    const e = useCanvasStore.getState().edges[0]
+    expect(e.data).toMatchObject({ kind: 'chain' })
+    expect(e.type).toBe('typed')
+    expect(e.className).toContain('ork-edge--chain')
+  })
+
   it('addNoteNode adiciona um nó note com content vazio', () => {
     useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
     const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!
