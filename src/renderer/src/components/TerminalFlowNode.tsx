@@ -21,6 +21,10 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
   const autostart = (data as { autostart?: boolean })?.autostart
+  // Fase 27 (Task 3): host remoto (ex.: "user@host") quando este terminal nasceu em modo SSH
+  // (addTerminalNode({sshHost}), ver canvasStore). Puro prop-read de data, igual preset/autostart
+  // acima — NÃO é um seletor do store, então não corre risco do loop de render do zustand v5.
+  const sshHost = (data as { sshHost?: string })?.sshHost
   // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o
   // preset (por id OU label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre;
   // `isPresetRole` reaproveita essa cor (neutra == não é preset) em vez de comparar `role` contra
@@ -73,6 +77,11 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             onChange={(e) => updateTerminalName(id, e.target.value)}
             aria-label="Nome do terminal"
           />
+          {sshHost && (
+            <span className="ork-ssh-badge" title={`Remoto: ${sshHost}`}>
+              SSH
+            </span>
+          )}
           {role.trim() !== '' && (
             <span
               className="ork-role-badge"
@@ -124,7 +133,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           </button>
         </div>
         <div className="nodrag nowheel ork-node-body">
-          <TerminalNode nodeId={id} preset={preset} autostart={autostart} />
+          <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
         </div>
       </div>
     </>

@@ -8,11 +8,16 @@ import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminal
 export function TerminalNode({
   nodeId,
   preset,
-  autostart
+  autostart,
+  sshHost
 }: {
   nodeId?: string
   preset?: string
   autostart?: boolean
+  // Fase 27 (Task 3): quando presente, este terminal spawna `ssh <sshHost>` em vez de um shell
+  // local (ver o branch de spawnOpts abaixo). Passado como prop por TerminalFlowNode, mesmo
+  // padrão de preset/autostart — não lido diretamente de data aqui.
+  sshHost?: string
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -41,8 +46,18 @@ export function TerminalNode({
     // preset 'shell'/ausente → command null/undefined → initialCommand undefined (sem auto-run).
     const initialCommand = autostart && preset ? (presetById(preset)?.command ?? undefined) : undefined
 
+    // Fase 27 (Task 3): modo SSH bifurca aqui — sshHost presente manda { sshHost } e OMITE
+    // initialCommand (o processo já É o `ssh <host>`, main mapeia p/ file:'ssh', args:[host];
+    // ver registerPtyIpc/Task 2). Ausente, comportamento local de sempre (initialCommand do
+    // preset, se houver). O `.then(...)` abaixo é idêntico nos dois casos — ptyId, registro no
+    // terminalRegistry, ligação de dados/resize — o pty resultante é tratado igual pelo xterm
+    // independente de ser um shell local ou uma sessão ssh.
+    const spawnOpts = sshHost
+      ? { cols: term.cols, rows: term.rows, nodeId, sshHost }
+      : { cols: term.cols, rows: term.rows, nodeId, initialCommand }
+
     window.orkestra.pty
-      .spawn({ cols: term.cols, rows: term.rows, nodeId, initialCommand })
+      .spawn(spawnOpts)
       .then((id) => {
         if (disposed) {
           window.orkestra.pty.kill(id)
