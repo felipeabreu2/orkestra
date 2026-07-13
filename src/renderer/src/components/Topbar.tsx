@@ -35,17 +35,20 @@ export function Topbar({
   return (
     <div className="ork-topbar">
       <div className="ork-topbar-left">
-        <button className="ork-topbar-tool" title="Novo projeto" aria-label="Novo projeto" onClick={onNewProject}>
-          <Icon name="Plus" animation="pop" />
-        </button>
-        <button
-          className="ork-topbar-tool"
-          title={collapsed ? 'Exibir menu lateral' : 'Ocultar menu lateral'}
-          aria-label={collapsed ? 'Exibir menu lateral' : 'Ocultar menu lateral'}
-          onClick={onToggleSidebar}
-        >
-          <Icon name="PanelLeft" animation="nudge" />
-        </button>
+        <div className="ork-topbar-pill">
+          <button className="ork-topbar-tool" title="Novo projeto" aria-label="Novo projeto" onClick={onNewProject}>
+            <Icon name="Plus" animation="pop" />
+          </button>
+          <span className="ork-topbar-pill-sep" aria-hidden="true" />
+          <button
+            className="ork-topbar-tool"
+            title={collapsed ? 'Exibir menu lateral' : 'Ocultar menu lateral'}
+            aria-label={collapsed ? 'Exibir menu lateral' : 'Ocultar menu lateral'}
+            onClick={onToggleSidebar}
+          >
+            <Icon name="PanelLeft" animation="nudge" />
+          </button>
+        </div>
         <span className="ork-topbar-workspace" title={cwd ?? 'Nenhuma pasta vinculada'}>
           <Icon name="Folder" size={13} animation="none" />
           <span className="ork-topbar-workspace-name">{workspace}</span>

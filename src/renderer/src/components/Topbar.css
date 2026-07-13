@@ -35,7 +35,7 @@
   padding: 2px 4px;
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
 }
 .ork-topbar-right {
   display: flex;
@@ -56,12 +56,35 @@
   padding: 4px 10px;
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
 }
 .ork-topbar-workspace-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Pílula do grupo "novo projeto | ocultar menu": dois botões dentro de um container 100%
+   arredondado, separados por uma divisória vertical (igual à referência). Os botões ficam
+   circulares para acompanhar a pílula. */
+.ork-topbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.ork-topbar-pill-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+.ork-topbar-pill .ork-topbar-tool {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
 }
 
 .ork-topbar-tool {
