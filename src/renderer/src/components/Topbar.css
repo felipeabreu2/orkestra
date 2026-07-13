@@ -26,11 +26,16 @@
   justify-self: start;
   color: var(--text-2);
 }
+/* Grupo central de ferramentas agrupado num container com borda (igual ao chip do workspace). */
 .ork-topbar-center {
   display: flex;
   align-items: center;
   gap: 2px;
   justify-self: center;
+  padding: 2px 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 .ork-topbar-right {
   display: flex;
