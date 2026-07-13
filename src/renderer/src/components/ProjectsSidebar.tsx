@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Project } from '../../../shared/project'
 import { useCanvasStore } from '../store/canvasStore'
+import { basename } from '../ui/paths'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
 import './ProjectsSidebar.css'
@@ -17,14 +18,6 @@ const REMOVE_CONFIRM_MS = 3000
 // Fase 18 (Task 4): conjunto curado e pequeno de emojis comuns pro seletor de ícone — além
 // destes, o input de texto livre aceita qualquer emoji colado.
 const ICON_CHOICES = ['📁', '💻', '🌐', '🧪', '🚀', '📦', '🔧', '🎨', '📝', '⚙️']
-
-// Fase 17 (Task 2): último segmento não-vazio do path (funciona pra POSIX "/a/b/" e Windows
-// "C:\\a\\b\\") — só para exibição discreta na linha; o path completo (usado no title e passado
-// pra setCwd) permanece intacto em p.cwd.
-function basename(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean)
-  return parts[parts.length - 1] ?? path
-}
 
 // Fase 18 (Task 4): fallback visual quando o projeto não tem `icon` — 1ª letra do nome (maiúscula)
 // num chip pequeno, tanto na linha expandida quanto no trilho colapsado.
