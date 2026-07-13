@@ -47,7 +47,8 @@ export function Topbar({
           <Icon name="PanelLeft" animation="nudge" />
         </button>
         <span className="ork-topbar-workspace" title={cwd ?? 'Nenhuma pasta vinculada'}>
-          {workspace}
+          <Icon name="Folder" size={13} animation="none" />
+          <span className="ork-topbar-workspace-name">{workspace}</span>
         </span>
       </div>
 
