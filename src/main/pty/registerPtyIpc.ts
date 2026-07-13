@@ -1,6 +1,7 @@
 import type { IpcMain, WebContents } from 'electron'
 import type { PtyManager } from './PtyManager'
 import { isValidSshHost } from '../../shared/ssh'
+import { PtyDataBatcher } from './PtyDataBatcher'
 
 export function registerPtyIpc(
   ipcMain: IpcMain,
@@ -28,6 +29,9 @@ export function registerPtyIpc(
     // mapeado para file:'ssh', args:[host]. Nunca repassado cru; ver comentário no handler.
     sshHost?: string
   }
+  // Otimização (Bloco 2a): um batcher compartilhado agrupa os chunks de output de todos os ptys e
+  // faz flush em lote (~1 frame), cortando o volume de mensagens IPC pty:data.
+  const batcher = new PtyDataBatcher((id, data) => getSender()?.send('pty:data', id, data))
   ipcMain.handle('pty:spawn', async (_e, opts: SpawnOpts) => {
     // async: garante que um throw síncrono (ex.: sshHost inválido) vire uma Promise rejeitada —
     // é isso que o ipcRenderer.invoke() do renderer recebe como rejeição (ver TerminalNode.catch).
@@ -54,7 +58,10 @@ export function registerPtyIpc(
     // ligadas à MINHA saída" sem o agente precisar adivinhar (ex.: orq note write "...").
     const env = { ...getEnv(), ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}) }
     const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, ...sshFields, cwd, env })
-    ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
+    ptyManager.onData(id, (data) => batcher.push(id, data))
+    // No exit, flush imediato do pendente deste pty — não perder o final do output (ex.: o pty
+    // morre em menos de um frame após o último chunk).
+    ptyManager.onExit(id, () => batcher.flushOne(id))
     onSpawn(id)
     return id
   })

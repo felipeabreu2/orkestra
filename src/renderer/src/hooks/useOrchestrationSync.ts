@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { WebviewTag } from 'electron'
 import { useCanvasStore } from '../store/canvasStore'
 import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchestration'
@@ -24,8 +24,12 @@ function resolvePortalWebview(
 export function useOrchestrationSync(): void {
   const nodes = useCanvasStore((s) => s.nodes)
   const updateNoteHtml = useCanvasStore((s) => s.updateNoteHtml)
+  // Otimização (Bloco 2b): último mirror serializado enviado — evita reenviar via IPC quando o que
+  // mudou nos nós não afeta o mirror (arrastar só muda position, ~60x/s, e position não entra no
+  // mirror). Comparação O(tamanho do mirror), barata (o mirror é leve por construção).
+  const lastMirrorRef = useRef<string>('')
 
-  // Envia um espelho leve do canvas ao main sempre que os nós mudam.
+  // Envia um espelho leve do canvas ao main quando o mirror muda de fato (ver diff abaixo).
   useEffect(() => {
     const mirror: CanvasMirror = {
       nodes: nodes.map((n) => ({
@@ -41,6 +45,9 @@ export function useOrchestrationSync(): void {
         monitor: n.data?.monitor as boolean | undefined
       }))
     }
+    const serialized = JSON.stringify(mirror)
+    if (serialized === lastMirrorRef.current) return // nada relevante mudou (ex.: só posição) → não reenvia
+    lastMirrorRef.current = serialized
     window.orkestra.orchestration.sync(mirror)
   }, [nodes])
 

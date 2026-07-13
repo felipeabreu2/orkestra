@@ -51,6 +51,8 @@ describe('registerPtyIpc', () => {
     const id = await ipc.handlers.get('pty:spawn')!({}, { cols: 80, rows: 24 })
     expect(typeof id).toBe('string')
     fake.emit('data-x')
+    // Bloco 2a: o output de pty é batched (~1 frame) — espera o flush antes de conferir o send.
+    await new Promise((r) => setTimeout(r, 30))
     expect(sender.send).toHaveBeenCalledWith('pty:data', id, 'data-x')
   })
 
@@ -196,6 +198,8 @@ describe('registerPtyIpc', () => {
     const id = await ipc.handlers.get('pty:spawn')!({}, {})
     fake.emit('saida-do-agente')
 
+    // Bloco 2a: o send ao renderer é batched (~1 frame); o AgentBus assina onData direto (imediato).
+    await new Promise((r) => setTimeout(r, 30))
     expect(sender.send).toHaveBeenCalledWith('pty:data', id, 'saida-do-agente')
     expect(bus.read(id)).toContain('saida-do-agente')
   })
