@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NodeResizer, useReactFlow, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
+import { useNodeVisibility } from '../nodeVisibility'
 import { TerminalNode } from './TerminalNode'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
@@ -24,6 +25,9 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const toggleMaximizeNode = useCanvasStore((s) => s.toggleMaximizeNode)
   const { fitView } = useReactFlow()
   const maximized = Boolean((data as { _restore?: unknown })._restore)
+  // Otimização (Bloco 4): suspende o corpo (xterm) quando o nó sai da viewport — o pty segue vivo no
+  // main (Fase 31) e o re-attach restaura o scrollback ao voltar. Notas/portais não suspendem.
+  const { ref, visible } = useNodeVisibility<HTMLDivElement>()
   const name = (data as { name?: string })?.name ?? 'Terminal'
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
@@ -66,7 +70,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
       <NodeHandles />
-      <div className="ork-node" onFocusCapture={handleFocusCapture}>
+      <div className="ork-node" ref={ref} onFocusCapture={handleFocusCapture}>
         <div className="ork-node-header">
           <span className="ork-node-dot" aria-hidden="true" />
           {hasAttention && (
@@ -150,9 +154,15 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             <Icon name="X" size={14} animation="pop" />
           </button>
         </div>
-        <div className="nodrag nowheel ork-node-body">
-          <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
-        </div>
+        {visible ? (
+          <div className="nodrag nowheel ork-node-body">
+            <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
+          </div>
+        ) : (
+          <div className="ork-node-body ork-node-suspended" aria-hidden="true">
+            terminal suspenso
+          </div>
+        )}
         <div className="ork-node-footer" title={activeCwd ?? 'Nenhuma pasta vinculada'}>
           <Icon name="Folder" size={12} animation="none" />
           <span className="ork-node-footer-path">{activeCwd ?? 'sem pasta'}</span>
