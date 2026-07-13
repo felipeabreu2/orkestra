@@ -4,6 +4,7 @@ import { useCanvasStore } from '../store/canvasStore'
 import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchestration'
 import { clickScript, fillScript } from '../../../shared/portalScripts'
 import { getPortal } from '../portalRegistry'
+import { markdownToHtml } from '../markdown/markdownToHtml'
 
 // Resolve um portal pelo nome atual no espelho local do canvas -> node.id -> webview (via o
 // registry que o PortalNode popula ao montar). Mesmo padrão nome->nó->recurso usado no main para
@@ -21,7 +22,7 @@ function resolvePortalWebview(
 // e aplica de volta no store os comandos vindos do orq (via main), ex.: updateNote.
 export function useOrchestrationSync(): void {
   const nodes = useCanvasStore((s) => s.nodes)
-  const updateNoteContent = useCanvasStore((s) => s.updateNoteContent)
+  const updateNoteHtml = useCanvasStore((s) => s.updateNoteHtml)
 
   // Envia um espelho leve do canvas ao main sempre que os nós mudam.
   useEffect(() => {
@@ -49,7 +50,8 @@ export function useOrchestrationSync(): void {
         const target = cmd.target
           ? notes.find((n) => n.id === cmd.target || (n.data?.name as string) === cmd.target)
           : notes[0]
-        if (target) updateNoteContent(target.id, cmd.content)
+        // Nota agora é TipTap (html): converte o texto/markdown que o agente escreveu em html.
+        if (target) updateNoteHtml(target.id, markdownToHtml(cmd.content))
       } else if (cmd.type === 'recruit') {
         store.addTerminalNode(undefined, { name: cmd.name, preset: cmd.preset, role: cmd.role })
       } else if (cmd.type === 'dismiss') {
@@ -96,5 +98,5 @@ export function useOrchestrationSync(): void {
       }
     })
     return dispose
-  }, [updateNoteContent])
+  }, [updateNoteHtml])
 }
