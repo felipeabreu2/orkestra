@@ -62,7 +62,6 @@
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.11.2",
-    "electron-updater": "^6.8.9",
     "lucide-react": "^1.24.0",
     "motion-icons-react": "^1.1.0",
     "node-pty": "^1.1.0",

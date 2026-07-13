@@ -14,11 +14,13 @@ npmRebuild: false
 # build/icon.png (1024x1024, exportado de resources/icon.svg) — electron-builder deriva
 # o .icns (mac) e .ico (win) a partir dele automaticamente.
 icon: build/icon.png
+# UM arquivo por dispositivo: .dmg (mac), .exe (win), .AppImage (linux). A atualização
+# NÃO usa o auto-update binário do electron-updater (que no macOS exigiria também um .zip);
+# em vez disso, src/main/updater.ts consulta a última release no GitHub e abre a página de
+# download quando há versão nova — então um único instalador por SO basta.
 mac:
   target:
     - target: dmg
-      arch: x64
-    - target: zip
       arch: x64
   category: public.app-category.developer-tools
   # Assinatura + notarizacao ativam AUTOMATICAMENTE quando as variaveis de ambiente estao
@@ -37,7 +39,6 @@ win:
 linux:
   target:
     - target: AppImage
-    - target: deb
   category: Development
 publish:
   provider: github
