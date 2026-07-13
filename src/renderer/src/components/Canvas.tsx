@@ -169,6 +169,15 @@ export function Canvas(): JSX.Element {
       // Guard remaining shortcuts (Shift+1/2/M) to prevent them firing while typing.
       if (isTypingTarget(e)) return
 
+      // Undo (Onda 4): Cmd/Ctrl+Z desfaz a última ação estrutural do canvas. Roda DEPOIS do guard
+      // acima — com um input/terminal focado, o Cmd+Z pertence a ele. A captura das remoções por
+      // tecla mora no próprio store (onNodesChange/onEdgesChange). Shift+Cmd+Z (redo) fica fora da v1.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        useCanvasStore.getState().undo()
+        return
+      }
+
       if (e.shiftKey && e.code === 'Digit1') {
         e.preventDefault()
         fitView({ duration: 300 })
