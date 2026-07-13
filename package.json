@@ -9,12 +9,12 @@
     "canvas",
     "terminal"
   ],
-  "homepage": "https://github.com/TODO-USER/orkestra#readme",
+  "homepage": "https://github.com/felipeabreu2/orkestra#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TODO-USER/orkestra.git"
+    "url": "https://github.com/felipeabreu2/orkestra.git"
   },
-  "author": "Felipe",
+  "author": "Felipe Abreu",
   "license": "MIT",
   "main": "./out/main/index.js",
   "engines": {

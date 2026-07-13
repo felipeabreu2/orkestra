@@ -37,7 +37,5 @@ linux:
   category: Development
 publish:
   provider: github
-  # TODO: preencher com o usuario/organizacao real do GitHub antes do primeiro release
-  # publicado - "TODO-USER" e um placeholder e nao resolve.
-  owner: TODO-USER
+  owner: felipeabreu2
   repo: orkestra

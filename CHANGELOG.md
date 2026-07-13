@@ -32,4 +32,4 @@ Primeira versão completa. Um canvas espacial em Electron para orquestrar agente
 - Auto-update via `electron-updater` (GitHub Releases), ativo apenas no app empacotado.
 - CI (GitHub Actions) em matrix de 3 SOs rodando lint/typecheck/testes/build.
 
-[1.0.0]: https://github.com/TODO-USER/orkestra/releases/tag/v1.0.0
+[1.0.0]: https://github.com/felipeabreu2/orkestra/releases/tag/v1.0.0
