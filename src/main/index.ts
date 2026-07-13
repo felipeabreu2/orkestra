@@ -81,6 +81,13 @@ const orchestration = new OrchestrationServer({
     const output = await agentBus.waitForIdle(p)
     return { ok: true, output }
   },
+  // R2 (orq ask --raw): escreve os bytes crus no pty do agente (sem '\n') — controlar TUIs/pagers.
+  askRaw: (name, data) => {
+    const p = resolvePtyByName(name)
+    if (!p) return { ok: false, error: 'not found' }
+    agentBus.writeRaw(p, data)
+    return { ok: true }
+  },
   check: (name) => {
     const p = resolvePtyByName(name)
     return p ? { output: agentBus.read(p) } : null

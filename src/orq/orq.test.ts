@@ -12,6 +12,7 @@ async function startServer(
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
     askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
+    askRaw?: (name: string, data: string) => { ok: boolean; error?: string }
     check?: (name: string) => { output: string } | null
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
   } = {}
@@ -120,6 +121,68 @@ describe('runOrq', () => {
     const env = await startServer({ nodes: [] }, [], { askWait })
     const { code } = await runOrq(['ask', 'Fantasma', 'oi', '--wait'], env)
     expect(code).not.toBe(0)
+  })
+
+  // R2: --raw envia bytes crus (com escapes interpretados) via askRaw, sem \n e sem esperar.
+  it('ask com --raw chama askRaw com os bytes interpretados (\\x03 -> Ctrl+C)', async () => {
+    const askRaw = vi.fn().mockReturnValue({ ok: true })
+    const ask = vi.fn().mockReturnValue({ ok: true })
+    const env = await startServer({ nodes: [] }, [], { ask, askRaw })
+    const { code, out } = await runOrq(['ask', 'Dev', '--raw', '\\x03'], env)
+    expect(code).toBe(0)
+    expect(out).toBe('ok')
+    expect(askRaw).toHaveBeenCalledWith('Dev', '\x03')
+    expect(ask).not.toHaveBeenCalled() // raw não passa pelo ask normal
+  })
+
+  it('ask com --raw interpreta \\e[B (seta pra baixo) e não acrescenta \\n', async () => {
+    const askRaw = vi.fn().mockReturnValue({ ok: true })
+    const env = await startServer({ nodes: [] }, [], { askRaw })
+    await runOrq(['ask', 'Dev', '--raw', '\\e[B'], env)
+    expect(askRaw).toHaveBeenCalledWith('Dev', '\x1b[B')
+  })
+
+  it('ask com --raw retorna código != 0 quando o agente não é encontrado', async () => {
+    const env = await startServer({ nodes: [] }, [], { askRaw: () => ({ ok: false, error: 'not found' }) })
+    const { code } = await runOrq(['ask', 'Fantasma', '--raw', '\\x03'], env)
+    expect(code).not.toBe(0)
+  })
+
+  // R3: --batch manda o mesmo prompt para cada nome da lista CSV, em sequência (N POSTs /ask).
+  it('ask com --batch envia o mesmo prompt a cada agente da lista', async () => {
+    const calls: [string, string][] = []
+    const ask = vi.fn((name: string, prompt: string) => {
+      calls.push([name, prompt])
+      return { ok: true }
+    })
+    const env = await startServer({ nodes: [] }, [], { ask })
+    const { code, out } = await runOrq(['ask', '--batch', 'Dev,Revisor,Testador', 'rodem os testes'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('3/3')
+    expect(calls).toEqual([
+      ['Dev', 'rodem os testes'],
+      ['Revisor', 'rodem os testes'],
+      ['Testador', 'rodem os testes']
+    ])
+  })
+
+  it('ask com --batch tolera espaços na lista e ignora nomes vazios', async () => {
+    const names: string[] = []
+    const ask = vi.fn((name: string) => {
+      names.push(name)
+      return { ok: true }
+    })
+    const env = await startServer({ nodes: [] }, [], { ask })
+    await runOrq(['ask', '--batch', 'Dev, Revisor ,', 'oi'], env)
+    expect(names).toEqual(['Dev', 'Revisor'])
+  })
+
+  it('ask com --batch retorna código != 0 quando algum agente não é encontrado', async () => {
+    const ask = vi.fn((name: string) => (name === 'Existe' ? { ok: true } : { ok: false, error: 'not found' }))
+    const env = await startServer({ nodes: [] }, [], { ask })
+    const { code, out } = await runOrq(['ask', '--batch', 'Existe,Fantasma', 'oi'], env)
+    expect(code).not.toBe(0)
+    expect(out).toContain('1/2')
   })
 
   it('check chama GET /check?name=<nome> e imprime o output retornado', async () => {
