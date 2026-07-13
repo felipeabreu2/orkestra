@@ -23,14 +23,15 @@ mac:
     - target: dmg
       arch: x64
   category: public.app-category.developer-tools
-  # Assinatura + notarizacao ativam AUTOMATICAMENTE quando as variaveis de ambiente estao
-  # presentes (CSC_LINK/CSC_KEY_PASSWORD p/ assinar; APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/
-  # APPLE_TEAM_ID p/ notarizar). hardenedRuntime + entitlements sao exigidos pela notarizacao.
-  # Sem as variaveis, o build sai NAO-assinado (Gatekeeper avisa) mas funciona.
-  hardenedRuntime: true
+  # identity: null → build NÃO-assinado (assinatura ad-hoc simples). Sem certificado Apple não
+  # há como assinar/notarizar de verdade, e o combo "assinatura ad-hoc + hardenedRuntime" quebra
+  # nos runners macOS Sequoia com "⨯ ... not a file". Por isso NÃO usamos hardenedRuntime nem
+  # entitlements (só fariam sentido com notarização). O app roda com o aviso do Gatekeeper, que
+  # o usuário contorna (botão direito → Abrir). Para assinar de verdade no futuro: adicionar os
+  # secrets CSC_LINK/CSC_KEY_PASSWORD, trocar identity p/ o nome do certificado e reativar
+  # hardenedRuntime + entitlements + notarização.
+  identity: null
   gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
   # NOTA: arch e x64 (roda em Apple Silicon via Rosetta 2). arm64 nativo/universal e um
   # upgrade futuro — precisa validar o empacotamento do node-pty (nativo) por arch.
 win:
