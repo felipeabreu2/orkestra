@@ -229,7 +229,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, rootPath } } : n))
     })),
-  removeNode: (id): void =>
+  removeNode: (id): void => {
+    // Fase 31: remover um terminal mata seu pty (ao contrário de trocar de projeto, que o
+    // preserva p/ re-attach). Guard: window.orkestra não existe nos testes (jsdom sem preload).
+    if (get().nodes.find((n) => n.id === id)?.type === 'terminal') {
+      window.orkestra?.pty?.killForNode(id)
+    }
     set((state) => {
       // Fase 20 (Task 2): também remove o id do Set attention. Sem isso, fechar um terminal
       // pulsante pelo × deixaria um id órfão em attention pelo resto da sessão — e o Shift+A
@@ -246,7 +251,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         edges: state.edges.filter((e) => e.source !== id && e.target !== id),
         attention
       }
-    }),
+    })
+  },
   setNodePositions: (map): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (map[n.id] ? { ...n, position: map[n.id] } : n))
@@ -348,7 +354,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       // a remoção do container é responsabilidade do caller (ver comentário na interface acima).
       return { nodes }
     }),
-  onNodesChange: (changes): void => set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) })),
+  onNodesChange: (changes): void => {
+    // Fase 31: um 'remove' (ex.: tecla Delete via React Flow) de um terminal mata seu pty — o ×
+    // e a palette já passam por removeNode acima. Guard: window.orkestra ausente nos testes.
+    for (const c of changes) {
+      if (c.type === 'remove' && get().nodes.find((n) => n.id === c.id)?.type === 'terminal') {
+        window.orkestra?.pty?.killForNode(c.id)
+      }
+    }
+    set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) }))
+  },
   onEdgesChange: (changes): void => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
   onConnect: (connection): void =>
     set((state) => {

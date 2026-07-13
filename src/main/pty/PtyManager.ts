@@ -12,10 +12,15 @@ export type PtySpawner = (
   opts: { cwd: string; env: NodeJS.ProcessEnv; cols: number; rows: number }
 ) => IPtyLike
 
+const MAX_BUFFER = 256 * 1024 // scrollback guardado por pty p/ re-attach (troca de projeto)
+
 export class PtyManager {
   private ptys = new Map<string, IPtyLike>()
   private ptyByNode = new Map<string, string>()
   private exitSubs = new Map<string, Array<(e: { exitCode: number }) => void>>()
+  // Fase 31: buffer de saída por pty — permite restaurar o visual do terminal ao re-montar o
+  // TerminalNode (ex.: voltar a um projeto). Cap em MAX_BUFFER (descarta o começo).
+  private buffers = new Map<string, string>()
   private nextId = 1
 
   constructor(private spawner: PtySpawner) {}
@@ -44,12 +49,19 @@ export class PtyManager {
     })
     this.ptys.set(id, pty)
     if (opts.nodeId) this.ptyByNode.set(opts.nodeId, id)
+    // Fase 31: acumula a saída num buffer (cap MAX_BUFFER) para restaurar o terminal ao re-attach.
+    this.buffers.set(id, '')
+    this.onData(id, (data) => {
+      const cur = (this.buffers.get(id) ?? '') + data
+      this.buffers.set(id, cur.length > MAX_BUFFER ? cur.slice(cur.length - MAX_BUFFER) : cur)
+    })
     // Único listener bruto de exit por pty (o IPtyLike/fakes de teste nem sempre suportam
     // múltiplas assinaturas). Assinantes externos (ex.: AgentBus) entram via onExit(id, cb)
     // abaixo e são acumulados em exitSubs, disparados aqui junto da limpeza interna.
     pty.onExit((e) => {
       this.ptys.delete(id)
       this.removeNodeMapping(id)
+      this.buffers.delete(id)
       const subs = this.exitSubs.get(id)
       this.exitSubs.delete(id)
       if (subs) for (const cb of subs) cb(e)
@@ -116,12 +128,22 @@ export class PtyManager {
       p.kill()
       this.ptys.delete(id)
       this.removeNodeMapping(id)
+      this.buffers.delete(id)
     }
+  }
+  // Fase 31: mata o pty de um nó (ex.: ao remover o terminal do canvas via ×). No-op se não há.
+  killByNode(nodeId: string): void {
+    const id = this.ptyByNode.get(nodeId)
+    if (id) this.kill(id)
   }
   killAll(): void {
     for (const id of [...this.ptys.keys()]) this.kill(id)
   }
   has(id: string): boolean {
     return this.ptys.has(id)
+  }
+  // Fase 31: scrollback acumulado de um pty — usado no re-attach para restaurar o xterm.
+  getBuffer(id: string): string {
+    return this.buffers.get(id) ?? ''
   }
 }

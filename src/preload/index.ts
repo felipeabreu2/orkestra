@@ -20,6 +20,12 @@ const api = {
     resize: (id: string, cols: number, rows: number): void =>
       ipcRenderer.send('pty:resize', id, cols, rows),
     kill: (id: string): void => ipcRenderer.send('pty:kill', id),
+    // Fase 31: re-attach a um pty existente do nó (que sobreviveu a uma troca de projeto) —
+    // devolve o ptyId + o scrollback p/ restaurar o xterm, ou null se o nó ainda não tem pty.
+    attach: (nodeId: string): Promise<{ ptyId: string; buffer: string } | null> =>
+      ipcRenderer.invoke('pty:attach', nodeId),
+    // Fase 31: mata o pty de um nó (ao remover o terminal do canvas via ×).
+    killForNode: (nodeId: string): void => ipcRenderer.send('pty:killForNode', nodeId),
     onData: (id: string, cb: (data: string) => void): (() => void) => {
       const listener = (_e: unknown, incomingId: string, data: string): void => {
         if (incomingId === id) cb(data)
