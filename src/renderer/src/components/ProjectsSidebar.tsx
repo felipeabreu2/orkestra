@@ -14,10 +14,6 @@ import './ProjectsSidebar.css'
 // Janela de confirmação inline do "Remover" (Fase 13).
 const REMOVE_CONFIRM_MS = 3000
 
-// Fase 18 (Task 4): chave de localStorage p/ persistir o estado colapsado da sidebar entre
-// sessões — só o boolean; a lista de projetos em si continua vindo do main (projects:list).
-const SIDEBAR_COLLAPSED_KEY = 'orkestra.sidebar.collapsed'
-
 // Fase 18 (Task 4): conjunto curado e pequeno de emojis comuns pro seletor de ícone — além
 // destes, o input de texto livre aceita qualquer emoji colado.
 const ICON_CHOICES = ['📁', '💻', '🌐', '🧪', '🚀', '📦', '🔧', '🎨', '📝', '⚙️']
@@ -66,17 +62,12 @@ export function ProjectsSidebar(): JSX.Element {
   // ativa dispara dois onClick antes do onDoubleClick) — sem isso, dois switchTo() em voo
   // fariam flush/hydrate fora de ordem.
   const switchingRef = useRef(false)
-  // Fase 18 (Task 4): estado colapsado da sidebar — lido 1x na montagem (lazy initializer) e
-  // persistido em localStorage a cada toggle. localStorage pode não existir (ex.: alguma sandbox
-  // de teste/preview) — try/catch com fallback pra "expandido" em vez de deixar o componente
-  // quebrar por causa de uma preferência puramente cosmética.
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
-    } catch {
-      return false
-    }
-  })
+  // Onda 1 (F01): o colapso da sidebar agora é fonte única no canvasStore (persistido em
+  // ui/sidebarCollapsed), compartilhado com a Topbar (botão de painel). `collapsed` é reativo;
+  // `toggleCollapsed` é a ação do store — o botão «/» daqui e o botão de painel da Topbar chamam
+  // a mesma. Mantém o mesmo comportamento/persistência de antes, só troca a origem do estado.
+  const collapsed = useCanvasStore((s) => s.sidebarCollapsed)
+  const toggleCollapsed = useCanvasStore((s) => s.toggleSidebar)
   // Id do projeto com o seletor de ícone aberto (null = nenhum) — só existe na sidebar expandida;
   // colapsar fecha implicitamente (o trilho não renderiza o seletor).
   const [iconPickerId, setIconPickerId] = useState<string | null>(null)
@@ -221,21 +212,6 @@ export function ProjectsSidebar(): JSX.Element {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }
-
-  // Fase 18 (Task 4): toggle do colapso + persistência em localStorage. Puramente cosmético —
-  // uma falha ao gravar (localStorage indisponível) não deve impedir o toggle de funcionar em
-  // memória pro resto da sessão.
-  const toggleCollapsed = (): void => {
-    setCollapsed((prev) => {
-      const next = !prev
-      try {
-        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next))
-      } catch {
-        /* localStorage indisponível — segue só em memória */
-      }
-      return next
-    })
   }
 
   // Abre/fecha o seletor de ícone de um projeto; abrir o de outro fecha o anterior (um só
