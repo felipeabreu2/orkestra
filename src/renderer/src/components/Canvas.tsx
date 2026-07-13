@@ -26,8 +26,6 @@ import { Topbar } from './Topbar'
 import { emitNewProject } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
 import { CreateOverlay } from './CreateOverlay'
-import { buildContextBlock, htmlToText } from '../context/contextBlock'
-import { getTerminalPty } from '../terminal/terminalRegistry'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
@@ -150,54 +148,13 @@ export function Canvas(): JSX.Element {
     setPendingTool(null)
   }
 
-  // Onda 8 (F03): ao ligar nota/arquivo/site → terminal, injeta o conteúdo do nó-fonte no prompt do
-  // agente (sem Enter). Só quando o terminal é o ALVO (recebe contexto). Roda uma vez por ligação
-  // (onConnect); a hidratação não passa por aqui, então não repete ao recarregar.
-  const injectContext = async (connection: Connection): Promise<void> => {
-    const nodes = useCanvasStore.getState().nodes
-    const a = nodes.find((n) => n.id === connection.source)
-    const b = nodes.find((n) => n.id === connection.target)
-    if (!a || !b) return
-    // Identifica o terminal e o recurso (nota/site/arquivo) em QUALQUER ponta — tudo ligado ao
-    // terminal vira contexto de leitura, independente da direção.
-    const terminal = a.type === 'terminal' ? a : b.type === 'terminal' ? b : null
-    if (!terminal) return
-    const resource = terminal === a ? b : a
-    const ptyId = getTerminalPty(terminal.id)
-    if (!ptyId) return
-    // A nota está na SAÍDA do terminal quando o terminal é a FONTE da conexão — nesse caso ela é
-    // editável pelo agente.
-    const noteOnOutput = terminal.id === connection.source && resource.type === 'note'
-    let block = ''
-    if (resource.type === 'note') {
-      block = buildContextBlock('nota', htmlToText((resource.data as { html?: string }).html ?? ''))
-    } else if (resource.type === 'portal') {
-      const d = resource.data as { name?: string; url?: string }
-      block = buildContextBlock(d.name ?? 'site', d.url ? `URL: ${d.url}` : '')
-    } else if (resource.type === 'file') {
-      const d = resource.data as { name?: string; path?: string }
-      if (d.path) {
-        try {
-          const r = await window.orkestra.filetree.read(d.path)
-          const content = r.binary ? '[arquivo binário]' : r.content.slice(0, 4000)
-          block = buildContextBlock(d.name ?? 'arquivo', `${d.path}\n${content}`)
-        } catch {
-          block = buildContextBlock(d.name ?? 'arquivo', d.path)
-        }
-      }
-    } else {
-      return
-    }
-    // Nota na saída = editável: instrui o LLM a escrever nela via orq.
-    if (noteOnOutput) {
-      block += 'Para atualizar esta nota, rode no terminal: orq note write "<texto em markdown>"\n'
-    }
-    if (block) window.orkestra.pty.write(ptyId, block)
-  }
-
+  // Ao conectar um bloco a um terminal NÃO empurramos mais o conteúdo no prompt do agente. O antigo
+  // injectContext digitava texto cru via pty.write (sem Enter) — frágil (dependia do timing do
+  // agente estar pronto) e intrusivo (poluía o input do Claude Code). Agora o agente PUXA o contexto
+  // sob demanda com `orq context`, que sempre reflete o estado ATUAL do canvas (conectar/desconectar/
+  // editar), orientado pelo onboarding injetado no system prompt de todo `claude` (ver installOrq).
   const handleConnect = (connection: Connection): void => {
     onConnect(connection)
-    void injectContext(connection)
   }
 
   // R4: itens do menu de contexto. Com nodeId => ações do nó (remover conexões / excluir); sem

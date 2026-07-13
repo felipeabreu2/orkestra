@@ -246,6 +246,9 @@ app.whenReady().then(async () => {
       orchestrationEnv = {
         ORKESTRA_PORT: String(port),
         ORKESTRA_TOKEN: token,
+        // PATH original (sem o binDir) — o wrapper `claude` do Orkestra usa para achar o binário real
+        // do claude sem chamar a si mesmo (ver installOrq).
+        ORKESTRA_REAL_PATH: process.env.PATH ?? '',
         PATH: `${binDir}:${process.env.PATH ?? ''}`
       }
     } catch (err) {

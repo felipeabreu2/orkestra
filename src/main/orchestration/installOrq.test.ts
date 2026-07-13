@@ -1,0 +1,54 @@
+import { describe, it, expect, afterEach } from 'vitest'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { installOrq } from './installOrq'
+
+// os.homedir() usa $HOME no POSIX — apontamos para um tmp p/ não escrever no ~/.orkestra real.
+describe('installOrq', () => {
+  const origHome = process.env.HOME
+  let home = ''
+  afterEach(() => {
+    process.env.HOME = origHome
+    if (home) rmSync(home, { recursive: true, force: true })
+  })
+
+  function run(): string {
+    home = mkdtempSync(join(tmpdir(), 'orq-home-'))
+    process.env.HOME = home
+    const fakeBin = join(home, 'fake-orq.js')
+    writeFileSync(fakeBin, '// orq fake')
+    return installOrq(fakeBin)
+  }
+
+  it('instala orq + wrapper claude + onboarding, todos executáveis onde faz sentido', () => {
+    const binDir = run()
+    expect(binDir).toBe(join(home, '.orkestra', 'bin'))
+    expect(statSync(join(binDir, 'orq')).mode & 0o111).toBeTruthy() // orq executável
+    expect(statSync(join(binDir, 'claude')).mode & 0o111).toBeTruthy() // wrapper executável
+  })
+
+  it('o wrapper claude injeta --append-system-prompt e acha o claude real via ORKESTRA_REAL_PATH', () => {
+    const binDir = run()
+    const wrapper = readFileSync(join(binDir, 'claude'), 'utf-8')
+    expect(wrapper).toContain('--append-system-prompt')
+    expect(wrapper).toContain('ORKESTRA_REAL_PATH') // evita recursão achando o binário real
+    expect(wrapper).toContain('onboarding.txt')
+  })
+
+  it('o wrapper gerado tem sintaxe sh válida (escapes do template JS corretos)', () => {
+    const binDir = run()
+    // sh -n valida a sintaxe sem executar — pega qualquer escape de template quebrado.
+    expect(() => execFileSync('sh', ['-n', join(binDir, 'claude')])).not.toThrow()
+  })
+
+  it('o onboarding descreve os comandos orq que o agente pode usar', () => {
+    run()
+    const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')
+    expect(onboard).toContain('orq context')
+    expect(onboard).toContain('orq list')
+    expect(onboard).toContain('orq ask')
+    expect(onboard).toContain('orq portal')
+  })
+})
