@@ -12,6 +12,7 @@ import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
 import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
+import { emitNewProject } from '../ui/appEvents'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
@@ -67,6 +68,8 @@ export function Canvas(): JSX.Element {
   const removeNode = useCanvasStore((s) => s.removeNode)
   const removeEdgesForNode = useCanvasStore((s) => s.removeEdgesForNode)
   const activeCwd = useCanvasStore((s) => s.activeCwd)
+  const sidebarCollapsed = useCanvasStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useCanvasStore((s) => s.toggleSidebar)
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const setAttention = useCanvasStore((s) => s.setAttention)
@@ -219,11 +222,14 @@ export function Canvas(): JSX.Element {
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Topbar
         cwd={activeCwd}
+        collapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
+        onNewProject={emitNewProject}
+        onSelectMode={() => {}}
         onNewTerminal={() => setNewTermOpen(true)}
         onNote={() => addNoteNode()}
-        onPortal={() => addPortalNode()}
         onFiles={() => addFileTreeNode()}
-        onSearch={() => setPaletteOpen(true)}
+        onPortal={() => addPortalNode()}
         onOpenIde={() => {
           // R1: abre a pasta do projeto no editor externo (o main tenta VS Code/Cursor/… e cai no
           // gerenciador de arquivos se nenhum estiver instalado). No-op sem pasta vinculada.

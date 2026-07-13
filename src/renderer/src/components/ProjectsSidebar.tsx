@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Project } from '../../../shared/project'
 import { useCanvasStore } from '../store/canvasStore'
 import { basename } from '../ui/paths'
+import { NEW_PROJECT_EVENT } from '../ui/appEvents'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
 import './ProjectsSidebar.css'
@@ -193,6 +194,16 @@ export function ProjectsSidebar(): JSX.Element {
       setError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  // Onda 1 (F01): o "+" da Topbar (irmã, dentro do Canvas) pede a criação de um projeto por aqui,
+  // reusando exatamente o fluxo de handleCreate (pickDirectory → create → switch). Window-event no
+  // mesmo estilo dos atalhos globais do Canvas. Sem deps: religa a cada render, sempre apontando
+  // para a versão atual da closure handleCreate — barato (a sidebar re-renderiza pouco).
+  useEffect(() => {
+    const onNew = (): void => void handleCreate()
+    window.addEventListener(NEW_PROJECT_EVENT, onNew)
+    return () => window.removeEventListener(NEW_PROJECT_EVENT, onNew)
+  })
 
   // Fase 17 (Task 2): troca a pasta de um projeto já existente via o botão "pasta" da linha.
   // Cancelar o diálogo (null) é no-op — não mexe na pasta atual do projeto.

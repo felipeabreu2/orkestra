@@ -1,5 +1,6 @@
-/* Barra superior (Fase 30): caminho da pasta do projeto ativo à esquerda + ferramentas de
-   criação de nós (ícones) à direita. Full-width, flutua sobre o topo do canvas. Tokens => tema. */
+/* Barra superior (Onda 1 / F01): 3 grupos — esquerda (novo projeto, painel, workspace),
+   centro (ferramentas de criação) e direita (código/ações). Grid 1fr auto 1fr centraliza o
+   grupo do meio independentemente da largura dos outros dois. Tokens => tema. */
 
 .ork-topbar {
   position: absolute;
@@ -8,10 +9,10 @@
   right: 0;
   height: 44px;
   z-index: 10;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 10px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-1);
@@ -20,52 +21,34 @@
 .ork-topbar-left {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   min-width: 0;
+  justify-self: start;
   color: var(--text-2);
 }
-.ork-topbar-path {
+.ork-topbar-center {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: center;
+}
+.ork-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: end;
+}
+
+.ork-topbar-workspace {
   font-size: 12px;
-  font-family: var(--font-mono);
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 42vw;
+  max-width: 22vw;
+  padding: 0 4px;
 }
 
-/* R1: botão "abrir no editor" ao lado do caminho. Discreto (só o ícone), acende no hover.
-   Desabilitado (sem pasta vinculada) fica apagado e sem cursor de clique. */
-.ork-topbar-ide {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--text-3);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition:
-    background var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease);
-}
-.ork-topbar-ide:hover:not(:disabled) {
-  background: var(--bg-2);
-  color: var(--text-1);
-}
-.ork-topbar-ide:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.ork-topbar-tools {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
 .ork-topbar-tool {
   display: flex;
   align-items: center;
@@ -73,6 +56,7 @@
   width: 30px;
   height: 30px;
   padding: 0;
+  font-size: 13px;
   color: var(--text-2);
   background: transparent;
   border: none;
@@ -82,13 +66,18 @@
     background var(--dur-1) var(--ease),
     color var(--dur-1) var(--ease);
 }
-.ork-topbar-tool:hover {
+.ork-topbar-tool:hover:not(:disabled) {
   background: var(--bg-2);
   color: var(--text-1);
 }
-.ork-topbar-sep {
-  width: 1px;
-  height: 18px;
-  margin: 0 6px;
-  background: var(--border);
+.ork-topbar-tool--active {
+  color: var(--accent);
+}
+.ork-topbar-tool--text {
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+.ork-topbar-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
 }

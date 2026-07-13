@@ -1,124 +1,103 @@
 import type { JSX } from 'react'
+import { basename } from '../ui/paths'
+import { Icon } from './Icon'
 import './Topbar.css'
 
-const svg = {
-  width: 17,
-  height: 17,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.8,
-  strokeLinecap: 'round' as const,
-  strokeLinejoin: 'round' as const,
-  'aria-hidden': true
-}
-
-function FolderIcon(): JSX.Element {
-  return (
-    <svg {...svg} width={15} height={15}>
-      <path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    </svg>
-  )
-}
-function TerminalIcon(): JSX.Element {
-  return (
-    <svg {...svg}>
-      <path d="M6 16l4-4-4-4" />
-      <line x1="12" y1="17" x2="18" y2="17" />
-    </svg>
-  )
-}
-function NoteIcon(): JSX.Element {
-  return (
-    <svg {...svg}>
-      <path d="M6 3h8l4 4v14H6z" />
-      <path d="M9 10h6M9 14h6M9 18h3" />
-    </svg>
-  )
-}
-function PortalIcon(): JSX.Element {
-  return (
-    <svg {...svg}>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M4 12h16" />
-      <path d="M12 4c2.5 2 2.5 14 0 16M12 4c-2.5 2-2.5 14 0 16" />
-    </svg>
-  )
-}
-function FilesIcon(): JSX.Element {
-  return (
-    <svg {...svg}>
-      <path d="M5 4h5l2 2h7v3H5z" />
-      <path d="M5 9h14v11H5z" />
-    </svg>
-  )
-}
-function SearchIcon(): JSX.Element {
-  return (
-    <svg {...svg}>
-      <circle cx="11" cy="11" r="7" />
-      <line x1="21" y1="21" x2="16.5" y2="16.5" />
-    </svg>
-  )
-}
-function CodeIcon(): JSX.Element {
-  return (
-    <svg {...svg}>
-      <path d="M9 8l-4 4 4 4" />
-      <path d="M15 8l4 4-4 4" />
-    </svg>
-  )
-}
-
+// Barra superior (Onda 1 / F01): copia o layout da imagem 1 em 3 grupos. Ícones animados
+// (motion-icons-react via wrapper Icon) — animam sutilmente no hover. Botões cujas ações já existem
+// no app ficam funcionais; os de funções ainda não implementadas (arquivo, texto, desenho, snippet,
+// compartilhar) renderizam DESABILITADOS ("em breve") até suas próprias ondas. O cursor é só um
+// indicador de modo por ora.
 export function Topbar({
   cwd,
+  collapsed,
+  onToggleSidebar,
+  onNewProject,
+  onSelectMode,
   onNewTerminal,
   onNote,
-  onPortal,
   onFiles,
-  onSearch,
+  onPortal,
   onOpenIde
 }: {
   cwd: string | null
+  collapsed: boolean
+  onToggleSidebar: () => void
+  onNewProject: () => void
+  onSelectMode: () => void
   onNewTerminal: () => void
   onNote: () => void
-  onPortal: () => void
   onFiles: () => void
-  onSearch: () => void
+  onPortal: () => void
   onOpenIde: () => void
 }): JSX.Element {
+  const workspace = cwd ? basename(cwd) : 'My Workspace'
   return (
     <div className="ork-topbar">
-      <div className="ork-topbar-left" title={cwd ?? 'Nenhuma pasta vinculada a este projeto'}>
-        <FolderIcon />
-        <span className="ork-topbar-path">{cwd ?? 'Sem pasta'}</span>
-        {/* R1: abrir a pasta do projeto no editor de código externo. Desabilitado sem pasta. */}
+      <div className="ork-topbar-left">
+        <button className="ork-topbar-tool" title="Novo projeto" aria-label="Novo projeto" onClick={onNewProject}>
+          <Icon name="Plus" animation="pop" />
+        </button>
         <button
-          className="ork-topbar-ide"
+          className="ork-topbar-tool"
+          title={collapsed ? 'Exibir menu lateral' : 'Ocultar menu lateral'}
+          aria-label={collapsed ? 'Exibir menu lateral' : 'Ocultar menu lateral'}
+          onClick={onToggleSidebar}
+        >
+          <Icon name="PanelLeft" animation="nudge" />
+        </button>
+        <span className="ork-topbar-workspace" title={cwd ?? 'Nenhuma pasta vinculada'}>
+          {workspace}
+        </span>
+      </div>
+
+      <div className="ork-topbar-center">
+        <button
+          className="ork-topbar-tool ork-topbar-tool--active"
+          title="Selecionar / navegar"
+          aria-label="Selecionar / navegar"
+          onClick={onSelectMode}
+        >
+          <Icon name="MousePointer2" animation="nudge" />
+        </button>
+        <button className="ork-topbar-tool" title="Novo terminal" aria-label="Novo terminal" onClick={onNewTerminal}>
+          <Icon name="Terminal" animation="wiggle" />
+        </button>
+        <button className="ork-topbar-tool" title="Nova nota" aria-label="Nova nota" onClick={onNote}>
+          <Icon name="StickyNote" animation="swing" />
+        </button>
+        <button className="ork-topbar-tool" title="Anexar arquivo (em breve)" aria-label="Anexar arquivo" disabled>
+          <Icon name="Paperclip" animation="swing" />
+        </button>
+        <button className="ork-topbar-tool" title="Árvore de arquivos" aria-label="Árvore de arquivos" onClick={onFiles}>
+          <Icon name="Folder" animation="bounce" />
+        </button>
+        <button className="ork-topbar-tool" title="Anexar site" aria-label="Anexar site" onClick={onPortal}>
+          <Icon name="Globe" animation="spin" />
+        </button>
+        <button className="ork-topbar-tool" title="Texto (em breve)" aria-label="Texto" disabled>
+          <Icon name="ALargeSmall" animation="pop" />
+        </button>
+        <button className="ork-topbar-tool" title="Desenhar (em breve)" aria-label="Desenhar" disabled>
+          <Icon name="PenTool" animation="wiggle" />
+        </button>
+      </div>
+
+      <div className="ork-topbar-right">
+        <button className="ork-topbar-tool" title="Em breve" aria-label="Snippet" disabled>
+          <Icon name="Braces" animation="pop" />
+        </button>
+        <button
+          className="ork-topbar-tool"
           title={cwd ? 'Abrir no editor de código' : 'Vincule uma pasta ao projeto para abrir no editor'}
           aria-label="Abrir no editor de código"
           onClick={onOpenIde}
           disabled={!cwd}
         >
-          <CodeIcon />
+          <Icon name="Code2" animation="wiggle" />
         </button>
-      </div>
-      <div className="ork-topbar-tools">
-        <button className="ork-topbar-tool" title="Novo terminal" aria-label="Novo terminal" onClick={onNewTerminal}>
-          <TerminalIcon />
-        </button>
-        <button className="ork-topbar-tool" title="Nova nota" aria-label="Nova nota" onClick={onNote}>
-          <NoteIcon />
-        </button>
-        <button className="ork-topbar-tool" title="Novo portal" aria-label="Novo portal" onClick={onPortal}>
-          <PortalIcon />
-        </button>
-        <button className="ork-topbar-tool" title="Árvore de arquivos" aria-label="Árvore de arquivos" onClick={onFiles}>
-          <FilesIcon />
-        </button>
-        <span className="ork-topbar-sep" />
-        <button className="ork-topbar-tool" title="Buscar (⌘K)" aria-label="Buscar" onClick={onSearch}>
-          <SearchIcon />
+        <button className="ork-topbar-tool" title="Compartilhar (em breve)" aria-label="Compartilhar" disabled>
+          <Icon name="Upload" animation="bounce" />
         </button>
       </div>
     </div>
