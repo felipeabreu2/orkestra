@@ -130,6 +130,14 @@
   justify-content: center;
 }
 
+/* A barra de ações de UM nó (terminal/nota) fica sempre em UMA linha; a largura segue o conteúdo
+   (max-content) em vez de colapsar para a menor largura — comportamento do flex-wrap num elemento
+   absolutamente posicionado, que quebrava a barra da nota (muitos botões) em 2 linhas. */
+.ork-node-toolbar {
+  flex-wrap: nowrap;
+  width: max-content;
+}
+
 /* Onda 3 (F04/F05): botões só-ícone e o "chip" de contagem de ligações (número em destaque). */
 .ork-node-toolbar-icon {
   display: flex;
