@@ -204,6 +204,22 @@
   outline: none;
 }
 
+/* Overlay de "arrastar para criar" (ferramenta ativa da barra): cobre o canvas, cursor de mira, e
+   desenha o retângulo de preview do novo item. z abaixo da topbar/toolbars (z:10), acima do canvas. */
+.ork-create-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  cursor: crosshair;
+}
+.ork-create-rect {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  background: var(--accent-weak);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
 /* Wordmark removido daqui (Fase 15 Task 3): movido para o topo da ProjectsSidebar
    (ProjectsSidebar.css .ork-sidebar-brand*) — isso também resolve a antiga sobreposição
    wordmark/Controls do React Flow. */

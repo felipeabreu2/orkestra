@@ -14,6 +14,7 @@ import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
 import { emitNewProject } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
+import { CreateOverlay } from './CreateOverlay'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
@@ -76,6 +77,9 @@ export function Canvas(): JSX.Element {
   const setAttention = useCanvasStore((s) => s.setAttention)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [newTermOpen, setNewTermOpen] = useState(false)
+  // "Arrastar para criar" (Figma-like): ferramenta pendente escolhida na barra (nota/site/arquivos).
+  // Enquanto != null, o CreateOverlay captura o gesto e cria o item com a posição/tamanho arrastados.
+  const [pendingTool, setPendingTool] = useState<'note' | 'portal' | 'filetree' | null>(null)
   const [minimapOn, setMinimapOn] = useState(true)
   // R4: menu de contexto (botão direito). nodeId!==null => menu de ações do nó; senão => menu de
   // criação no ponto do cursor (flowX/flowY já em coordenadas do canvas). x/y são de tela (posição
@@ -115,6 +119,18 @@ export function Canvas(): JSX.Element {
   const runAlign = (axis: AlignAxis): void => setNodePositions(alignNodes(toPosNodes(), axis))
   const runDistribute = (axis: DistributeAxis): void => setNodePositions(distributeNodes(toPosNodes(), axis))
   const runGrid = (): void => setNodePositions(gridArrange(toPosNodes()))
+
+  // Cria o item da ferramenta pendente na posição/tamanho arrastados (size null = tamanho padrão).
+  const handleCreateNode = (
+    pos: { x: number; y: number },
+    size: { width: number; height: number } | null
+  ): void => {
+    const opts = size ? { width: size.width, height: size.height } : undefined
+    if (pendingTool === 'note') addNoteNode(pos, opts)
+    else if (pendingTool === 'portal') addPortalNode(pos, opts)
+    else if (pendingTool === 'filetree') addFileTreeNode(pos, opts)
+    setPendingTool(null)
+  }
 
   // R4: itens do menu de contexto. Com nodeId => ações do nó (remover conexões / excluir); sem
   // nodeId => criar um nó no ponto do cursor (flowX/flowY já convertidos para o canvas).
@@ -235,11 +251,11 @@ export function Canvas(): JSX.Element {
         collapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
         onNewProject={emitNewProject}
-        onSelectMode={() => {}}
+        onSelectMode={() => setPendingTool(null)}
         onNewTerminal={() => setNewTermOpen(true)}
-        onNote={() => addNoteNode()}
-        onFiles={() => addFileTreeNode()}
-        onPortal={() => addPortalNode()}
+        onNote={() => setPendingTool('note')}
+        onFiles={() => setPendingTool('filetree')}
+        onPortal={() => setPendingTool('portal')}
         onOpenIde={() => {
           // R1: abre a pasta do projeto no editor externo (o main tenta VS Code/Cursor/… e cai no
           // gerenciador de arquivos se nenhum estiver instalado). No-op sem pasta vinculada.
@@ -247,6 +263,7 @@ export function Canvas(): JSX.Element {
         }}
       />
       {newTermOpen && <NewTerminalModal onClose={() => setNewTermOpen(false)} />}
+      {pendingTool && <CreateOverlay onCreate={handleCreateNode} onCancel={() => setPendingTool(null)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
       {selectedNodes.length === 1 && <NodeToolbar node={selectedNodes[0]} />}

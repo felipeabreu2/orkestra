@@ -68,10 +68,10 @@ interface CanvasState {
     // acontece no main, no spawn — Task 2); a UI de criação (Task 4) valida antes por UX.
     opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
   ) => void
-  addNoteNode: (position?: { x: number; y: number }) => void
+  addNoteNode: (position?: { x: number; y: number }, opts?: { width?: number; height?: number }) => void
   addPortalNode: (
     position?: { x: number; y: number } | undefined,
-    opts?: { name?: string; url?: string }
+    opts?: { name?: string; url?: string; width?: number; height?: number }
   ) => void
   // Fase 19 (Task 2): nó explorador de arquivos (FileTreeNode) — rootPath opcional na criação
   // (a resolução do default, cwd do projeto ativo, é feita pelo próprio componente no mount, não
@@ -79,7 +79,7 @@ interface CanvasState {
   // quanto ao escolher a primeira pasta (empty state), e persiste via o serialize genérico.
   addFileTreeNode: (
     position?: { x: number; y: number } | undefined,
-    opts?: { rootPath?: string }
+    opts?: { rootPath?: string; width?: number; height?: number }
   ) => void
   updateNoteContent: (id: string, content: string) => void
   // Onda 5: nota rich-text (TipTap). html = conteúdo do editor; color = cor do post-it (F07).
@@ -216,7 +216,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         ]
       }
     }),
-  addNoteNode: (position = { x: 120, y: 120 }): void =>
+  addNoteNode: (position = { x: 120, y: 120 }, opts): void =>
     set((state) => ({
       ...histPatch(state),
       nodes: [
@@ -226,8 +226,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           type: 'note',
           position,
           data: { html: '', color: undefined },
-          width: 240,
-          height: 180
+          width: opts?.width ?? 240,
+          height: opts?.height ?? 180
         }
       ]
     })),
@@ -246,8 +246,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               name: opts?.name ?? `Portal ${portalSeq++}`,
               url: opts?.url ?? ''
             },
-            width: 480,
-            height: 320
+            width: opts?.width ?? 480,
+            height: opts?.height ?? 320
           }
         ]
       }
@@ -267,8 +267,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               name: 'Arquivos',
               rootPath: opts?.rootPath
             },
-            width: 300,
-            height: 360
+            width: opts?.width ?? 300,
+            height: opts?.height ?? 360
           }
         ]
       }
