@@ -146,24 +146,13 @@ function createWindow(): void {
   }
 }
 
-// Renderização por software: silencia os erros de driver EGL/GPU em Macs Intel (a UI é 2D, não precisa de aceleração).
-app.disableHardwareAcceleration()
+// Otimização (Bloco 1a): aceleração de hardware LIGADA por padrão — o canvas (React Flow) e o WebGL
+// do xterm ganham muito com GPU. O disable antigo só silenciava ruído de log de driver EGL em Macs
+// Intel (não é quebra funcional). Fallback opt-in via env: ORKESTRA_NO_GPU=1 restaura o software
+// rendering sem recompilar, caso algum driver realmente quebre a renderização.
+if (process.env.ORKESTRA_NO_GPU === '1') app.disableHardwareAcceleration()
 
 app.whenReady().then(async () => {
-  // Sobe o servidor de orquestração (HTTP local + token) e instala o `orq` compilado em
-  // ~/.orkestra/bin/orq. Se algo falhar aqui (ex.: build sem out/orq/bin.js), a app segue
-  // sem orquestração em vez de travar no boot — orchestrationEnv fica {} (spawns normais).
-  try {
-    const { port, token } = await orchestration.start()
-    const binDir = installOrq(join(__dirname, '../orq/bin.js'))
-    orchestrationEnv = {
-      ORKESTRA_PORT: String(port),
-      ORKESTRA_TOKEN: token,
-      PATH: `${binDir}:${process.env.PATH ?? ''}`
-    }
-  } catch (err) {
-    console.error('[orchestration] falha ao iniciar servidor ou instalar o orq:', err)
-  }
   ipcMain.on('orchestration:sync', (_e, m: CanvasMirror) => {
     mirror = m
   })
@@ -224,6 +213,24 @@ app.whenReady().then(async () => {
   // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.
   registerIdeIpc(ipcMain)
   createWindow()
+  // Otimização (Bloco 3): a janela aparece ANTES de esperar a orquestração. O servidor (HTTP local
+  // + token) e o install do `orq` sobem em paralelo, SEM await bloqueante do caminho da janela.
+  // Seguro porque orchestrationEnv é late-bound (registerPtyIpc lê a cada spawn) — um terminal
+  // spawnado antes do servidor subir nasce sem ORKESTRA_PORT/TOKEN (mesma degradação já prevista
+  // quando a orquestração falha). Se algo falhar aqui, a app segue sem orquestração.
+  void (async () => {
+    try {
+      const { port, token } = await orchestration.start()
+      const binDir = installOrq(join(__dirname, '../orq/bin.js'))
+      orchestrationEnv = {
+        ORKESTRA_PORT: String(port),
+        ORKESTRA_TOKEN: token,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`
+      }
+    } catch (err) {
+      console.error('[orchestration] falha ao iniciar servidor ou instalar o orq:', err)
+    }
+  })()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
   // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver
   // electron-builder.yml publish). Falha silenciosamente enquanto owner/release reais não

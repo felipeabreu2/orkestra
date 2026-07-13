@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
@@ -34,6 +35,17 @@ export function TerminalNode({
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
+    // Otimização (Bloco 1b): renderer WebGL do xterm — muito mais rápido que o DOM (que repinta
+    // centenas de elementos por frame de pan/zoom). Best-effort: se o contexto WebGL não puder ser
+    // criado (GPU indisponível/ORKESTRA_NO_GPU), o try/catch cai no renderer DOM padrão.
+    // onContextLoss descarta o addon e o xterm volta ao DOM sozinho.
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => webgl.dispose())
+      term.loadAddon(webgl)
+    } catch {
+      /* sem WebGL — segue com o renderer DOM padrão */
+    }
     fit.fit()
 
     let disposeData = (): void => {}
