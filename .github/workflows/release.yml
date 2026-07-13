@@ -26,6 +26,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      # node-gyp (recompila o node-pty para o ABI do Electron) precisa de distutils, removido
+      # no Python 3.12+ dos runners. Fixar 3.11 (que ainda traz distutils) faz o rebuild passar.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Instalar dependências
         run: npm ci
 

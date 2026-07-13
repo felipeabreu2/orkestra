@@ -14,7 +14,7 @@
     "type": "git",
     "url": "https://github.com/felipeabreu2/orkestra.git"
   },
-  "author": "Felipe Abreu",
+  "author": "Felipe Abreu <98717420+felipeabreu2@users.noreply.github.com>",
   "license": "MIT",
   "main": "./out/main/index.js",
   "engines": {
