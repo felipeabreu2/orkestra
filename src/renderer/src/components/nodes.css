@@ -294,55 +294,53 @@
   cursor: not-allowed;
 }
 
-/* Note body */
-.ork-note-textarea {
+/* Onda 5 (F06/F07): nota como editor rich-text (TipTap). Post-it colorido usa texto escuro fixo
+   para contraste sobre os tons claros, independentemente do tema. */
+.ork-note-editor {
   flex: 1;
   min-height: 0;
-  resize: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-1);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 8px;
-}
-.ork-note-textarea::placeholder {
-  color: var(--text-3);
-}
-
-/* Toggle editar/visualizar (Fase 21 Task 2) + preview Markdown */
-.ork-node-toggle {
-  margin-left: auto;
-  padding: 1px 7px;
-  font-size: 11px;
-  color: var(--text-2);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.ork-node-toggle:hover {
-  color: var(--text-1);
-  border-color: var(--border-strong);
-}
-/* quando o toggle usa margin-left:auto, o botão × que vem depois precisa de um respiro */
-.ork-node-toggle + .ork-node-iconbtn {
-  margin-left: 4px;
-}
-
-.ork-note-preview {
-  flex: 1;
-  min-height: 0;
+  width: 100%;
   overflow: auto;
-  padding: 8px 10px;
-  color: var(--text-1);
+  padding: 10px 12px;
+}
+.ork-note-editor .ProseMirror {
+  outline: none;
+  min-height: 100%;
   font-size: 13px;
   line-height: 1.5;
+  color: var(--text-1);
 }
-.ork-note-empty {
-  color: var(--text-3);
-  font-size: 12px;
+.ork-note--colored,
+.ork-note--colored .ProseMirror {
+  color: #1a1a1a;
+}
+.ork-note--colored .ProseMirror a {
+  color: #0a7;
+}
+.ork-note-editor .ProseMirror h1,
+.ork-note-editor .ProseMirror h2,
+.ork-note-editor .ProseMirror h3 {
+  margin: 8px 0 4px;
+  line-height: 1.25;
+}
+.ork-note-editor .ProseMirror p {
+  margin: 4px 0;
+}
+.ork-note-editor .ProseMirror ul,
+.ork-note-editor .ProseMirror ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+.ork-note-editor .ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: rgba(127, 127, 127, 0.18);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.ork-note-editor .ProseMirror img {
+  max-width: 100%;
+  border-radius: 6px;
 }
 
 .ork-md > :first-child { margin-top: 0; }
