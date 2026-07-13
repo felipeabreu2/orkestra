@@ -42,6 +42,16 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
     return () => unregisterNoteEditor(id)
   }, [editor, id])
 
+  // Sincroniza mudanças EXTERNAS do html (ex.: o agente escrevendo via `orq note write`) para o
+  // editor, em tempo real. Sem loop: só aplica quando o html do store difere do conteúdo atual do
+  // editor (a edição local já deixa os dois iguais). emitUpdate:false para não re-disparar onUpdate.
+  useEffect(() => {
+    if (!editor) return
+    if (typeof d.html === 'string' && d.html !== editor.getHTML()) {
+      editor.commands.setContent(d.html, { emitUpdate: false })
+    }
+  }, [editor, d.html])
+
   return (
     <>
       <NodeResizer minWidth={160} minHeight={100} isVisible={selected ?? false} />

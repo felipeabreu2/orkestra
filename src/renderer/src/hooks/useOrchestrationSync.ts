@@ -5,6 +5,7 @@ import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchest
 import { clickScript, fillScript } from '../../../shared/portalScripts'
 import { getPortal } from '../portalRegistry'
 import { markdownToHtml } from '../markdown/markdownToHtml'
+import { htmlToText } from '../context/contextBlock'
 
 // Resolve um portal pelo nome atual no espelho local do canvas -> node.id -> webview (via o
 // registry que o PortalNode popula ao montar). Mesmo padrão nome->nó->recurso usado no main para
@@ -30,7 +31,10 @@ export function useOrchestrationSync(): void {
       nodes: nodes.map((n) => ({
         id: n.id,
         type: n.type ?? 'terminal',
-        name: ((n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó').slice(0, 40),
+        name: (n.type === 'note'
+          ? htmlToText((n.data?.html as string) ?? '') || 'Nota'
+          : (n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó'
+        ).slice(0, 40),
         content: n.data?.content as string | undefined,
         role: (n.data?.role as string) ?? '',
         preset: (n.data?.preset as string) ?? 'shell',
@@ -50,8 +54,11 @@ export function useOrchestrationSync(): void {
         // Alvo: por id/nome explícito; senão a nota ligada à SAÍDA do terminal `from` (edge
         // from→nota); senão a primeira nota (retrocompat). A nota agora é TipTap (html): converte o
         // markdown que o agente escreveu.
-        let target = cmd.target
-          ? notes.find((n) => n.id === cmd.target || (n.data?.name as string) === cmd.target)
+        const wanted = cmd.target?.toLowerCase().trim()
+        let target = wanted
+          ? notes.find(
+              (n) => n.id === cmd.target || htmlToText((n.data?.html as string) ?? '').toLowerCase().startsWith(wanted)
+            )
           : undefined
         if (!target && cmd.from) {
           const edge = store.edges.find((e) => e.source === cmd.from && notes.some((n) => n.id === e.target))
