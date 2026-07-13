@@ -12,6 +12,7 @@ import {
 import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapshot'
 import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
 import { loadEdgeStyle, saveEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
+import { loadSidebarCollapsed, saveSidebarCollapsed } from '../ui/sidebarCollapsed'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -34,6 +35,12 @@ interface CanvasState {
   // setEdgeStyle. Efêmera do ponto de vista do canvas: NÃO entra em serialize()/hydrate().
   edgeStyle: EdgeStyle
   setEdgeStyle: (style: EdgeStyle) => void
+  // Onda 1 (F01): sidebar de projetos colapsada. Fonte única — lida pela ProjectsSidebar (render)
+  // e pela Topbar (botão de painel). Persistida em localStorage (ui/sidebarCollapsed). Efêmera do
+  // ponto de vista do canvas: NÃO entra em serialize()/hydrate().
+  sidebarCollapsed: boolean
+  setSidebarCollapsed: (v: boolean) => void
+  toggleSidebar: () => void
   // Fase 20 (Task 2): indicador de "atenção do agente" — ids de nós (terminal) cujo agente
   // produziu output e depois ficou ocioso (watcher no AgentBus do main, avisado via
   // window.orkestra.onAgentAttention em Canvas.tsx). Puramente efêmero/UI: nunca serializado
@@ -119,6 +126,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setEdgeStyle: (style): void => {
     saveEdgeStyle(style)
     set({ edgeStyle: style })
+  },
+  sidebarCollapsed: loadSidebarCollapsed(),
+  setSidebarCollapsed: (v): void => {
+    saveSidebarCollapsed(v)
+    set({ sidebarCollapsed: v })
+  },
+  toggleSidebar: (): void => {
+    const next = !get().sidebarCollapsed
+    saveSidebarCollapsed(next)
+    set({ sidebarCollapsed: next })
   },
   attention: new Set(),
   setAttention: (nodeId, on): void =>

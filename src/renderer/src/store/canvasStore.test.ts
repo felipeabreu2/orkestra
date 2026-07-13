@@ -805,3 +805,15 @@ describe('canvasStore', () => {
     expect(useCanvasStore.getState().edgeStyle).toBe('curva')
   })
 })
+
+describe('sidebarCollapsed', () => {
+  it('toggleSidebar inverte o valor e setSidebarCollapsed fixa', () => {
+    const store = useCanvasStore.getState()
+    store.setSidebarCollapsed(false)
+    expect(useCanvasStore.getState().sidebarCollapsed).toBe(false)
+    store.toggleSidebar()
+    expect(useCanvasStore.getState().sidebarCollapsed).toBe(true)
+    store.toggleSidebar()
+    expect(useCanvasStore.getState().sidebarCollapsed).toBe(false)
+  })
+})
