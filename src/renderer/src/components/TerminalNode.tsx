@@ -57,22 +57,38 @@ export function TerminalNode({
       ? { cols: term.cols, rows: term.rows, nodeId, sshHost }
       : { cols: term.cols, rows: term.rows, nodeId, initialCommand }
 
-    window.orkestra.pty
-      .spawn(spawnOpts)
-      .then((id) => {
-        if (disposed) {
-          window.orkestra.pty.kill(id)
-          return
-        }
-        ptyId = id
-        if (nodeId) registerTerminalPty(nodeId, id)
-        disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
-        term.onData((data) => window.orkestra.pty.write(id, data))
-        term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
-      })
-      .catch((err) => {
-        term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
-      })
+    // Liga este xterm a um pty (recém-criado OU reconectado): saída do pty -> xterm, teclado ->
+    // pty, resize -> pty, e registra nodeId->ptyId no registry do renderer. Idêntico nos dois
+    // casos. O resize inicial sincroniza o pty com o tamanho atual do xterm (importante no
+    // re-attach, em que o xterm é novo e pode ter tamanho diferente do que o pty tinha).
+    const connect = (id: string): void => {
+      ptyId = id
+      if (nodeId) registerTerminalPty(nodeId, id)
+      disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
+      term.onData((data) => window.orkestra.pty.write(id, data))
+      term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
+      window.orkestra.pty.resize(id, term.cols, term.rows)
+    }
+
+    // Fase 31: se este nó JÁ tem um pty vivo (sobreviveu a uma troca de projeto/desmonte do
+    // TerminalNode), reconecta a ele e restaura o scrollback — NÃO cria um shell novo, então o
+    // que estava rodando (agente, build…) continua de onde parou. Só faz spawn na primeira vez.
+    const start = async (): Promise<void> => {
+      const attached = nodeId ? await window.orkestra.pty.attach(nodeId) : null
+      if (disposed) return
+      if (attached) {
+        if (attached.buffer) term.write(attached.buffer)
+        connect(attached.ptyId)
+        return
+      }
+      const id = await window.orkestra.pty.spawn(spawnOpts)
+      // desmontou durante o spawn: NÃO mata o pty (ele vive p/ re-attach quando o nó reaparecer).
+      if (disposed) return
+      connect(id)
+    }
+    void start().catch((err) => {
+      term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
+    })
 
     const ro = new ResizeObserver(() => fit.fit())
     ro.observe(el)
@@ -110,7 +126,9 @@ export function TerminalNode({
       el.removeEventListener('drop', onDrop)
       disposeData()
       if (nodeId) unregisterTerminalPty(nodeId)
-      if (ptyId) window.orkestra.pty.kill(ptyId)
+      // Fase 31: NÃO matar o pty aqui. Ao trocar de projeto, o TerminalNode desmonta mas o
+      // processo deve continuar rodando — ele é reconectado (attach) quando o nó reaparece. O
+      // pty só morre ao REMOVER o terminal (× -> pty.killForNode) ou ao fechar o app (killAll).
       term.dispose()
     }
   }, [])

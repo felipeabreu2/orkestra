@@ -58,4 +58,16 @@ export function registerPtyIpc(
   ipcMain.on('pty:write', (_e, id: string, data: string) => ptyManager.write(id, data))
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => ptyManager.resize(id, cols, rows))
   ipcMain.on('pty:kill', (_e, id: string) => ptyManager.kill(id))
+  // Fase 31: re-attach — o TerminalNode, ao montar, pergunta se este nó já tem um pty vivo (que
+  // sobreviveu a uma troca de projeto). Se sim, devolve o ptyId + o scrollback p/ restaurar o
+  // xterm; senão null (o renderer faz spawn normal). O stream 'pty:data' já foi assinado no
+  // spawn original com getSender() dinâmico, então volta a chegar sem precisar re-assinar aqui.
+  ipcMain.handle('pty:attach', (_e, nodeId: string) => {
+    const ptyId = ptyManager.ptyIdForNode(nodeId)
+    if (!ptyId) return null
+    return { ptyId, buffer: ptyManager.getBuffer(ptyId) }
+  })
+  // Fase 31: mata o pty de um nó (ao remover o terminal do canvas). Diferente de pty:kill (por
+  // ptyId) — o × do TerminalFlowNode chama por nodeId, robusto mesmo sem o registry do renderer.
+  ipcMain.on('pty:killForNode', (_e, nodeId: string) => ptyManager.killByNode(nodeId))
 }

@@ -220,4 +220,35 @@ describe('PtyManager', () => {
     f.emit('mais output') // nao repete
     expect(f.pty.write).toHaveBeenCalledTimes(1)
   })
+
+  it('acumula a saida num buffer recuperavel por getBuffer (Fase 31)', () => {
+    const f = makeFakePty()
+    const mgr = new PtyManager(() => f.pty)
+    const id = mgr.spawn({})
+    f.emit('linha 1\n')
+    f.emit('linha 2\n')
+    expect(mgr.getBuffer(id)).toBe('linha 1\nlinha 2\n')
+  })
+
+  it('killByNode mata o pty do no e limpa mapeamento e buffer (Fase 31)', () => {
+    const f = makeFakePty()
+    const mgr = new PtyManager(() => f.pty)
+    const id = mgr.spawn({ nodeId: 'n1' })
+    f.emit('trabalho em curso')
+    mgr.killByNode('n1')
+    expect(f.pty.kill).toHaveBeenCalled()
+    expect(mgr.has(id)).toBe(false)
+    expect(mgr.ptyIdForNode('n1')).toBeUndefined()
+    expect(mgr.getBuffer(id)).toBe('')
+  })
+
+  it('o buffer some quando o pty sai (Fase 31)', () => {
+    const f = makeFakePty()
+    const mgr = new PtyManager(() => f.pty)
+    const id = mgr.spawn({})
+    f.emit('oi')
+    expect(mgr.getBuffer(id)).toBe('oi')
+    f.emitExit(0)
+    expect(mgr.getBuffer(id)).toBe('')
+  })
 })
