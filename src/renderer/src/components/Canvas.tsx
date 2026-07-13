@@ -12,6 +12,7 @@ import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
 import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
+import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
@@ -59,9 +60,12 @@ export function Canvas(): JSX.Element {
   const edges = useCanvasStore((s) => s.edges)
   const onEdgesChange = useCanvasStore((s) => s.onEdgesChange)
   const onConnect = useCanvasStore((s) => s.onConnect)
+  const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
+  const removeNode = useCanvasStore((s) => s.removeNode)
+  const removeEdgesForNode = useCanvasStore((s) => s.removeEdgesForNode)
   const activeCwd = useCanvasStore((s) => s.activeCwd)
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
@@ -69,7 +73,11 @@ export function Canvas(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [newTermOpen, setNewTermOpen] = useState(false)
   const [minimapOn, setMinimapOn] = useState(true)
-  const { fitView } = useReactFlow()
+  // R4: menu de contexto (botão direito). nodeId!==null => menu de ações do nó; senão => menu de
+  // criação no ponto do cursor (flowX/flowY já em coordenadas do canvas). x/y são de tela (posição
+  // do menu). null => fechado.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; flowX: number; flowY: number; nodeId: string | null } | null>(null)
+  const { fitView, screenToFlowPosition } = useReactFlow()
   // Fase 20 (Task 2): índice de qual nó em `attention` o Shift+A deve focar na PRÓXIMA vez que
   // for pressionado (ciclo entre múltiplos agentes ociosos). Ref (não state) porque não precisa
   // re-renderizar nada por si só — só é lido/escrito dentro do handler de keydown.
@@ -103,6 +111,27 @@ export function Canvas(): JSX.Element {
   const runAlign = (axis: AlignAxis): void => setNodePositions(alignNodes(toPosNodes(), axis))
   const runDistribute = (axis: DistributeAxis): void => setNodePositions(distributeNodes(toPosNodes(), axis))
   const runGrid = (): void => setNodePositions(gridArrange(toPosNodes()))
+
+  // R4: itens do menu de contexto. Com nodeId => ações do nó (remover conexões / excluir); sem
+  // nodeId => criar um nó no ponto do cursor (flowX/flowY já convertidos para o canvas).
+  const ctxMenuItems = (): ContextMenuItem[] => {
+    if (!ctxMenu) return []
+    if (ctxMenu.nodeId) {
+      const id = ctxMenu.nodeId
+      const hasEdges = edges.some((e) => e.source === id || e.target === id)
+      return [
+        { label: 'Remover todas as conexões', onClick: () => removeEdgesForNode(id), disabled: !hasEdges },
+        { label: 'Excluir', onClick: () => removeNode(id), danger: true }
+      ]
+    }
+    const pos = { x: ctxMenu.flowX, y: ctxMenu.flowY }
+    return [
+      { label: 'Novo terminal aqui', onClick: () => addTerminalNode(pos) },
+      { label: 'Nova nota aqui', onClick: () => addNoteNode(pos) },
+      { label: 'Novo portal aqui', onClick: () => addPortalNode(pos) },
+      { label: 'Árvore de arquivos aqui', onClick: () => addFileTreeNode(pos) }
+    ]
+  }
 
   // Atalho global do command palette (Fase 12): Cmd+K no mac, Ctrl+K em win/linux. Compara
   // e.key em minúsculo para não perder o atalho quando o sistema reporta 'K' (ex.: Shift
@@ -290,6 +319,18 @@ export function Canvas(): JSX.Element {
         maxZoom={2}
         snapToGrid
         snapGrid={[20, 20]}
+        // R4: botão direito no vazio abre o menu de "criar aqui" (posição convertida pro canvas);
+        // no nó, o menu de ações do nó. onMoveStart fecha o menu ao começar um pan/zoom.
+        onPaneContextMenu={(e) => {
+          e.preventDefault()
+          const p = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+          setCtxMenu({ x: e.clientX, y: e.clientY, flowX: p.x, flowY: p.y, nodeId: null })
+        }}
+        onNodeContextMenu={(e, node) => {
+          e.preventDefault()
+          setCtxMenu({ x: e.clientX, y: e.clientY, flowX: 0, flowY: 0, nodeId: node.id })
+        }}
+        onMoveStart={() => setCtxMenu(null)}
         deleteKeyCode={['Backspace', 'Delete']}
         // Fase 18 Task 3 fix (perda de dados): o React Flow trata grupo+filhos como árvore
         // parent/child e cascateia a remoção — um Backspace/Delete num grupo selecionado
@@ -334,6 +375,9 @@ export function Canvas(): JSX.Element {
           />
         )}
       </ReactFlow>
+      {ctxMenu && (
+        <CanvasContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenuItems()} onClose={() => setCtxMenu(null)} />
+      )}
     </div>
   )
 }
