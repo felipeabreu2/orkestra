@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, useReactFlow, type NodeChange } from '@xyflow/react'
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  useReactFlow,
+  type NodeChange,
+  type Connection
+} from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
 import { useCanvasStore } from '../store/canvasStore'
@@ -17,6 +26,8 @@ import { Topbar } from './Topbar'
 import { emitNewProject } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
 import { CreateOverlay } from './CreateOverlay'
+import { buildContextBlock, htmlToText } from '../context/contextBlock'
+import { getTerminalPty } from '../terminal/terminalRegistry'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
@@ -137,6 +148,42 @@ export function Canvas(): JSX.Element {
     else if (pendingTool === 'filetree') addFileTreeNode(pos, opts)
     else if (pendingTool === 'draw') addDrawNode(pos, opts)
     setPendingTool(null)
+  }
+
+  // Onda 8 (F03): ao ligar nota/arquivo/site → terminal, injeta o conteúdo do nó-fonte no prompt do
+  // agente (sem Enter). Só quando o terminal é o ALVO (recebe contexto). Roda uma vez por ligação
+  // (onConnect); a hidratação não passa por aqui, então não repete ao recarregar.
+  const injectContext = async (connection: Connection): Promise<void> => {
+    const nodes = useCanvasStore.getState().nodes
+    const target = nodes.find((n) => n.id === connection.target)
+    const source = nodes.find((n) => n.id === connection.source)
+    if (target?.type !== 'terminal' || !source) return
+    const ptyId = getTerminalPty(target.id)
+    if (!ptyId) return
+    let block = ''
+    if (source.type === 'note') {
+      block = buildContextBlock('nota', htmlToText((source.data as { html?: string }).html ?? ''))
+    } else if (source.type === 'portal') {
+      const d = source.data as { name?: string; url?: string }
+      block = buildContextBlock(d.name ?? 'site', d.url ? `URL: ${d.url}` : '')
+    } else if (source.type === 'file') {
+      const d = source.data as { name?: string; path?: string }
+      if (d.path) {
+        try {
+          const r = await window.orkestra.filetree.read(d.path)
+          const content = r.binary ? '[arquivo binário]' : r.content.slice(0, 4000)
+          block = buildContextBlock(d.name ?? 'arquivo', `${d.path}\n${content}`)
+        } catch {
+          block = buildContextBlock(d.name ?? 'arquivo', d.path)
+        }
+      }
+    }
+    if (block) window.orkestra.pty.write(ptyId, block)
+  }
+
+  const handleConnect = (connection: Connection): void => {
+    onConnect(connection)
+    void injectContext(connection)
   }
 
   // R4: itens do menu de contexto. Com nodeId => ações do nó (remover conexões / excluir); sem
@@ -358,7 +405,7 @@ export function Canvas(): JSX.Element {
         onNodesChange={onNodesChange}
         edges={edges}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        onConnect={handleConnect}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         minZoom={0.2}
