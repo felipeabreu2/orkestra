@@ -146,11 +146,14 @@ function createWindow(): void {
   }
 }
 
-// Otimização (Bloco 1a): aceleração de hardware LIGADA por padrão — o canvas (React Flow) e o WebGL
-// do xterm ganham muito com GPU. O disable antigo só silenciava ruído de log de driver EGL em Macs
-// Intel (não é quebra funcional). Fallback opt-in via env: ORKESTRA_NO_GPU=1 restaura o software
-// rendering sem recompilar, caso algum driver realmente quebre a renderização.
-if (process.env.ORKESTRA_NO_GPU === '1') app.disableHardwareAcceleration()
+// Otimização (Bloco 1a) + ajuste macOS: aceleração de hardware LIGADA no Windows/Linux — o canvas
+// (React Flow) e o WebGL do xterm ganham muito com GPU. Mas DESLIGADA no macOS: o driver EGL/ANGLE
+// dos Macs Intel emite ruído "eglQueryDeviceAttribEXT: Bad attribute" sem ganho real de render, e o
+// disable era o comportamento estável até a v1.0.0. Fallback opt-in via env: ORKESTRA_NO_GPU=1
+// desliga também no Win/Linux, sem recompilar.
+if (process.platform === 'darwin' || process.env.ORKESTRA_NO_GPU === '1') {
+  app.disableHardwareAcceleration()
+}
 
 app.whenReady().then(async () => {
   ipcMain.on('orchestration:sync', (_e, m: CanvasMirror) => {
