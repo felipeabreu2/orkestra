@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
+import { NodeResizer, Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react'
 import { TerminalNode } from './TerminalNode'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
@@ -18,6 +18,11 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // mudança de atenção de qualquer outro terminal.
   const hasAttention = useCanvasStore((s) => s.attention.has(id))
   const setAttention = useCanvasStore((s) => s.setAttention)
+  // Onda 6 (F03): rota da pasta no rodapé + maximizar/restaurar (guarda em data._restore).
+  const activeCwd = useCanvasStore((s) => s.activeCwd)
+  const toggleMaximizeNode = useCanvasStore((s) => s.toggleMaximizeNode)
+  const { fitView } = useReactFlow()
+  const maximized = Boolean((data as { _restore?: unknown })._restore)
   const name = (data as { name?: string })?.name ?? 'Terminal'
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
@@ -126,6 +131,18 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           )}
           <button
             className="nodrag ork-node-iconbtn"
+            onClick={() => {
+              toggleMaximizeNode(id)
+              // enquadra o nó após o resize (próximo frame, já com o novo tamanho aplicado)
+              requestAnimationFrame(() => fitView({ nodes: [{ id }], duration: 200, padding: 0.12 }))
+            }}
+            aria-label={maximized ? 'Restaurar tamanho' : 'Maximizar'}
+            title={maximized ? 'Restaurar' : 'Maximizar'}
+          >
+            <Icon name={maximized ? 'Minimize2' : 'Maximize2'} size={13} animation="none" />
+          </button>
+          <button
+            className="nodrag ork-node-iconbtn"
             onClick={() => removeNode(id)}
             aria-label="Fechar terminal"
             title="Remover nó"
@@ -135,6 +152,10 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
         </div>
         <div className="nodrag nowheel ork-node-body">
           <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
+        </div>
+        <div className="ork-node-footer" title={activeCwd ?? 'Nenhuma pasta vinculada'}>
+          <Icon name="Folder" size={12} animation="none" />
+          <span className="ork-node-footer-path">{activeCwd ?? 'sem pasta'}</span>
         </div>
       </div>
     </>

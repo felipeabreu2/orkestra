@@ -367,6 +367,28 @@
   border-radius: 6px;
 }
 
+/* Onda 6 (F03): rodapé do terminal com a rota da pasta. `direction: rtl` corta o começo do
+   caminho longo, mantendo o fim (a pasta atual) visível. */
+.ork-node-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.ork-node-footer-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
 .ork-md > :first-child { margin-top: 0; }
 .ork-md > :last-child { margin-bottom: 0; }
 .ork-md h1, .ork-md h2, .ork-md h3, .ork-md h4, .ork-md h5, .ork-md h6 {
