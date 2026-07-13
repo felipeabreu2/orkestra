@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Project, ProjectIndex } from '../shared/project'
@@ -90,7 +90,11 @@ const api = {
     ipcRenderer.on('agent:attention', listener)
     return () => ipcRenderer.removeListener('agent:attention', listener)
   },
-  clearAgentAttention: (nodeId: string): void => ipcRenderer.send('agent:attention:clear', nodeId)
+  clearAgentAttention: (nodeId: string): void => ipcRenderer.send('agent:attention:clear', nodeId),
+  // Caminho absoluto de um File solto no terminal (drag-drop do Finder). No Electron 33 o
+  // File.path foi removido — webUtils.getPathForFile é a forma suportada (resolve no preload,
+  // sem o renderer tocar em `fs`). Só resolve Files reais que o usuário arrastou.
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file)
 }
 
 contextBridge.exposeInMainWorld('orkestra', api)
