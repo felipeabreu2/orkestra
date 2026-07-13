@@ -64,13 +64,13 @@ describe('canvasStore', () => {
   it('conteúdo da nota sobrevive ao round-trip serialize→hydrate', () => {
     useCanvasStore.getState().addNoteNode()
     const id = useCanvasStore.getState().nodes[0].id
-    useCanvasStore.getState().updateNoteContent(id, 'olá mundo')
+    useCanvasStore.getState().updateNoteHtml(id, '<p>olá mundo</p>')
     const snap = useCanvasStore.getState().serialize()
     useCanvasStore.getState().hydrate({ version: 1, nodes: [], edges: [] })
     expect(useCanvasStore.getState().nodes).toHaveLength(0)
     useCanvasStore.getState().hydrate(snap)
     const restored = useCanvasStore.getState().nodes.find((n) => n.id === id)
-    expect(restored?.data).toEqual({ content: 'olá mundo' })
+    expect((restored?.data as { html?: string }).html).toBe('<p>olá mundo</p>')
   })
 
   it('gera ids únicos entre nós', () => {
@@ -166,20 +166,20 @@ describe('canvasStore', () => {
     expect(e.className).toContain('ork-edge--chain')
   })
 
-  it('addNoteNode adiciona um nó note com content vazio', () => {
+  it('addNoteNode adiciona um nó note com html vazio', () => {
     useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
     const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!
     expect(n).toBeTruthy()
-    expect(n.data).toEqual({ content: '' })
+    expect((n.data as { html?: string }).html).toBe('')
     expect(n.width).toBe(240)
     expect(n.height).toBe(180)
   })
 
-  it('updateNoteContent atualiza o content de uma nota', () => {
+  it('updateNoteContent (legado/migração) ainda seta o content', () => {
     useCanvasStore.getState().addNoteNode()
     const id = useCanvasStore.getState().nodes[0].id
     useCanvasStore.getState().updateNoteContent(id, 'olá')
-    expect(useCanvasStore.getState().nodes[0].data).toEqual({ content: 'olá' })
+    expect((useCanvasStore.getState().nodes[0].data as { content?: string }).content).toBe('olá')
   })
 
   it('serialize emite version 2 com nodes e edges', () => {
@@ -815,5 +815,62 @@ describe('sidebarCollapsed', () => {
     expect(useCanvasStore.getState().sidebarCollapsed).toBe(true)
     store.toggleSidebar()
     expect(useCanvasStore.getState().sidebarCollapsed).toBe(false)
+  })
+})
+
+describe('undo/histórico', () => {
+  it('undo desfaz a criação de um nó', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    expect(useCanvasStore.getState().nodes).toHaveLength(1)
+    useCanvasStore.getState().undo()
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+  })
+
+  it('undo desfaz uma ligação (edge)', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    const s = useCanvasStore.getState()
+    s.addNoteNode({ x: 0, y: 0 })
+    s.addNoteNode({ x: 100, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    s.onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    expect(useCanvasStore.getState().edges).toHaveLength(1)
+    useCanvasStore.getState().undo()
+    expect(useCanvasStore.getState().edges).toHaveLength(0)
+  })
+
+  it('renomear coalesce (várias teclas = um passo de undo)', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    const originalName = (useCanvasStore.getState().nodes[0].data as { name?: string }).name
+    const before = useCanvasStore.getState().past.length
+    useCanvasStore.getState().updateTerminalName(id, 'A')
+    useCanvasStore.getState().updateTerminalName(id, 'AB')
+    useCanvasStore.getState().updateTerminalName(id, 'ABC')
+    // um único snapshot novo para a sequência de rename do mesmo nó (coalescing por tag)
+    expect(useCanvasStore.getState().past.length).toBe(before + 1)
+    useCanvasStore.getState().undo()
+    expect((useCanvasStore.getState().nodes[0].data as { name?: string }).name).toBe(originalName)
+  })
+
+  it('undo com histórico vazio é no-op', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    expect(() => useCanvasStore.getState().undo()).not.toThrow()
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+  })
+})
+
+describe('nota rich-text', () => {
+  it('addNoteNode cria com html vazio; updateNoteHtml/Color atualizam', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    expect((useCanvasStore.getState().nodes[0].data as { html?: string }).html).toBe('')
+    useCanvasStore.getState().updateNoteHtml(id, '<p>oi</p>')
+    useCanvasStore.getState().updateNoteColor(id, 'amarelo')
+    const data = useCanvasStore.getState().nodes[0].data as { html?: string; color?: string }
+    expect(data.html).toBe('<p>oi</p>')
+    expect(data.color).toBe('amarelo')
   })
 })

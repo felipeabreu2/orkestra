@@ -82,6 +82,10 @@ interface CanvasState {
     opts?: { rootPath?: string }
   ) => void
   updateNoteContent: (id: string, content: string) => void
+  // Onda 5: nota rich-text (TipTap). html = conteúdo do editor; color = cor do post-it (F07).
+  // updateNoteContent fica para compatibilidade/migração das notas antigas (Markdown → html).
+  updateNoteHtml: (id: string, html: string) => void
+  updateNoteColor: (id: string, color: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
   updatePortalUrl: (id: string, url: string) => void
@@ -221,7 +225,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           id: `note-${crypto.randomUUID()}`,
           type: 'note',
           position,
-          data: { content: '' },
+          data: { html: '', color: undefined },
           width: 240,
           height: 180
         }
@@ -273,6 +277,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => ({
       ...histPatch(state, 'note:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, content } } : n))
+    })),
+  updateNoteHtml: (id, html): void =>
+    set((state) => ({
+      ...histPatch(state, 'notehtml:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, html } } : n))
+    })),
+  updateNoteColor: (id, color): void =>
+    set((state) => ({
+      ...histPatch(state, 'notecolor:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, color } } : n))
     })),
   updateTerminalName: (id, name): void =>
     set((state) => ({
