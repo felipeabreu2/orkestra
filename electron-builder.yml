@@ -6,7 +6,11 @@ directories:
 files:
   - out/**/*
   - package.json
-npmRebuild: true
+# npmRebuild: false — node-pty 1.1.0 é N-API (node-addon-api + node-gyp-build), então seus
+# binários pré-compilados são ABI-estáveis e rodam no Electron SEM recompilar. Evita o node-gyp
+# no CI (Visual Studio no Windows / distutils no macOS), que quebrava o Release. O smartUnpack
+# do electron-builder continua desempacotando o .node do asar normalmente.
+npmRebuild: false
 # build/icon.png (1024x1024, exportado de resources/icon.svg) — electron-builder deriva
 # o .icns (mac) e .ico (win) a partir dele automaticamente.
 icon: build/icon.png
