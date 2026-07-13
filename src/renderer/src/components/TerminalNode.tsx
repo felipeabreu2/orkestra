@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
@@ -35,17 +34,11 @@ export function TerminalNode({
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
-    // Otimização (Bloco 1b): renderer WebGL do xterm — muito mais rápido que o DOM (que repinta
-    // centenas de elementos por frame de pan/zoom). Best-effort: se o contexto WebGL não puder ser
-    // criado (GPU indisponível/ORKESTRA_NO_GPU), o try/catch cai no renderer DOM padrão.
-    // onContextLoss descarta o addon e o xterm volta ao DOM sozinho.
-    try {
-      const webgl = new WebglAddon()
-      webgl.onContextLoss(() => webgl.dispose())
-      term.loadAddon(webgl)
-    } catch {
-      /* sem WebGL — segue com o renderer DOM padrão */
-    }
+    // NÃO usamos @xterm/addon-webgl: ele crashava de forma assíncrona no render loop em GPUs
+    // Intel antigas (Cannot read properties of undefined 'dimensions'/'_isDisposed' + "task queue
+    // exceeded deadline"), e o try/catch só pega falha de INICIALIZAÇÃO, não esse crash tardio —
+    // que, sem Error Boundary, derrubava o React inteiro (tela preta). O renderer DOM padrão do
+    // xterm é estável e rápido o bastante para o volume de output de um terminal de agente.
     fit.fit()
 
     let disposeData = (): void => {}

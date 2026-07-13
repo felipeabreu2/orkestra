@@ -3,6 +3,7 @@ import { NodeResizer, useReactFlow, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useNodeVisibility } from '../nodeVisibility'
 import { TerminalNode } from './TerminalNode'
+import { ErrorBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
 import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
@@ -156,7 +157,9 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
         </div>
         {visible ? (
           <div className="nodrag nowheel ork-node-body">
-            <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
+            <ErrorBoundary>
+              <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
+            </ErrorBoundary>
           </div>
         ) : (
           <div className="ork-node-body ork-node-suspended" aria-hidden="true">

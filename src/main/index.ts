@@ -134,6 +134,19 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Observabilidade: crashes do renderer e erros do console dele ficam invisíveis fora do DevTools.
+  // Ecoá-los no log do processo principal ajuda a diagnosticar tela preta/travamento tanto em dev
+  // quanto em builds empacotados (onde o log vai para o arquivo de log do app, não para a tela).
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[RENDERER-GONE]', JSON.stringify(details))
+  })
+  mainWindow.webContents.on('unresponsive', () => console.error('[RENDERER-UNRESPONSIVE]'))
+  mainWindow.webContents.on(
+    'console-message',
+    (_e, level, message, line, sourceId) => {
+      if (level >= 2) console.error('[RENDERER-CONSOLE]', message, `@ ${sourceId}:${line}`)
+    }
+  )
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => {
     ptyManager.killAll()
@@ -153,6 +166,12 @@ function createWindow(): void {
 // (só aparece no log do dev; o usuário final não vê). O fallback ORKESTRA_NO_GPU=1 continua existindo
 // para Windows/Linux — no macOS ele deixaria a tela preta pelo WebGL do xterm, então evite-o ali.
 if (process.env.ORKESTRA_NO_GPU === '1') app.disableHardwareAcceleration()
+
+// Observabilidade: se o processo de GPU/utility morrer, o compositor para de desenhar e a janela
+// fica preta sem erro no renderer. Logar o motivo ajuda a diagnosticar esse caso silencioso.
+app.on('child-process-gone', (_e, details) => {
+  console.error('[CHILD-PROCESS-GONE]', JSON.stringify(details))
+})
 
 app.whenReady().then(async () => {
   ipcMain.on('orchestration:sync', (_e, m: CanvasMirror) => {

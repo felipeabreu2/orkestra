@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { Canvas } from './components/Canvas'
 import { ProjectsSidebar } from './components/ProjectsSidebar'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Layout (Fase 15 Task 3): menu de projetos fixo à esquerda + canvas ocupando o resto via flex.
 // ReactFlowProvider precisa continuar envolvendo o Canvas (o CommandPalette usa useReactFlow) —
@@ -21,13 +22,15 @@ export function App(): JSX.Element {
     }
   }, [])
   return (
-    <ReactFlowProvider>
-      <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
-        <ProjectsSidebar />
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <Canvas />
+    <ErrorBoundary>
+      <ReactFlowProvider>
+        <div style={{ display: 'flex', width: '100vw', height: '100vh' }}>
+          <ProjectsSidebar />
+          <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+            <Canvas />
+          </div>
         </div>
-      </div>
-    </ReactFlowProvider>
+      </ReactFlowProvider>
+    </ErrorBoundary>
   )
 }
