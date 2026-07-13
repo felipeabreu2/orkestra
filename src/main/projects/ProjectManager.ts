@@ -98,7 +98,26 @@ export class ProjectManager {
   }
 
   list(): ProjectIndex {
-    return this.readIndex() ?? { projects: [], activeId: '' }
+    const idx = this.readIndex()
+    if (idx && idx.projects.length > 0) {
+      // Garante que activeId aponta para um projeto que existe — um índice antigo/corrompido podia
+      // ter activeId órfão, deixando getActive() e o Canvas sem projeto ativo.
+      if (!idx.projects.some((p) => p.id === idx.activeId)) {
+        idx.activeId = idx.projects[0].id
+        this.writeIndex(idx)
+      }
+      return idx
+    }
+    // Self-heal: índice ausente, inválido ou VAZIO (dados apagados, arquivo corrompido ou todos os
+    // projetos removidos) → recria o "Projeto 1" e persiste. O app NUNCA pode ficar sem projeto: o
+    // Canvas depende de um projeto ativo e, sem ele, quebra o render inteiro (tela preta). Espelha o
+    // self-heal que remove() já faz ao esvaziar a lista, mas cobre também o boot com índice vazio.
+    const project: Project = { id: randomUUID(), name: 'Projeto 1' }
+    const legacy = this.readCanvas(this.legacyCanvasPath)
+    this.writeCanvas(project.id, legacy ?? emptyCanvas())
+    const fresh: ProjectIndex = { projects: [project], activeId: project.id }
+    this.writeIndex(fresh)
+    return fresh
   }
 
   // Fase 17 (Task 1): projeto ATIVO (com seu `cwd`, se houver) — usado pelo resolver late-bound

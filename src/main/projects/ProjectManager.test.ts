@@ -135,4 +135,37 @@ describe('ProjectManager', () => {
     expect(pm.loadActiveCanvas()?.nodes.map((n) => n.id)).toEqual(['active-node'])
     expect(r.snapshot?.nodes.map((n) => n.id)).toEqual(['active-node'])
   })
+
+  // Bug de tela preta (2026-07-13): sem projeto ativo, o Canvas quebra o render inteiro. list() faz
+  // self-heal — NUNCA devolve zero projetos, mesmo com índice ausente, VAZIO ou corrompido, e
+  // conserta um activeId órfão. Cobre o boot após apagar os dados (onde bootstrap() não recria, pois
+  // o arquivo de índice pode existir mas estar vazio/inválido).
+  it('list() recria um projeto quando o índice está ausente (sem bootstrap)', () => {
+    const pm = new ProjectManager(dir) // NÃO chama bootstrap()
+    const idx = pm.list()
+    expect(idx.projects).toHaveLength(1)
+    expect(idx.activeId).toBe(idx.projects[0].id)
+  })
+
+  it('list() recria um projeto quando o índice existe mas está VAZIO', () => {
+    writeFileSync(join(dir, 'projects.json'), JSON.stringify({ projects: [], activeId: '' }))
+    const idx = new ProjectManager(dir).list()
+    expect(idx.projects).toHaveLength(1)
+    expect(idx.activeId).toBe(idx.projects[0].id)
+  })
+
+  it('list() recria um projeto quando o índice está corrompido', () => {
+    writeFileSync(join(dir, 'projects.json'), 'isto não é json válido {')
+    expect(new ProjectManager(dir).list().projects).toHaveLength(1)
+  })
+
+  it('list() conserta um activeId órfão apontando para o primeiro projeto', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const realId = pm.list().projects[0].id
+    writeFileSync(
+      join(dir, 'projects.json'),
+      JSON.stringify({ projects: [{ id: realId, name: 'Projeto 1' }], activeId: 'orfao' })
+    )
+    expect(pm.list().activeId).toBe(realId)
+  })
 })
