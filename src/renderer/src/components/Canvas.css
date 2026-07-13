@@ -52,6 +52,41 @@
   box-shadow: 0 0 0 3px var(--accent-weak);
 }
 
+/* Handles de redimensionamento (NodeResizer) como "quinas" em L nos cantos (estilo editor de
+   design), no lugar dos quadradinhos padrão — mais elegante. A borda de seleção (line) fica um
+   contorno accent bem sutil. Vale para todos os nós. */
+.react-flow__resize-control.handle {
+  width: 15px;
+  height: 15px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+.react-flow__resize-control.handle.top.left {
+  border-top: 2.5px solid var(--accent);
+  border-left: 2.5px solid var(--accent);
+  border-top-left-radius: 5px;
+}
+.react-flow__resize-control.handle.top.right {
+  border-top: 2.5px solid var(--accent);
+  border-right: 2.5px solid var(--accent);
+  border-top-right-radius: 5px;
+}
+.react-flow__resize-control.handle.bottom.left {
+  border-bottom: 2.5px solid var(--accent);
+  border-left: 2.5px solid var(--accent);
+  border-bottom-left-radius: 5px;
+}
+.react-flow__resize-control.handle.bottom.right {
+  border-bottom: 2.5px solid var(--accent);
+  border-right: 2.5px solid var(--accent);
+  border-bottom-right-radius: 5px;
+}
+.react-flow__resize-control.line {
+  border-color: var(--accent);
+  opacity: 0.35;
+}
+
 /* MiniMap (Fase 18): background via --xy-minimap-background-color acima (mesma técnica de
    fallback chain do @xyflow/react/dist/style.css usada no resto deste arquivo); maskColor/
    nodeColor são passados como props em Canvas.tsx (RF os expõe só via prop, não via um --xy-*
