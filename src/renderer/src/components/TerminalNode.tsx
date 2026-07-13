@@ -9,15 +9,13 @@ import { pathsToTerminalInput } from '../terminal/dropPaths'
 export function TerminalNode({
   nodeId,
   preset,
-  autostart,
   sshHost
 }: {
   nodeId?: string
   preset?: string
-  autostart?: boolean
   // Fase 27 (Task 3): quando presente, este terminal spawna `ssh <sshHost>` em vez de um shell
   // local (ver o branch de spawnOpts abaixo). Passado como prop por TerminalFlowNode, mesmo
-  // padrão de preset/autostart — não lido diretamente de data aqui.
+  // padrão de preset — não lido diretamente de data aqui.
   sshHost?: string
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -45,12 +43,13 @@ export function TerminalNode({
     let ptyId = ''
     let disposed = false
 
-    // Auto-run só na criação: autostart é um flag efêmero (nunca persistido, ver canvasStore)
-    // presente apenas em nós recém-criados nesta sessão. Nós hidratados de um snapshot salvo
-    // não o têm, então montam um shell puro (sem auto-digitar o comando do preset) — evita
-    // re-rodar o agente e queimar tokens a cada reload do app (Fase 7 Task 2).
-    // preset 'shell'/ausente → command null/undefined → initialCommand undefined (sem auto-run).
-    const initialCommand = autostart && preset ? (presetById(preset)?.command ?? undefined) : undefined
+    // Auto-início do CLI do agente: um preset de agente (claude/codex/gemini) SEMPRE inicia seu CLI
+    // ao montar — inclusive terminais HIDRATADOS ao reabrir o app (o usuário quer o agente "sempre
+    // lá", já com o onboarding injetado pelo wrapper `claude`). Digitar o comando do preset só abre
+    // o CLI, não manda prompt, então não gasta tokens. preset 'shell'/ausente → command null → sem
+    // auto-início. NB: só vale para pty NOVO — na troca de projeto o pty SOBREVIVE e é re-attachado
+    // (ver `start`/pty.attach acima), então o agente não reinicia à toa ao alternar projetos.
+    const initialCommand = preset ? (presetById(preset)?.command ?? undefined) : undefined
 
     // Fase 27 (Task 3): modo SSH bifurca aqui — sshHost presente manda { sshHost } e OMITE
     // initialCommand (o processo já É o `ssh <host>`, main mapeia p/ file:'ssh', args:[host];

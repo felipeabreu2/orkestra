@@ -233,26 +233,38 @@ app.whenReady().then(async () => {
   // R1 (abrir no editor externo): handler 'ide:open' — abre a pasta do projeto no editor de código
   // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.
   registerIdeIpc(ipcMain)
+  // O `orq` + o wrapper `claude` (com onboarding) são instalados de forma SÍNCRONA e o PATH/
+  // REAL_PATH entram no env ANTES de criar a janela. Assim os terminais HIDRATADOS — que spawnam
+  // durante a hidratação do renderer, logo dentro de createWindow() — já nascem com o binDir no PATH
+  // e o wrapper `claude`. Sem isto havia um race: o terminal spawnava antes do env ser preenchido
+  // (na IIFE async, que espera o servidor) e o `claude` digitado usava o binário real, SEM onboarding.
+  // installOrq é só cópia/writeFile de arquivos pequenos — não atrasa o boot de forma perceptível.
+  try {
+    const binDir = installOrq(join(__dirname, '../orq/bin.js'))
+    orchestrationEnv = {
+      // PATH original (sem o binDir) — o wrapper `claude` usa para achar o binário real do claude
+      // sem chamar a si mesmo (ver installOrq).
+      ORKESTRA_REAL_PATH: process.env.PATH ?? '',
+      PATH: `${binDir}:${process.env.PATH ?? ''}`
+    }
+  } catch (err) {
+    console.error('[orchestration] falha ao instalar o orq:', err)
+  }
   createWindow()
-  // Otimização (Bloco 3): a janela aparece ANTES de esperar a orquestração. O servidor (HTTP local
-  // + token) e o install do `orq` sobem em paralelo, SEM await bloqueante do caminho da janela.
-  // Seguro porque orchestrationEnv é late-bound (registerPtyIpc lê a cada spawn) — um terminal
-  // spawnado antes do servidor subir nasce sem ORKESTRA_PORT/TOKEN (mesma degradação já prevista
-  // quando a orquestração falha). Se algo falhar aqui, a app segue sem orquestração.
+  // Otimização (Bloco 3): a janela aparece ANTES de esperar o servidor de orquestração (HTTP local
+  // + token), que sobe em paralelo e, quando pronto, COMPLETA o env com PORT/TOKEN. orchestrationEnv
+  // é late-bound (registerPtyIpc relê a cada spawn) — um terminal aberto antes disso apenas nasce sem
+  // ORKESTRA_PORT/TOKEN (o orq degrada de forma prevista), mas JÁ com o wrapper/onboarding no PATH.
   void (async () => {
     try {
       const { port, token } = await orchestration.start()
-      const binDir = installOrq(join(__dirname, '../orq/bin.js'))
       orchestrationEnv = {
+        ...orchestrationEnv,
         ORKESTRA_PORT: String(port),
-        ORKESTRA_TOKEN: token,
-        // PATH original (sem o binDir) — o wrapper `claude` do Orkestra usa para achar o binário real
-        // do claude sem chamar a si mesmo (ver installOrq).
-        ORKESTRA_REAL_PATH: process.env.PATH ?? '',
-        PATH: `${binDir}:${process.env.PATH ?? ''}`
+        ORKESTRA_TOKEN: token
       }
     } catch (err) {
-      console.error('[orchestration] falha ao iniciar servidor ou instalar o orq:', err)
+      console.error('[orchestration] falha ao iniciar o servidor:', err)
     }
   })()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build

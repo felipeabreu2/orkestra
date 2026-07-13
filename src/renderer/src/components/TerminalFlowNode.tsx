@@ -32,9 +32,8 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const name = (data as { name?: string })?.name ?? 'Terminal'
   const role = (data as { role?: string })?.role ?? ''
   const preset = (data as { preset?: string })?.preset
-  const autostart = (data as { autostart?: boolean })?.autostart
   // Fase 27 (Task 3): host remoto (ex.: "user@host") quando este terminal nasceu em modo SSH
-  // (addTerminalNode({sshHost}), ver canvasStore). Puro prop-read de data, igual preset/autostart
+  // (addTerminalNode({sshHost}), ver canvasStore). Puro prop-read de data, igual preset
   // acima — NÃO é um seletor do store, então não corre risco do loop de render do zustand v5.
   const sshHost = (data as { sshHost?: string })?.sshHost
   // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o
@@ -158,7 +157,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
         {visible ? (
           <div className="nodrag nowheel ork-node-body">
             <ErrorBoundary>
-              <TerminalNode nodeId={id} preset={preset} autostart={autostart} sshHost={sshHost} />
+              <TerminalNode nodeId={id} preset={preset} sshHost={sshHost} />
             </ErrorBoundary>
           </div>
         ) : (
