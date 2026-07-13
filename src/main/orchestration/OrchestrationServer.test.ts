@@ -101,18 +101,28 @@ describe('OrchestrationServer', () => {
   // Fase 14 (Task 3): corpo maior que o cap (MAX_BODY = 1 MB) deve ser rejeitado cedo —
   // durante o acúmulo, não só no fim — e nunca chegar a chamar onCommand. Protege o servidor
   // local contra um payload hostil ou acidentalmente enorme (ex.: content gigante colado).
-  it('POST /note com corpo maior que o cap (1 MB) retorna 413 e não chama onCommand', async () => {
+  it('POST /note com corpo maior que o cap (1 MB) é rejeitado e não chama onCommand', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [] }, commands)
     const { port, token } = await s.start()
     // > MAX_BODY (1_000_000 bytes), com folga para o overhead de aspas/chaves do JSON.
     const big = 'x'.repeat(1_100_000)
-    const res = await fetch(`http://127.0.0.1:${port}/note`, {
-      method: 'POST',
-      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
-      body: JSON.stringify({ target: 'Nota', content: big })
-    })
-    expect(res.status).toBe(413)
+    // O servidor corta o corpo cedo (413) por defesa. Dependendo do SO/timing, o cliente ou
+    // recebe o 413 (macOS/Linux) ou vê a conexão ser resetada enquanto ainda envia — no Windows
+    // o Node reporta isso como "fetch failed" (throw). Ambos comprovam a rejeição ANTES de virar
+    // comando; o invariante que realmente importa é: onCommand NUNCA é chamado.
+    let outcome: number | 'rejeitado' = 'rejeitado'
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/note`, {
+        method: 'POST',
+        headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+        body: JSON.stringify({ target: 'Nota', content: big })
+      })
+      outcome = res.status
+    } catch {
+      outcome = 'rejeitado' // reset de conexão ao exceder o cap (Windows)
+    }
+    expect(outcome === 413 || outcome === 'rejeitado').toBe(true)
     expect(commands).toEqual([])
   })
 
