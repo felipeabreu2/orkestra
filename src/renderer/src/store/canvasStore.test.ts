@@ -277,8 +277,8 @@ describe('canvasStore', () => {
     expect(nodes[0].position).toEqual({ x: 80, y: 80 })
     // Segunda deve estar em posição diferente (cascata)
     expect(nodes[1].position).not.toEqual({ x: 80, y: 80 })
-    // Posição deve seguir a fórmula: 80 + (length % 8) * 36
-    expect(nodes[1].position).toEqual({ x: 80 + 36, y: 80 + 36 })
+    // Posição deve seguir a fórmula: 80 + (length % 8) * 40 (múltiplo de 20 = alinhado ao grid)
+    expect(nodes[1].position).toEqual({ x: 80 + 40, y: 80 + 40 })
   })
 
   it('addPortalNode cria um nó tipo portal com data.url e data.name "Portal N"', () => {
@@ -419,7 +419,7 @@ describe('canvasStore', () => {
     useCanvasStore.getState().addFileTreeNode()
     const { nodes } = useCanvasStore.getState()
     expect(nodes[0].position).toEqual({ x: 80, y: 80 })
-    expect(nodes[1].position).toEqual({ x: 80 + 36, y: 80 + 36 })
+    expect(nodes[1].position).toEqual({ x: 80 + 40, y: 80 + 40 })
   })
 
   it('updateFileTreeRoot altera o rootPath de um nó filetree existente', () => {

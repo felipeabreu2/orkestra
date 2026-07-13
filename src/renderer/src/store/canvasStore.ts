@@ -184,7 +184,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }),
   addTerminalNode: (position, opts): void =>
     set((state) => {
-      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
       return {
         ...histPatch(state),
         nodes: [
@@ -233,7 +233,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     })),
   addPortalNode: (position, opts): void =>
     set((state) => {
-      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
       return {
         ...histPatch(state),
         nodes: [
@@ -254,7 +254,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }),
   addFileTreeNode: (position, opts): void =>
     set((state) => {
-      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
       return {
         ...histPatch(state),
         nodes: [

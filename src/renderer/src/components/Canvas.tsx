@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ReactFlow, Background, Controls, MiniMap, useReactFlow, type NodeChange } from '@xyflow/react'
+import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, useReactFlow, type NodeChange } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
 import { useCanvasStore } from '../store/canvasStore'
@@ -374,7 +374,9 @@ export function Canvas(): JSX.Element {
         }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background />
+        {/* Grid de pontos finos (F02/ajuste): gap 20 = snapGrid, então os nós alinham aos pontos
+            ao criar/mover; size pequeno deixa os pontos discretos. */}
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls />
         {/* MiniMap ancora bottom-right por padrão (Controls fica bottom-left) — sem colisão.
             nodeColor usa --text-3 (cinza neutro de "chrome", já usado em scrollbars.css) em
