@@ -13,6 +13,7 @@ import { CommandPalette } from './CommandPalette'
 import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
 import { emitNewProject } from '../ui/appEvents'
+import { NodeToolbar } from './NodeToolbar'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
@@ -248,6 +249,7 @@ export function Canvas(): JSX.Element {
       {newTermOpen && <NewTerminalModal onClose={() => setNewTermOpen(false)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
+      {selectedNodes.length === 1 && <NodeToolbar node={selectedNodes[0]} />}
       {selectedNodes.length >= 2 && (
         <div className="ork-toolbar ork-arrange-toolbar" role="toolbar" aria-label="Alinhar e organizar seleção">
           <button

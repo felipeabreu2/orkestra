@@ -120,13 +120,45 @@
    .ork-toolbar de criação (fundo/borda/raio/sombra via --bg-1/--border/--radius/--shadow-1,
    herdados por reaproveitar a classe) — só a âncora muda, pra topo-centro em vez de
    topo-esquerda, e só existe no DOM quando há 2+ nós selecionados (ver Canvas.tsx). */
-.ork-arrange-toolbar {
+.ork-arrange-toolbar,
+.ork-node-toolbar {
   top: 56px; /* abaixo da barra superior (Fase 30, header de 44px) */
   left: 50%;
   transform: translateX(-50%);
   flex-wrap: wrap;
   max-width: calc(100% - 24px);
   justify-content: center;
+}
+
+/* Onda 3 (F04/F05): botões só-ícone e o "chip" de contagem de ligações (número em destaque). */
+.ork-node-toolbar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+}
+.ork-node-toolbar-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  color: var(--text-2);
+}
+.ork-node-toolbar-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 9px;
+}
+.ork-node-toolbar-danger:hover {
+  color: var(--danger, #e5484d);
 }
 
 /* Wordmark removido daqui (Fase 15 Task 3): movido para o topo da ProjectsSidebar
