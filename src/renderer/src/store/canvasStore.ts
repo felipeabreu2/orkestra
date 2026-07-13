@@ -17,6 +17,18 @@ import { loadSidebarCollapsed, saveSidebarCollapsed } from '../ui/sidebarCollaps
 let terminalSeq = 1
 let portalSeq = 1
 
+// Onda 4 (undo): patch de histórico aplicado INLINE dentro do set de cada mutação estrutural —
+// empilha o snapshot atual (antes da mutação) em `past`, com cap de 50. Com `tag`, coalesce: se a
+// tag repete a última comitada (ex.: renomear letra a letra), devolve {} — nada é empilhado, então
+// a sequência inteira vira um único passo de undo. Sem `tag`, cada chamada é um passo discreto.
+function histPatch(
+  state: { past: Array<{ nodes: Node[]; edges: Edge[] }>; lastCommitTag: string | null; nodes: Node[]; edges: Edge[] },
+  tag?: string
+): { past: Array<{ nodes: Node[]; edges: Edge[] }>; lastCommitTag: string | null } | Record<string, never> {
+  if (tag && tag === state.lastCommitTag) return {}
+  return { past: [...state.past, { nodes: state.nodes, edges: state.edges }].slice(-50), lastCommitTag: tag ?? null }
+}
+
 interface CanvasState {
   nodes: Node[]
   edges: Edge[]
@@ -111,6 +123,14 @@ interface CanvasState {
   // R6: remove de uma vez TODAS as conexões que tocam um nó (como source ou target). Retorna à
   // mesma referência de state quando o nó não tem nenhuma edge (no-op — o Zustand pula o update).
   removeEdgesForNode: (nodeId: string) => void
+  // Onda 4: histórico de undo. `past` guarda snapshots {nodes, edges} tirados ANTES de cada
+  // mutação estrutural (não de posição/seleção — isso é ruído). `commit(tag)` empurra; edições
+  // contínuas com a MESMA tag (ex.: renomear tecla a tecla) coalescem num só passo. `undo`
+  // restaura o topo. Efêmero: NÃO entra em serialize()/hydrate(). Desfazer a remoção de um
+  // terminal recria o nó, mas com shell novo (o pty já morreu ao remover).
+  past: Array<{ nodes: Node[]; edges: Edge[] }>
+  lastCommitTag: string | null
+  undo: () => void
   serialize: () => CanvasSnapshot
   hydrate: (snapshot: CanvasSnapshot) => void
 }
@@ -137,6 +157,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     saveSidebarCollapsed(next)
     set({ sidebarCollapsed: next })
   },
+  past: [],
+  lastCommitTag: null,
+  undo: (): void =>
+    set((state) => {
+      if (state.past.length === 0) return state
+      const prev = state.past[state.past.length - 1]
+      return {
+        nodes: prev.nodes,
+        edges: prev.edges,
+        past: state.past.slice(0, -1),
+        lastCommitTag: null
+      }
+    }),
   attention: new Set(),
   setAttention: (nodeId, on): void =>
     set((state) => {
@@ -149,6 +182,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
       return {
+        ...histPatch(state),
         nodes: [
           ...state.nodes,
           {
@@ -180,6 +214,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }),
   addNoteNode: (position = { x: 120, y: 120 }): void =>
     set((state) => ({
+      ...histPatch(state),
       nodes: [
         ...state.nodes,
         {
@@ -196,6 +231,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
       return {
+        ...histPatch(state),
         nodes: [
           ...state.nodes,
           {
@@ -216,6 +252,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 36, y: 80 + (state.nodes.length % 8) * 36 }
       return {
+        ...histPatch(state),
         nodes: [
           ...state.nodes,
           {
@@ -234,30 +271,37 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }),
   updateNoteContent: (id, content): void =>
     set((state) => ({
+      ...histPatch(state, 'note:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, content } } : n))
     })),
   updateTerminalName: (id, name): void =>
     set((state) => ({
+      ...histPatch(state, 'rename:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
     })),
   updateTerminalRole: (id, role): void =>
     set((state) => ({
+      ...histPatch(state, 'role:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, role } } : n))
     })),
   updatePortalUrl: (id, url): void =>
     set((state) => ({
+      ...histPatch(state, 'purl:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, url } } : n))
     })),
   updatePortalName: (id, name): void =>
     set((state) => ({
+      ...histPatch(state, 'pname:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
     })),
   updatePortalLink: (id, linkedTo): void =>
     set((state) => ({
+      ...histPatch(state),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, linkedTo } } : n))
     })),
   updateFileTreeRoot: (id, rootPath): void =>
     set((state) => ({
+      ...histPatch(state, 'froot:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, rootPath } } : n))
     })),
   removeNode: (id): void => {
@@ -278,6 +322,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         attention.delete(id)
       }
       return {
+        ...histPatch(state),
         nodes: state.nodes.filter((n) => n.id !== id),
         edges: state.edges.filter((e) => e.source !== id && e.target !== id),
         attention
@@ -330,7 +375,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           : n
       )
       // O grupo precisa vir ANTES de seus filhos no array (exigência do React Flow).
-      return { nodes: [groupNode, ...rest] }
+      return { ...histPatch(state), nodes: [groupNode, ...rest] }
     }),
   ungroupSelected: (): void =>
     set((state) => {
@@ -360,7 +405,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           delete restored.extent
           return restored
         })
-      return { nodes }
+      return { ...histPatch(state), nodes }
     }),
   ungroupGroupsById: (groupIds): void =>
     set((state) => {
@@ -393,9 +438,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         window.orkestra?.pty?.killForNode(c.id)
       }
     }
-    set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) }))
+    set((state) => {
+      // Onda 4: um 'remove' (Delete/Backspace via React Flow) captura um snapshot para o undo.
+      // Mudanças de posição/seleção/dimensão NÃO — seriam ruído no histórico.
+      const hist = changes.some((c) => c.type === 'remove') ? histPatch(state) : {}
+      return { ...hist, nodes: applyNodeChanges(changes, state.nodes) }
+    })
   },
-  onEdgesChange: (changes): void => set((state) => ({ edges: applyEdgeChanges(changes, state.edges) })),
+  onEdgesChange: (changes): void =>
+    set((state) => {
+      const hist = changes.some((c) => c.type === 'remove') ? histPatch(state) : {}
+      return { ...hist, edges: applyEdgeChanges(changes, state.edges) }
+    }),
   onConnect: (connection): void =>
     set((state) => {
       // Fase 22 (Task 1): kind deriva dos TIPOS dos nós extremos (não da própria connection),
@@ -405,14 +459,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const targetType = state.nodes.find((n) => n.id === connection.target)?.type
       const kind: EdgeKind = deriveEdgeKind(sourceType, targetType)
       const edge = { ...connection, type: 'typed', data: { kind }, className: `ork-edge--${kind}` }
-      return { edges: addEdge(edge, state.edges) }
+      return { ...histPatch(state), edges: addEdge(edge, state.edges) }
     }),
-  removeEdge: (id): void => set((state) => ({ edges: state.edges.filter((e) => e.id !== id) })),
+  removeEdge: (id): void => set((state) => ({ ...histPatch(state), edges: state.edges.filter((e) => e.id !== id) })),
   removeEdgesForNode: (nodeId): void =>
     set((state) => {
       const next = state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
       // Sem nenhuma edge tocando o nó, devolve a MESMA referência (evita re-render à toa).
-      return next.length === state.edges.length ? state : { edges: next }
+      if (next.length === state.edges.length) return state
+      return { ...histPatch(state), edges: next }
     }),
   serialize: (): CanvasSnapshot => ({
     version: 2,
@@ -492,7 +547,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     set({
       nodes: hydratedNodes,
-      edges: hydratedEdges
+      edges: hydratedEdges,
+      // Onda 4: zera o histórico de undo ao (re)hidratar — cada projeto começa sem passado, senão
+      // um Cmd+Z logo após trocar de projeto restauraria nós do projeto anterior.
+      past: [],
+      lastCommitTag: null
     })
   }
 }))
