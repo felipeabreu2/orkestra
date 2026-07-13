@@ -91,6 +91,7 @@ export function Topbar({
         <button className="ork-topbar-tool" title="Em breve" aria-label="Snippet" disabled>
           <Icon name="Braces" animation="pop" />
         </button>
+        <span className="ork-topbar-pill-sep" aria-hidden="true" />
         <button
           className="ork-topbar-tool"
           title={cwd ? 'Abrir no editor de código' : 'Vincule uma pasta ao projeto para abrir no editor'}
@@ -100,6 +101,7 @@ export function Topbar({
         >
           <Icon name="Code2" animation="wiggle" />
         </button>
+        <span className="ork-topbar-pill-sep" aria-hidden="true" />
         <button className="ork-topbar-tool" title="Compartilhar (em breve)" aria-label="Compartilhar" disabled>
           <Icon name="Upload" animation="bounce" />
         </button>

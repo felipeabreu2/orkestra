@@ -44,6 +44,12 @@
   align-items: center;
   gap: 2px;
   justify-self: end;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
 /* "My Workspace" num chip com borda (igual à referência, imagem 1): ícone de pasta + nome dentro
