@@ -6,6 +6,13 @@ directories:
 files:
   - out/**/*
   - package.json
+# node-pty no Unix (macOS/Linux) lança um binário auxiliar `spawn-helper` via posix_spawnp para
+# criar o pty. Um executável DENTRO do app.asar NÃO pode ser lançado → "posix_spawnp failed" e o
+# terminal não abre em produção (em dev funciona, pois roda do node_modules sem asar). O
+# smartUnpack do electron-builder desempacota só o pty.node (.node), NÃO o spawn-helper — por
+# isso desempacotamos o node-pty inteiro para app.asar.unpacked/, preservando o +x do helper.
+asarUnpack:
+  - '**/node_modules/node-pty/**'
 # npmRebuild: false — node-pty 1.1.0 é N-API (node-addon-api + node-gyp-build), então seus
 # binários pré-compilados são ABI-estáveis e rodam no Electron SEM recompilar. Evita o node-gyp
 # no CI (Visual Studio no Windows / distutils no macOS), que quebrava o Release. O smartUnpack
