@@ -146,14 +146,13 @@ function createWindow(): void {
   }
 }
 
-// Otimização (Bloco 1a) + ajuste macOS: aceleração de hardware LIGADA no Windows/Linux — o canvas
-// (React Flow) e o WebGL do xterm ganham muito com GPU. Mas DESLIGADA no macOS: o driver EGL/ANGLE
-// dos Macs Intel emite ruído "eglQueryDeviceAttribEXT: Bad attribute" sem ganho real de render, e o
-// disable era o comportamento estável até a v1.0.0. Fallback opt-in via env: ORKESTRA_NO_GPU=1
-// desliga também no Win/Linux, sem recompilar.
-if (process.platform === 'darwin' || process.env.ORKESTRA_NO_GPU === '1') {
-  app.disableHardwareAcceleration()
-}
+// Otimização (Bloco 1a): aceleração de hardware LIGADA. NÃO desligar no macOS, mesmo com o ruído
+// EGL "eglQueryDeviceAttribEXT: Bad attribute": o terminal usa @xterm/addon-webgl (Bloco 2) e, sem
+// GPU, o Chromium moderno BLOQUEIA o software WebGL ("fallback to software WebGL has been
+// deprecated") e derruba a renderização inteira → TELA PRETA. Aquele ruído EGL é apenas cosmético
+// (só aparece no log do dev; o usuário final não vê). O fallback ORKESTRA_NO_GPU=1 continua existindo
+// para Windows/Linux — no macOS ele deixaria a tela preta pelo WebGL do xterm, então evite-o ali.
+if (process.env.ORKESTRA_NO_GPU === '1') app.disableHardwareAcceleration()
 
 app.whenReady().then(async () => {
   ipcMain.on('orchestration:sync', (_e, m: CanvasMirror) => {
