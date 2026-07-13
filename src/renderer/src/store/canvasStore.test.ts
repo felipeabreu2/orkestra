@@ -775,4 +775,33 @@ describe('canvasStore', () => {
     useCanvasStore.getState().removeNode(id)
     expect(useCanvasStore.getState().attention).toBe(before)
   })
+
+  // R6: remove de uma vez todas as edges que tocam um nó (source OU target), preservando as demais.
+  it('removeEdgesForNode remove todas as conexões que tocam o nó e mantém as outras', () => {
+    useCanvasStore.setState({
+      edges: [
+        { id: 'e1', source: 'a', target: 'b' },
+        { id: 'e2', source: 'c', target: 'a' },
+        { id: 'e3', source: 'b', target: 'c' }
+      ]
+    })
+    useCanvasStore.getState().removeEdgesForNode('a')
+    const ids = useCanvasStore.getState().edges.map((e) => e.id)
+    expect(ids).toEqual(['e3']) // e1 (a→b) e e2 (c→a) somem; e3 (b↔c) fica
+  })
+
+  it('removeEdgesForNode de um nó sem edges preserva a MESMA referência do array (no-op)', () => {
+    useCanvasStore.setState({ edges: [{ id: 'e1', source: 'a', target: 'b' }] })
+    const before = useCanvasStore.getState().edges
+    useCanvasStore.getState().removeEdgesForNode('zzz') // não toca nenhuma edge
+    expect(useCanvasStore.getState().edges).toBe(before)
+  })
+
+  // R5: setEdgeStyle troca o estilo no estado (e persiste — coberto por edgeStyle.test.ts).
+  it('setEdgeStyle atualiza o estilo de conexão no estado', () => {
+    useCanvasStore.getState().setEdgeStyle('circuito')
+    expect(useCanvasStore.getState().edgeStyle).toBe('circuito')
+    useCanvasStore.getState().setEdgeStyle('curva')
+    expect(useCanvasStore.getState().edgeStyle).toBe('curva')
+  })
 })

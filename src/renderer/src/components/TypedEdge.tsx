@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react'
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type EdgeProps } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { EDGE_KIND_META, type EdgeKind } from '../edges/edgeKind'
 import './nodes.css'
@@ -15,14 +15,12 @@ export function TypedEdge({
   data,
   markerEnd
 }: EdgeProps): JSX.Element {
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition
-  })
+  // R5: 'circuito' desenha trilhos ortogonais (getSmoothStepPath, cantos de 90° arredondados);
+  // 'curva' mantém o bezier de sempre. Ambas retornam [path, labelX, labelY] na mesma ordem.
+  const edgeStyle = useCanvasStore((s) => s.edgeStyle)
+  const geom = { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition }
+  const [edgePath, labelX, labelY] =
+    edgeStyle === 'circuito' ? getSmoothStepPath({ ...geom, borderRadius: 8 }) : getBezierPath(geom)
   const kind = (data?.kind as EdgeKind) ?? 'link'
   const meta = EDGE_KIND_META[kind]
   const [open, setOpen] = useState(false)

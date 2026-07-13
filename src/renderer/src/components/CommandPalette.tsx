@@ -3,6 +3,7 @@ import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { rankItems } from '../search'
 import { buildPaletteItems, type PaletteItem } from '../palette/paletteCommands'
+import { nextEdgeStyle } from '../edges/edgeStyle'
 import { isValidSshHost } from '../../../shared/ssh'
 import { AskAgentPanel } from './AskAgentPanel'
 import './CommandPalette.css'
@@ -60,6 +61,9 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   const updateTerminalRole = useCanvasStore((s) => s.updateTerminalRole)
   const onConnect = useCanvasStore((s) => s.onConnect)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
+  const removeEdgesForNode = useCanvasStore((s) => s.removeEdgesForNode)
+  const edgeStyle = useCanvasStore((s) => s.edgeStyle)
+  const setEdgeStyle = useCanvasStore((s) => s.setEdgeStyle)
   const { setCenter } = useReactFlow()
 
   // Autofocus na busca ao montar — e de volta pra ela sempre que o modo input fecha (Esc), já
@@ -104,6 +108,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
         selectedNodes: nodes
           .filter((n) => n.selected)
           .map((n) => ({ id: n.id, type: n.type, data: n.data as Record<string, unknown>, selected: true })),
+        edgeStyle,
         actions: {
           addTerminalNode,
           addNoteNode,
@@ -115,7 +120,9 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           setTerminalRole: updateTerminalRole,
           connect: (source, target) => onConnect({ source, target, sourceHandle: null, targetHandle: null }),
           removeEdge,
-          addSshTerminal
+          addSshTerminal,
+          toggleEdgeStyle: () => setEdgeStyle(nextEdgeStyle(edgeStyle)),
+          removeEdgesForNode
         }
       }),
     [
@@ -130,7 +137,10 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
       updateTerminalRole,
       onConnect,
       removeEdge,
-      addSshTerminal
+      addSshTerminal,
+      edgeStyle,
+      setEdgeStyle,
+      removeEdgesForNode
     ]
   )
 
