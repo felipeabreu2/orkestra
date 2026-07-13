@@ -26,10 +26,12 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     }
     if (cmd === 'note' && sub === 'write') {
       const content = rest.join(' ')
+      // from = o nó deste terminal (env ORKESTRA_NODE_ID) — o renderer usa para escrever na nota
+      // ligada à SAÍDA deste terminal quando não há um alvo explícito.
       const res = await fetch(`${base}/note`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ target: '', content })
+        body: JSON.stringify({ target: '', content, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
     }

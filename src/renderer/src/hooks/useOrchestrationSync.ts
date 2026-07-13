@@ -47,10 +47,17 @@ export function useOrchestrationSync(): void {
       const store = useCanvasStore.getState()
       if (cmd.type === 'updateNote') {
         const notes = store.nodes.filter((n) => n.type === 'note')
-        const target = cmd.target
+        // Alvo: por id/nome explícito; senão a nota ligada à SAÍDA do terminal `from` (edge
+        // from→nota); senão a primeira nota (retrocompat). A nota agora é TipTap (html): converte o
+        // markdown que o agente escreveu.
+        let target = cmd.target
           ? notes.find((n) => n.id === cmd.target || (n.data?.name as string) === cmd.target)
-          : notes[0]
-        // Nota agora é TipTap (html): converte o texto/markdown que o agente escreveu em html.
+          : undefined
+        if (!target && cmd.from) {
+          const edge = store.edges.find((e) => e.source === cmd.from && notes.some((n) => n.id === e.target))
+          target = edge ? notes.find((n) => n.id === edge.target) : undefined
+        }
+        if (!target && !cmd.target && !cmd.from) target = notes[0]
         if (target) updateNoteHtml(target.id, markdownToHtml(cmd.content))
       } else if (cmd.type === 'recruit') {
         store.addTerminalNode(undefined, { name: cmd.name, preset: cmd.preset, role: cmd.role })

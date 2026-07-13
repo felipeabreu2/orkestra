@@ -114,12 +114,15 @@ export class OrchestrationServer {
     }
     if (req.method === 'POST' && req.url === '/note') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { target?: unknown; content?: unknown }
+        const parsed = raw as { target?: unknown; content?: unknown; from?: unknown }
         if (typeof parsed.target !== 'string' || typeof parsed.content !== 'string') {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({ type: 'updateNote', target: parsed.target, content: parsed.content })
+        // `from` (opcional): id do nó do terminal do agente (ORKESTRA_NODE_ID) — usado no renderer
+        // para resolver as notas ligadas à SAÍDA desse terminal quando não há target explícito.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        this.opts.onCommand({ type: 'updateNote', target: parsed.target, content: parsed.content, from })
         res.writeHead(200).end('ok')
       })
       return

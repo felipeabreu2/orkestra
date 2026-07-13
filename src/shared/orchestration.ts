@@ -23,7 +23,7 @@ export interface PortalState {
 }
 
 export type OrchestrationCommand =
-  | { type: 'updateNote'; target: string; content: string }
+  | { type: 'updateNote'; target: string; content: string; from?: string }
   | { type: 'recruit'; name: string; preset: string; role?: string }
   | { type: 'dismiss'; target: string }
   | { type: 'connect'; source: string; target: string }

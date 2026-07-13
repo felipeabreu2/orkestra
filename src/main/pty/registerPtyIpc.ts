@@ -50,7 +50,10 @@ export function registerPtyIpc(
       }
       sshFields = { file: 'ssh', args: [sshHost.trim()] }
     }
-    const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, ...sshFields, cwd, env: getEnv() })
+    // ORKESTRA_NODE_ID: id do nó deste terminal no canvas — deixa o `orq` resolver "as notas
+    // ligadas à MINHA saída" sem o agente precisar adivinhar (ex.: orq note write "...").
+    const env = { ...getEnv(), ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}) }
+    const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, ...sshFields, cwd, env })
     ptyManager.onData(id, (data) => getSender()?.send('pty:data', id, data))
     onSpawn(id)
     return id
