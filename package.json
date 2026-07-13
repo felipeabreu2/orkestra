@@ -51,6 +51,12 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "@tiptap/core": "^3.27.4",
+    "@tiptap/extension-image": "^3.27.4",
+    "@tiptap/extension-text-style": "^3.27.4",
+    "@tiptap/pm": "^3.27.4",
+    "@tiptap/react": "^3.27.4",
+    "@tiptap/starter-kit": "^3.27.4",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.11.2",
