@@ -8,6 +8,7 @@ import { ProjectManager } from './projects/ProjectManager'
 import { registerProjectIpc } from './projects/registerProjectIpc'
 import { FileTreeService } from './filetree/FileTreeService'
 import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
+import { registerIdeIpc } from './ide/registerIdeIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
@@ -213,6 +214,9 @@ app.whenReady().then(async () => {
   // file-explorer do canvas (renderer, Task 2). Sem estado próprio — não precisa de bootstrap.
   const fileTreeService = new FileTreeService()
   registerFileTreeIpc(ipcMain, fileTreeService)
+  // R1 (abrir no editor externo): handler 'ide:open' — abre a pasta do projeto no editor de código
+  // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.
+  registerIdeIpc(ipcMain)
   createWindow()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
   // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver

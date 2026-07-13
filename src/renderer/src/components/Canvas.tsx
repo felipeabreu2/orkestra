@@ -195,6 +195,11 @@ export function Canvas(): JSX.Element {
         onPortal={() => addPortalNode()}
         onFiles={() => addFileTreeNode()}
         onSearch={() => setPaletteOpen(true)}
+        onOpenIde={() => {
+          // R1: abre a pasta do projeto no editor externo (o main tenta VS Code/Cursor/… e cai no
+          // gerenciador de arquivos se nenhum estiver instalado). No-op sem pasta vinculada.
+          if (activeCwd) void window.orkestra.ide.open(activeCwd)
+        }}
       />
       {newTermOpen && <NewTerminalModal onClose={() => setNewTermOpen(false)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
