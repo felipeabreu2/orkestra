@@ -40,10 +40,10 @@ jobs:
         env:
           # Token automático do Actions — permissão de escrita em Releases (ver `permissions` acima)
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Sem certificado macOS, NÃO tentar assinar (a assinatura ad-hoc quebra com o
-          # hardenedRuntime). Fica false quando não há CSC_LINK e true quando o secret existe —
-          # aí o electron-builder assina/notariza normalmente com o certificado configurado.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+          # NÃO definimos CSC_IDENTITY_AUTO_DISCOVERY: deixamos o default do electron-builder.
+          # Foi assim que a v1.0.0 gerou o .dmg com sucesso. Forçar =false (sem cert) fazia o
+          # macOS Sequoia dos runners quebrar a assinatura ad-hoc com "⨯ ... not a file". Quando
+          # houver certificado (CSC_LINK preenchido abaixo), o electron-builder assina normalmente.
           # Assinatura + notarização macOS — configurar em Settings → Secrets and variables → Actions.
           # Ausentes, o build macOS sai não-assinado (funciona; Gatekeeper avisa).
           CSC_LINK: ${{ secrets.CSC_LINK }}
