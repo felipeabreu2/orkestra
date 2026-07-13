@@ -889,3 +889,14 @@ describe('maximizar terminal', () => {
     expect((useCanvasStore.getState().nodes[0].data as { _restore?: unknown })._restore).toBeUndefined()
   })
 })
+
+describe('nó de arquivo', () => {
+  it('addFileNode cria um nó file com o caminho e nome derivado', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addFileNode({ x: 0, y: 0 }, { path: '/a/b/nota.md' })
+    const n = useCanvasStore.getState().nodes[0]
+    expect(n.type).toBe('file')
+    expect((n.data as { path?: string }).path).toBe('/a/b/nota.md')
+    expect((n.data as { name?: string }).name).toBe('nota.md')
+  })
+})

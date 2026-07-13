@@ -209,6 +209,12 @@ app.whenReady().then(async () => {
       ? await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
+  }, async () => {
+    // Onda 7: seletor de 1 arquivo para o nó de arquivo (clip). Mesmo dono de janela (sheet no mac).
+    const r = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
+      : await dialog.showOpenDialog({ properties: ['openFile'] })
+    return r.canceled ? null : r.filePaths[0]
   })
   // Árvore de arquivos (Fase 19 Task 1): serviço read-only de fs + git status para o nó de
   // file-explorer do canvas (renderer, Task 2). Sem estado próprio — não precisa de bootstrap.

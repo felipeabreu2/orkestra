@@ -13,6 +13,7 @@ import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapsh
 import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
 import { loadEdgeStyle, saveEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '../ui/sidebarCollapsed'
+import { basename } from '../ui/paths'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -80,6 +81,11 @@ interface CanvasState {
   addFileTreeNode: (
     position?: { x: number; y: number } | undefined,
     opts?: { rootPath?: string; width?: number; height?: number }
+  ) => void
+  // Onda 7: nó de arquivo (clip) — anexa 1 arquivo (path), ligável a um terminal.
+  addFileNode: (
+    position?: { x: number; y: number } | undefined,
+    opts?: { path?: string; width?: number; height?: number }
   ) => void
   updateNoteContent: (id: string, content: string) => void
   // Onda 5: nota rich-text (TipTap). html = conteúdo do editor; color = cor do post-it (F07).
@@ -271,6 +277,25 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             },
             width: opts?.width ?? 300,
             height: opts?.height ?? 360
+          }
+        ]
+      }
+    }),
+  addFileNode: (position, opts): void =>
+    set((state) => {
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
+      const path = opts?.path
+      return {
+        ...histPatch(state),
+        nodes: [
+          ...state.nodes,
+          {
+            id: `file-${crypto.randomUUID()}`,
+            type: 'file',
+            position: pos,
+            data: { name: path ? basename(path) : 'Arquivo', path },
+            width: opts?.width ?? 240,
+            height: opts?.height ?? 160
           }
         ]
       }

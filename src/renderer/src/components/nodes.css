@@ -389,6 +389,24 @@
   text-align: left;
 }
 
+/* Onda 7: nó de arquivo (clip) — preview textual do conteúdo. */
+.ork-file-preview {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ork-node-dot--file {
+  background: var(--accent);
+}
+
 .ork-md > :first-child { margin-top: 0; }
 .ork-md > :last-child { margin-bottom: 0; }
 .ork-md h1, .ork-md h2, .ork-md h3, .ork-md h4, .ork-md h5, .ork-md h6 {

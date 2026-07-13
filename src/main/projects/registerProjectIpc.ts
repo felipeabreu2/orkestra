@@ -6,11 +6,18 @@ import type { CanvasSnapshot } from '../../shared/canvasSnapshot'
 // usuário cancelar. Injetável para manter este módulo livre de `electron.dialog` em teste
 // (produção passa um wrapper de dialog.showOpenDialog via main/index.ts).
 export type PickDirectory = () => Promise<string | null>
+// Onda 7: espelha PickDirectory, mas com properties ['openFile'] — anexar 1 arquivo ao canvas.
+export type PickFile = () => Promise<string | null>
 
 // Fase 15 (Task 2): CRUD de projetos, todo via ipcMain.handle (invoke) — o renderer sempre quer
 // o resultado (lista atualizada, projeto criado, canvas trocado, etc.), diferente de
 // persistence:save (fire-and-forget, ver registerPersistenceIpc).
-export function registerProjectIpc(ipcMain: IpcMain, pm: ProjectManager, pickDirectory?: PickDirectory): void {
+export function registerProjectIpc(
+  ipcMain: IpcMain,
+  pm: ProjectManager,
+  pickDirectory?: PickDirectory,
+  pickFile?: PickFile
+): void {
   ipcMain.handle('projects:list', () => pm.list())
   // Fase 17 (Task 1): create agora aceita uma pasta (cwd) opcional — escolhida no renderer via
   // projects:pickDirectory antes de chamar create.
@@ -32,4 +39,6 @@ export function registerProjectIpc(ipcMain: IpcMain, pm: ProjectManager, pickDir
   // Fase 17 (Task 1): abre o diálogo de pasta -> string | null. Sem pickDirectory injetado
   // (não deveria acontecer em produção, já que main/index.ts sempre passa um), retorna null.
   ipcMain.handle('projects:pickDirectory', async () => (pickDirectory ? await pickDirectory() : null))
+  // Onda 7: escolhe 1 arquivo para o nó de arquivo (clip). Mesmo padrão do pickDirectory.
+  ipcMain.handle('projects:pickFile', async () => (pickFile ? await pickFile() : null))
 }

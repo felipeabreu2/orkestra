@@ -16,6 +16,7 @@ export function Topbar({
   onSelectMode,
   onNewTerminal,
   onNote,
+  onFile,
   onFiles,
   onPortal,
   onOpenIde
@@ -27,6 +28,7 @@ export function Topbar({
   onSelectMode: () => void
   onNewTerminal: () => void
   onNote: () => void
+  onFile: () => void
   onFiles: () => void
   onPortal: () => void
   onOpenIde: () => void
@@ -70,7 +72,7 @@ export function Topbar({
         <button className="ork-topbar-tool" title="Nova nota" aria-label="Nova nota" onClick={onNote}>
           <Icon name="StickyNote" animation="swing" />
         </button>
-        <button className="ork-topbar-tool" title="Anexar arquivo (em breve)" aria-label="Anexar arquivo" disabled>
+        <button className="ork-topbar-tool" title="Anexar arquivo" aria-label="Anexar arquivo" onClick={onFile}>
           <Icon name="Paperclip" animation="swing" />
         </button>
         <button className="ork-topbar-tool" title="Árvore de arquivos" aria-label="Árvore de arquivos" onClick={onFiles}>

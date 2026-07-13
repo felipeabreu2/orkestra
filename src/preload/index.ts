@@ -63,7 +63,9 @@ const api = {
     setIcon: (id: string, icon: string): Promise<void> => ipcRenderer.invoke('projects:setIcon', id, icon),
     // Abre o diálogo nativo de escolha de pasta (roda no main) -> path escolhido, ou null se o
     // usuário cancelar. Renderer nunca toca fs/dialog diretamente.
-    pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('projects:pickDirectory')
+    pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('projects:pickDirectory'),
+    // Onda 7: seletor de 1 arquivo (nó de arquivo/clip).
+    pickFile: (): Promise<string | null> => ipcRenderer.invoke('projects:pickFile')
   },
   // Fase 19 (Task 1): árvore de arquivos (canvas file-explorer node) — read-only, delega tudo ao
   // FileTreeService no main (ver registerFileTreeIpc). O renderer nunca importa `fs`/`child_process`

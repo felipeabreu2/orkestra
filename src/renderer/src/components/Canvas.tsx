@@ -7,6 +7,7 @@ import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
 import { FileTreeNode } from './FileTreeNode'
+import { FileNode } from './FileNode'
 import { GroupNode } from './GroupNode'
 import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
@@ -25,6 +26,7 @@ const nodeTypes = {
   note: NoteNode,
   portal: PortalFlowNode,
   filetree: FileTreeNode,
+  file: FileNode,
   group: GroupNode
 }
 
@@ -67,6 +69,7 @@ export function Canvas(): JSX.Element {
   const addNoteNode = useCanvasStore((s) => s.addNoteNode)
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
+  const addFileNode = useCanvasStore((s) => s.addFileNode)
   const removeNode = useCanvasStore((s) => s.removeNode)
   const removeEdgesForNode = useCanvasStore((s) => s.removeEdgesForNode)
   const activeCwd = useCanvasStore((s) => s.activeCwd)
@@ -254,6 +257,10 @@ export function Canvas(): JSX.Element {
         onSelectMode={() => setPendingTool(null)}
         onNewTerminal={() => setNewTermOpen(true)}
         onNote={() => setPendingTool('note')}
+        onFile={async () => {
+          const path = await window.orkestra.projects.pickFile()
+          if (path) addFileNode(undefined, { path })
+        }}
         onFiles={() => setPendingTool('filetree')}
         onPortal={() => setPendingTool('portal')}
         onOpenIde={() => {
