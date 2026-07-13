@@ -296,6 +296,30 @@
 
 /* Onda 5 (F06/F07): nota como editor rich-text (TipTap). Post-it colorido usa texto escuro fixo
    para contraste sobre os tons claros, independentemente do tema. */
+/* Pega de arraste no topo da nota (o editor abaixo é nodrag). Discreta — uma "barrinha" central. */
+.ork-note-drag {
+  flex: 0 0 auto;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+.ork-note-drag::before {
+  content: '';
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--text-3);
+  opacity: 0.45;
+}
+.ork-note-drag:active {
+  cursor: grabbing;
+}
+.ork-note--colored .ork-note-drag::before {
+  background: rgba(0, 0, 0, 0.35);
+}
+
 .ork-note-editor {
   flex: 1;
   min-height: 0;

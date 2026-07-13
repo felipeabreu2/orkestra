@@ -50,6 +50,10 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
         className={`ork-node ork-note${bg ? ' ork-note--colored' : ''}`}
         style={bg ? { background: bg } : undefined}
       >
+        {/* Pega de arraste: o editor abaixo tem `nodrag` (para selecionar texto), então cobria o nó
+            inteiro e não sobrava área para mover a nota. Esta faixa no topo NÃO é nodrag — é por ela
+            que o React Flow arrasta o nó. */}
+        <div className="ork-note-drag" title="Arraste para mover a nota" aria-hidden="true" />
         <EditorContent editor={editor} className="nodrag nowheel ork-note-editor" />
       </div>
     </>
