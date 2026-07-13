@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { NodeResizer, Handle, Position, useReactFlow, type NodeProps } from '@xyflow/react'
+import { NodeResizer, useReactFlow, type NodeProps } from '@xyflow/react'
+import { NodeHandles } from './NodeHandles'
 import { TerminalNode } from './TerminalNode'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
@@ -64,8 +65,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   return (
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <NodeHandles />
       <div className="ork-node" onFocusCapture={handleFocusCapture}>
         <div className="ork-node-header">
           <span className="ork-node-dot" aria-hidden="true" />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
+import { NodeResizer, type NodeProps } from '@xyflow/react'
+import { NodeHandles } from './NodeHandles'
 import { useCanvasStore } from '../store/canvasStore'
 import { Icon } from './Icon'
 import './nodes.css'
@@ -30,8 +31,7 @@ export function FileNode({ id, selected, data }: NodeProps): JSX.Element {
   return (
     <>
       <NodeResizer minWidth={160} minHeight={100} isVisible={selected ?? false} />
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <NodeHandles />
       <div className="ork-node">
         <div className="ork-node-header">
           <span className="ork-node-dot ork-node-dot--file" aria-hidden="true" />

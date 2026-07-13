@@ -579,7 +579,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (n.extent === 'parent') persisted.extent = 'parent'
       return persisted
     }),
-    edges: get().edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
+    edges: get().edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle
+    }))
   }),
   hydrate: (snapshot): void => {
     // Scan hydrated nodes for Terminal/Portal names and update terminalSeq/portalSeq to avoid
@@ -631,7 +637,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const sourceType = hydratedNodes.find((n) => n.id === e.source)?.type
       const targetType = hydratedNodes.find((n) => n.id === e.target)?.type
       const kind: EdgeKind = deriveEdgeKind(sourceType, targetType)
-      return { id: e.id, source: e.source, target: e.target, type: 'typed', data: { kind }, className: `ork-edge--${kind}` }
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
+        type: 'typed',
+        data: { kind },
+        className: `ork-edge--${kind}`
+      }
     })
 
     set({

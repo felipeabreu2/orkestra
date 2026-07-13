@@ -1,5 +1,6 @@
 import { useRef } from 'react'
-import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
+import { NodeResizer, type NodeProps } from '@xyflow/react'
+import { NodeHandles } from './NodeHandles'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import { useCanvasStore } from '../store/canvasStore'
@@ -18,8 +19,7 @@ export function DrawNode({ id, selected, data }: NodeProps): JSX.Element {
   return (
     <>
       <NodeResizer minWidth={220} minHeight={160} isVisible={selected ?? false} />
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <NodeHandles />
       <div className="ork-node ork-draw">
         <div className="nodrag nowheel ork-draw-canvas">
           <Excalidraw

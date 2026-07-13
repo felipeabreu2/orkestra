@@ -51,6 +51,14 @@
 .react-flow__handle:hover {
   box-shadow: 0 0 0 3px var(--accent-weak);
 }
+/* Semântica de entrada/saída (F03): entrada (esquerda/topo) verde, saída (direita/base) accent —
+   ajuda a ler a direção do fluxo ao ligar os cards. */
+.react-flow__handle.ork-handle--in {
+  background: var(--ok);
+}
+.react-flow__handle.ork-handle--out {
+  background: var(--accent);
+}
 
 /* Handles de redimensionamento (NodeResizer) como "quinas" em L nos cantos (estilo editor de
    design), no lugar dos quadradinhos padrão — mais elegante. A borda de seleção (line) fica um

@@ -16,6 +16,10 @@ export interface PersistedEdge {
   id: string
   source: string
   target: string
+  // Handles de origem/destino (conexão em 4 lados: entrada esquerda/topo, saída direita/base) —
+  // persistidos para a edge reconectar no mesmo lado após reload.
+  sourceHandle?: string | null
+  targetHandle?: string | null
 }
 
 export interface CanvasSnapshot {

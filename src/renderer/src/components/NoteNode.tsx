@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
+import { NodeResizer, type NodeProps } from '@xyflow/react'
+import { NodeHandles } from './NodeHandles'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle, Color, FontSize, FontFamily } from '@tiptap/extension-text-style'
@@ -44,8 +45,7 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
   return (
     <>
       <NodeResizer minWidth={160} minHeight={100} isVisible={selected ?? false} />
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <NodeHandles />
       <div
         className={`ork-node ork-note${bg ? ' ork-note--colored' : ''}`}
         style={bg ? { background: bg } : undefined}
