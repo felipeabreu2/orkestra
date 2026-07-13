@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
+import { pathsToTerminalInput } from '../terminal/dropPaths'
 
 export function TerminalNode({
   nodeId,
@@ -76,9 +77,37 @@ export function TerminalNode({
     const ro = new ResizeObserver(() => fit.fit())
     ro.observe(el)
 
+    // Arrastar arquivos (do Finder) para o terminal insere seus caminhos, como num terminal
+    // nativo. dragover.preventDefault habilita o drop E impede o Chromium de navegar para o
+    // arquivo; getPathForFile (preload/webUtils) resolve o caminho absoluto; pathsToTerminalInput
+    // aspa cada um (seguro p/ espaços/unicode) e escreve no pty deste terminal.
+    const onDragOver = (e: DragEvent): void => {
+      if (e.dataTransfer?.types.includes('Files')) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    }
+    const onDrop = (e: DragEvent): void => {
+      if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
+      e.preventDefault()
+      if (!ptyId) return
+      const paths = Array.from(e.dataTransfer.files)
+        .map((f) => window.orkestra.getPathForFile(f))
+        .filter((p) => p.length > 0)
+      const text = pathsToTerminalInput(paths)
+      if (text) {
+        window.orkestra.pty.write(ptyId, text)
+        term.focus()
+      }
+    }
+    el.addEventListener('dragover', onDragOver)
+    el.addEventListener('drop', onDrop)
+
     return () => {
       disposed = true
       ro.disconnect()
+      el.removeEventListener('dragover', onDragOver)
+      el.removeEventListener('drop', onDrop)
       disposeData()
       if (nodeId) unregisterTerminalPty(nodeId)
       if (ptyId) window.orkestra.pty.kill(ptyId)
