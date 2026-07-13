@@ -100,6 +100,8 @@ interface CanvasState {
   // selecionados). `map` vem de arrange.ts (alignNodes/distributeNodes/gridArrange) — nós cujo
   // id não está no map ficam intocados (permite mexer só num subconjunto, ex.: a seleção atual).
   setNodePositions: (map: Record<string, { x: number; y: number }>) => void
+  // Onda 6: maximiza (tamanho grande) ou restaura o tamanho anterior de um nó (guarda em data._restore).
+  toggleMaximizeNode: (id: string) => void
   // Grupos (Fase 18 Task 3, React Flow v12 parent/child nodes): groupSelected agrupa 2+ nós
   // `selected` num novo nó type:'group' (posicionado/dimensionado no bbox da seleção), dando a
   // cada filho `parentId`+`extent:'parent'` e reescrevendo sua `position` de absoluta pra
@@ -346,6 +348,25 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setNodePositions: (map): void =>
     set((state) => ({
       nodes: state.nodes.map((n) => (map[n.id] ? { ...n, position: map[n.id] } : n))
+    })),
+  toggleMaximizeNode: (id): void =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => {
+        if (n.id !== id) return n
+        const data = (n.data ?? {}) as Record<string, unknown>
+        const restore = data._restore as { width: number; height: number } | undefined
+        if (restore) {
+          const rest = { ...data }
+          delete rest._restore
+          return { ...n, width: restore.width, height: restore.height, data: rest }
+        }
+        return {
+          ...n,
+          width: 1000,
+          height: 640,
+          data: { ...data, _restore: { width: n.width ?? 480, height: n.height ?? 320 } }
+        }
+      })
     })),
   groupSelected: (): void =>
     set((state) => {

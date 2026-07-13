@@ -874,3 +874,18 @@ describe('nota rich-text', () => {
     expect(data.color).toBe('amarelo')
   })
 })
+
+describe('maximizar terminal', () => {
+  it('toggleMaximizeNode aumenta e restaura o tamanho', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    expect(useCanvasStore.getState().nodes[0].width).toBe(480)
+    useCanvasStore.getState().toggleMaximizeNode(id)
+    expect(useCanvasStore.getState().nodes[0].width).toBe(1000)
+    expect((useCanvasStore.getState().nodes[0].data as { _restore?: unknown })._restore).toBeTruthy()
+    useCanvasStore.getState().toggleMaximizeNode(id)
+    expect(useCanvasStore.getState().nodes[0].width).toBe(480)
+    expect((useCanvasStore.getState().nodes[0].data as { _restore?: unknown })._restore).toBeUndefined()
+  })
+})
