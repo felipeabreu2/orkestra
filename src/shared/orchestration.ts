@@ -8,8 +8,17 @@ export interface MirrorNode {
   monitor?: boolean
 }
 
+// Ligações do canvas no espelho — o suficiente para o servidor resolver "o que está conectado a
+// este terminal" (usado por GET /context → orq context). Direção não importa para contexto: um
+// bloco ligado em qualquer ponta é legível pelo agente.
+export interface MirrorEdge {
+  source: string
+  target: string
+}
+
 export interface CanvasMirror {
   nodes: MirrorNode[]
+  edges: MirrorEdge[]
 }
 
 // Estado reportado por um portal (Fase 9): último {url,title,text} capturado no did-finish-load

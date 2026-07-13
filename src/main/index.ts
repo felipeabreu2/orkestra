@@ -49,8 +49,8 @@ const agentBus = new AgentBus(ptyManager, {
   }
 })
 
-// Espelho leve do canvas (renderer -> main via 'orchestration:sync'), servido em GET /list.
-let mirror: CanvasMirror = { nodes: [] }
+// Espelho leve do canvas (renderer -> main via 'orchestration:sync'), servido em GET /list e /context.
+let mirror: CanvasMirror = { nodes: [], edges: [] }
 // Estado reportado por cada portal (nome -> {url,title,text}), atualizado via IPC 'portal:state'
 // a cada did-finish-load do <webview> correspondente (PortalNode); servido em GET /portal.
 const portalStates = new Map<string, PortalState>()

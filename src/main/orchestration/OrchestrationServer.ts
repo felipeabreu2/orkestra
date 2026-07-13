@@ -305,6 +305,29 @@ export class OrchestrationServer {
         }
         return
       }
+      if (url.pathname === '/context') {
+        // orq context: reúne o conteúdo legível de tudo (nota/arquivo/site) ligado a este terminal,
+        // em QUALQUER direção. Resolvido aqui no servidor a partir do espelho — não depende do timing
+        // do agente estar pronto no prompt (ao contrário da injeção via pty.write no momento da
+        // ligação). `from` = ORKESTRA_NODE_ID do terminal que rodou o comando.
+        const from = url.searchParams.get('from') ?? ''
+        const mirror = this.opts.getMirror()
+        const linked = new Set<string>()
+        for (const e of mirror.edges ?? []) {
+          if (e.source === from) linked.add(e.target)
+          if (e.target === from) linked.add(e.source)
+        }
+        const blocks = mirror.nodes
+          .filter((n) => linked.has(n.id) && n.type !== 'terminal' && (n.content ?? '').trim() !== '')
+          .map((n) => {
+            const label =
+              n.type === 'note' ? 'nota' : n.type === 'file' ? 'arquivo' : n.type === 'portal' ? 'site' : n.type
+            return `[contexto — ${label}: ${n.name}]\n${(n.content ?? '').trim()}`
+          })
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ context: blocks.join('\n\n') }))
+        return
+      }
     }
     res.writeHead(404).end('not found')
   }

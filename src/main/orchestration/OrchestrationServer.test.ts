@@ -6,7 +6,8 @@ let server: OrchestrationServer | undefined
 afterEach(async () => { await server?.stop(); server = undefined })
 
 function makeServer(
-  mirror: CanvasMirror,
+  // edges opcional: completado com [] no getMirror abaixo (a maioria dos testes só precisa de nodes).
+  mirror: { nodes: CanvasMirror['nodes']; edges?: CanvasMirror['edges'] },
   commands: OrchestrationCommand[],
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
@@ -16,7 +17,7 @@ function makeServer(
   } = {}
 ) {
   server = new OrchestrationServer({
-    getMirror: () => mirror,
+    getMirror: () => ({ edges: [], ...mirror }),
     onCommand: (c) => commands.push(c),
     ...extra
   })
@@ -25,7 +26,7 @@ function makeServer(
 
 describe('OrchestrationServer', () => {
   it('GET /list com token retorna o espelho', async () => {
-    const mirror: CanvasMirror = { nodes: [{ id: 'n1', type: 'note', name: 'Nota' }] }
+    const mirror: CanvasMirror = { nodes: [{ id: 'n1', type: 'note', name: 'Nota' }], edges: [] }
     const s = makeServer(mirror, [])
     const { port, token } = await s.start()
     const res = await fetch(`http://127.0.0.1:${port}/list`, { headers: { 'x-orkestra-token': token } })

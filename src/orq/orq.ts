@@ -24,6 +24,16 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       const out = mirror.nodes.map((n) => `${n.type}\t${n.name}\t${n.id}`).join('\n')
       return { code: 0, out }
     }
+    if (cmd === 'context') {
+      // orq context -> reúne o conteúdo de TODAS as notas/arquivos/sites ligados a ESTE terminal
+      // (em qualquer direção). Puxa sob demanda do servidor, então funciona a qualquer momento —
+      // não depende de o texto ter sido digitado no prompt no instante da ligação.
+      const from = encodeURIComponent(env.ORKESTRA_NODE_ID ?? '')
+      const res = await fetch(`${base}/context?from=${from}`, { headers })
+      const data = (await res.json()) as { context?: string }
+      const ctx = (data.context ?? '').trim()
+      return { code: 0, out: ctx || 'orq: nenhum bloco (nota/arquivo/site) conectado a este terminal.' }
+    }
     if (cmd === 'note' && sub === 'write') {
       // orq note write "<texto>"                      -> nota ligada à saída deste terminal
       // orq note write --to "<nome-ou-id>" "<texto>"  -> nota específica (por id ou início do texto)
@@ -195,7 +205,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

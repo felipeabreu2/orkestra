@@ -23,6 +23,7 @@ function resolvePortalWebview(
 // e aplica de volta no store os comandos vindos do orq (via main), ex.: updateNote.
 export function useOrchestrationSync(): void {
   const nodes = useCanvasStore((s) => s.nodes)
+  const edges = useCanvasStore((s) => s.edges)
   const updateNoteHtml = useCanvasStore((s) => s.updateNoteHtml)
   // Otimização (Bloco 2b): último mirror serializado enviado — evita reenviar via IPC quando o que
   // mudou nos nós não afeta o mirror (arrastar só muda position, ~60x/s, e position não entra no
@@ -39,17 +40,29 @@ export function useOrchestrationSync(): void {
           ? htmlToText((n.data?.html as string) ?? '') || 'Nota'
           : (n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó'
         ).slice(0, 40),
-        content: n.data?.content as string | undefined,
+        // content = conteúdo LEGÍVEL do bloco, para `orq context` entregar ao agente: texto da nota
+        // (htmlToText do TipTap), caminho do arquivo (o agente lê com sua própria ferramenta), ou a
+        // URL do site. Terminais não têm content de contexto.
+        content:
+          n.type === 'note'
+            ? htmlToText((n.data?.html as string) ?? '')
+            : n.type === 'file'
+              ? (n.data?.path as string) ?? ''
+              : n.type === 'portal'
+                ? (n.data?.url as string) ?? ''
+                : (n.data?.content as string | undefined),
         role: (n.data?.role as string) ?? '',
         preset: (n.data?.preset as string) ?? 'shell',
         monitor: n.data?.monitor as boolean | undefined
-      }))
+      })),
+      // Ligações (source/target) — o servidor usa para resolver os blocos conectados a um terminal.
+      edges: edges.map((e) => ({ source: e.source, target: e.target }))
     }
     const serialized = JSON.stringify(mirror)
     if (serialized === lastMirrorRef.current) return // nada relevante mudou (ex.: só posição) → não reenvia
     lastMirrorRef.current = serialized
     window.orkestra.orchestration.sync(mirror)
-  }, [nodes])
+  }, [nodes, edges])
 
   // Aplica comandos vindos do orq (via main). Sempre lê o estado fresco via getState() (em vez
   // de depender de `nodes` no dep array) para evitar closures obsoletas entre re-renders.

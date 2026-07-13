@@ -7,7 +7,8 @@ let server: OrchestrationServer | undefined
 afterEach(async () => { await server?.stop(); server = undefined })
 
 async function startServer(
-  mirror: CanvasMirror,
+  // edges opcional: a maioria dos testes só precisa de nodes. Completado com [] abaixo.
+  mirror: { nodes: CanvasMirror['nodes']; edges?: CanvasMirror['edges'] },
   commands: OrchestrationCommand[],
   extra: {
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
@@ -17,7 +18,11 @@ async function startServer(
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
   } = {}
 ) {
-  server = new OrchestrationServer({ getMirror: () => mirror, onCommand: (c) => commands.push(c), ...extra })
+  server = new OrchestrationServer({
+    getMirror: () => ({ edges: [], ...mirror }),
+    onCommand: (c) => commands.push(c),
+    ...extra
+  })
   const { port, token } = await server.start()
   return { ORKESTRA_PORT: String(port), ORKESTRA_TOKEN: token } as NodeJS.ProcessEnv
 }
@@ -45,6 +50,30 @@ describe('runOrq', () => {
     const { code, out } = await runOrq(['list'], env)
     expect(code).toBe(0)
     expect(out).toContain('Spec')
+  })
+
+  it('context reúne o conteúdo dos blocos ligados a ESTE terminal (por ORKESTRA_NODE_ID)', async () => {
+    const mirror = {
+      nodes: [
+        { id: 't1', type: 'terminal', name: 'Líder' },
+        { id: 'n1', type: 'note', name: 'Spec', content: 'Você é o orquestrador. Faça X.' },
+        { id: 'n2', type: 'note', name: 'Solta', content: 'nota nao ligada' }
+      ],
+      edges: [{ source: 'n1', target: 't1' }]
+    }
+    const env = await startServer(mirror, [])
+    const { code, out } = await runOrq(['context'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(0)
+    expect(out).toContain('[contexto — nota: Spec]')
+    expect(out).toContain('Você é o orquestrador. Faça X.')
+    expect(out).not.toContain('nota nao ligada') // bloco não conectado não entra
+  })
+
+  it('context sem blocos conectados retorna aviso amigável', async () => {
+    const env = await startServer({ nodes: [{ id: 't1', type: 'terminal', name: 'X' }] }, [])
+    const { code, out } = await runOrq(['context'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(0)
+    expect(out).toContain('nenhum bloco')
   })
 
   it('note write envia o conteúdo ao servidor', async () => {
