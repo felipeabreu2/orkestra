@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type EdgeProps } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { EDGE_KIND_META, type EdgeKind } from '../edges/edgeKind'
+import { ropePath } from '../edges/ropePath'
+import { useRopeSwing } from '../edges/useRopeSwing'
 import './nodes.css'
 
 export function TypedEdge({
@@ -18,16 +20,24 @@ export function TypedEdge({
   // R5: 'circuito' desenha trilhos ortogonais (getSmoothStepPath, cantos de 90° arredondados);
   // 'curva' mantém o bezier de sempre. Ambas retornam [path, labelX, labelY] na mesma ordem.
   const edgeStyle = useCanvasStore((s) => s.edgeStyle)
+  // Balanço da corda: injeta energia quando os extremos se movem e decai a zero (só custa algo
+  // durante/após um arraste; em repouso retorna 0). Chamado sempre (regra dos hooks), inócuo
+  // quando o estilo não é corda.
+  const swingX = useRopeSwing(sourceX, sourceY, targetX, targetY)
   const geom = { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition }
   const [edgePath, labelX, labelY] =
-    edgeStyle === 'circuito' ? getSmoothStepPath({ ...geom, borderRadius: 8 }) : getBezierPath(geom)
+    edgeStyle === 'corda'
+      ? ropePath(sourceX, sourceY, targetX, targetY, swingX)
+      : edgeStyle === 'circuito'
+        ? getSmoothStepPath({ ...geom, borderRadius: 8 })
+        : getBezierPath(geom)
   const kind = (data?.kind as EdgeKind) ?? 'link'
   const meta = EDGE_KIND_META[kind]
   const [open, setOpen] = useState(false)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} />
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} className={edgeStyle === 'corda' ? 'ork-rope' : undefined} />
       <EdgeLabelRenderer>
         <div
           className={`nodrag nopan ork-edge-badge ork-edge-badge--${kind}`}
