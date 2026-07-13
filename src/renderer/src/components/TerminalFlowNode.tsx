@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { TerminalNode } from './TerminalNode'
+import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
 import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
 import './nodes.css'
@@ -129,7 +130,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             aria-label="Fechar terminal"
             title="Remover nó"
           >
-            ×
+            <Icon name="X" size={14} animation="pop" />
           </button>
         </div>
         <div className="nodrag nowheel ork-node-body">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import type { FileEntry } from '../../../shared/filetree'
+import { Icon } from './Icon'
 import './nodes.css'
 import './FileTreeNode.css'
 
@@ -77,7 +78,7 @@ function TreeLevel(props: TreeLevelProps): JSX.Element {
                 title={entry.path}
               >
                 <span className="ork-filetree-triangle" aria-hidden="true">
-                  {isOpen ? '▾' : '▸'}
+                  <Icon name={isOpen ? 'ChevronDown' : 'ChevronRight'} size={14} animation="none" />
                 </span>
                 <span className="ork-filetree-name">{entry.name}</span>
               </div>
@@ -315,7 +316,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             title="Atualizar status git"
             disabled={!root}
           >
-            ⟳
+            <Icon name="RefreshCw" size={14} animation="spin" />
           </button>
           <button
             className="nodrag ork-node-iconbtn"
@@ -323,7 +324,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             aria-label="Trocar pasta"
             title="Trocar pasta"
           >
-            📁
+            <Icon name="Folder" size={14} animation="bounce" />
           </button>
           <button
             className="nodrag ork-node-iconbtn"
@@ -331,7 +332,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             aria-label="Fechar árvore de arquivos"
             title="Remover nó"
           >
-            ×
+            <Icon name="X" size={14} animation="pop" />
           </button>
         </div>
         <div className="ork-node-body ork-filetree-body">

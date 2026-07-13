@@ -5,6 +5,7 @@ import { basename } from '../ui/paths'
 import { NEW_PROJECT_EVENT } from '../ui/appEvents'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
+import { Icon } from './Icon'
 import './ProjectsSidebar.css'
 
 // Menu esquerdo de projetos (Fase 15 Task 3): cada projeto tem seu próprio canvas persistido
@@ -323,7 +324,7 @@ export function ProjectsSidebar(): JSX.Element {
           aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
           title={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
         >
-          {collapsed ? '»' : '«'}
+          <Icon name={collapsed ? 'ChevronsRight' : 'ChevronsLeft'} size={16} animation="nudge" />
         </button>
       </div>
       {!collapsed && error && <div className="ork-sidebar-error">{error}</div>}
@@ -351,7 +352,7 @@ export function ProjectsSidebar(): JSX.Element {
             title="Novo projeto"
             aria-label="Novo projeto"
           >
-            +
+            <Icon name="Plus" size={16} animation="pop" />
           </button>
           <div className="ork-sidebar-rail-spacer" />
           <ThemeToggle collapsed />
@@ -426,7 +427,7 @@ export function ProjectsSidebar(): JSX.Element {
                           aria-label="Emoji personalizado"
                         />
                         <button type="submit" className="ork-sidebar-icon-picker-confirm" aria-label="Confirmar ícone">
-                          ✓
+                          <Icon name="Check" size={14} animation="pop" />
                         </button>
                       </form>
                     </div>
@@ -479,7 +480,7 @@ export function ProjectsSidebar(): JSX.Element {
                     aria-label={`Definir pasta de ${p.name}`}
                     title="Definir pasta do projeto"
                   >
-                    📁
+                    <Icon name="Folder" size={14} animation="bounce" />
                   </button>
                   <button
                     className={`ork-sidebar-remove${confirmingId === p.id ? ' ork-sidebar-remove--armed' : ''}`}
@@ -492,7 +493,7 @@ export function ProjectsSidebar(): JSX.Element {
                     aria-label={confirmingId === p.id ? `Confirmar remoção de ${p.name}` : `Remover ${p.name}`}
                     title={confirmingId === p.id ? 'Clique novamente para confirmar' : 'Remover projeto'}
                   >
-                    {confirmingId === p.id ? 'Confirmar?' : '✕'}
+                    {confirmingId === p.id ? 'Confirmar?' : <Icon name="X" size={14} animation="pop" />}
                   </button>
                 </div>
               </div>

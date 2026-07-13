@@ -2,55 +2,23 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 import { PRESETS, presetById } from '../../../shared/presets'
 import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
 import { useCanvasStore } from '../store/canvasStore'
+import { Icon } from './Icon'
 import './NewTerminalModal.css'
 
-/** Ícones próprios (geométricos) para cada preset — nada de logotipos de terceiros. */
+/** Ícone animado de cada preset — mapeia o id para um ícone do Lucide (nada de logotipos de
+ * terceiros). Preset desconhecido cai no genérico "Bot". */
 function PresetIcon({ id }: { id: string }): JSX.Element {
-  const common = {
-    width: 22,
-    height: 22,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 2,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    'aria-hidden': true
-  }
-  switch (id) {
-    case 'shell':
-      return (
-        <svg {...common}>
-          <path d="M5 16l4-4-4-4" />
-          <line x1="12" y1="17" x2="19" y2="17" />
-        </svg>
-      )
-    case 'claude':
-      return (
-        <svg {...common}>
-          <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z" />
-        </svg>
-      )
-    case 'codex':
-      return (
-        <svg {...common}>
-          <path d="M9 7l-4 5 4 5" />
-          <path d="M15 7l4 5-4 5" />
-        </svg>
-      )
-    case 'gemini':
-      return (
-        <svg {...common}>
-          <path d="M12 3l7 9-7 9-7-9z" />
-        </svg>
-      )
-    default:
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="7" />
-        </svg>
-      )
-  }
+  const name =
+    id === 'shell'
+      ? 'SquareTerminal'
+      : id === 'claude'
+        ? 'Sparkles'
+        : id === 'codex'
+          ? 'Code2'
+          : id === 'gemini'
+            ? 'Gem'
+            : 'Bot'
+  return <Icon name={name} size={22} animation="pop" />
 }
 
 export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Element {
@@ -161,7 +129,7 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
                 title="Mostra um indicador quando o agente fica ocioso e envia uma notificação do sistema se a janela não estiver em foco."
                 aria-hidden="true"
               >
-                ⓘ
+                <Icon name="Info" size={13} animation="none" />
               </span>
             </label>
           </div>

@@ -3,6 +3,7 @@ import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import type { WebviewTag } from 'electron'
 import { useShallow } from 'zustand/react/shallow'
 import { PortalNode } from './PortalNode'
+import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
 import { partitionForPortal } from '../portalPartition'
 import './nodes.css'
@@ -80,7 +81,7 @@ export function PortalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
             aria-label="Fechar portal"
             title="Remover nó"
           >
-            ×
+            <Icon name="X" size={14} animation="pop" />
           </button>
         </div>
         <div className="nodrag ork-node-urlbar">
@@ -95,7 +96,7 @@ export function PortalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
             aria-label="URL do portal"
           />
           <button className="nodrag ork-node-go" onClick={go} aria-label="Ir" title="Navegar">
-            ir
+            <Icon name="ArrowRight" size={14} animation="nudge" />
           </button>
         </div>
         <div className="nodrag nowheel ork-node-body">

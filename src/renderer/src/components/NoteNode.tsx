@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NodeResizer, Handle, Position, type NodeProps } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { MarkdownView } from './MarkdownView'
+import { Icon } from './Icon'
 import './nodes.css'
 
 export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
@@ -32,7 +33,7 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
             aria-label="Fechar nota"
             title="Remover nó"
           >
-            ×
+            <Icon name="X" size={14} animation="pop" />
           </button>
         </div>
         {mode === 'edit' ? (
