@@ -161,6 +161,41 @@
   color: var(--danger, #e5484d);
 }
 
+/* Onda 5 (F06/F07): barra de formatação da nota — swatches de cor, estado ativo dos botões e o
+   campo inline de URL de imagem. */
+.ork-fmt-colors {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+}
+.ork-fmt-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease);
+}
+.ork-fmt-swatch:hover {
+  transform: scale(1.15);
+}
+.ork-fmt--on {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.ork-fmt-imgurl {
+  width: 160px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
 /* Wordmark removido daqui (Fase 15 Task 3): movido para o topo da ProjectsSidebar
    (ProjectsSidebar.css .ork-sidebar-brand*) — isso também resolve a antiga sobreposição
    wordmark/Controls do React Flow. */
