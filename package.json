@@ -51,6 +51,7 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "@tiptap/core": "^3.27.4",
     "@tiptap/extension-image": "^3.27.4",
     "@tiptap/extension-text-style": "^3.27.4",

@@ -407,6 +407,19 @@
   background: var(--accent);
 }
 
+/* Onda 7: nó de desenho (Excalidraw) — ocupa todo o corpo do nó. */
+.ork-draw {
+  overflow: hidden;
+}
+.ork-draw-canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+.ork-draw-canvas .excalidraw {
+  height: 100%;
+}
+
 .ork-md > :first-child { margin-top: 0; }
 .ork-md > :last-child { margin-bottom: 0; }
 .ork-md h1, .ork-md h2, .ork-md h3, .ork-md h4, .ork-md h5, .ork-md h6 {

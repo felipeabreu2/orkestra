@@ -87,6 +87,12 @@ interface CanvasState {
     position?: { x: number; y: number } | undefined,
     opts?: { path?: string; width?: number; height?: number }
   ) => void
+  // Onda 7: nó de desenho (Excalidraw). data.scene guarda { elements, appState } da cena.
+  addDrawNode: (
+    position?: { x: number; y: number } | undefined,
+    opts?: { width?: number; height?: number }
+  ) => void
+  updateDrawScene: (id: string, scene: unknown) => void
   updateNoteContent: (id: string, content: string) => void
   // Onda 5: nota rich-text (TipTap). html = conteúdo do editor; color = cor do post-it (F07).
   // updateNoteContent fica para compatibilidade/migração das notas antigas (Markdown → html).
@@ -300,6 +306,29 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         ]
       }
     }),
+  addDrawNode: (position, opts): void =>
+    set((state) => {
+      const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
+      return {
+        ...histPatch(state),
+        nodes: [
+          ...state.nodes,
+          {
+            id: `draw-${crypto.randomUUID()}`,
+            type: 'draw',
+            position: pos,
+            data: { scene: undefined },
+            width: opts?.width ?? 420,
+            height: opts?.height ?? 300
+          }
+        ]
+      }
+    }),
+  updateDrawScene: (id, scene): void =>
+    set((state) => ({
+      ...histPatch(state, 'draw:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, scene } } : n))
+    })),
   updateNoteContent: (id, content): void =>
     set((state) => ({
       ...histPatch(state, 'note:' + id),

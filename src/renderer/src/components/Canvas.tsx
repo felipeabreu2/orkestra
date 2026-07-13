@@ -8,6 +8,7 @@ import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
 import { FileTreeNode } from './FileTreeNode'
 import { FileNode } from './FileNode'
+import { DrawNode } from './DrawNode'
 import { GroupNode } from './GroupNode'
 import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
@@ -27,6 +28,7 @@ const nodeTypes = {
   portal: PortalFlowNode,
   filetree: FileTreeNode,
   file: FileNode,
+  draw: DrawNode,
   group: GroupNode
 }
 
@@ -70,6 +72,7 @@ export function Canvas(): JSX.Element {
   const addPortalNode = useCanvasStore((s) => s.addPortalNode)
   const addFileTreeNode = useCanvasStore((s) => s.addFileTreeNode)
   const addFileNode = useCanvasStore((s) => s.addFileNode)
+  const addDrawNode = useCanvasStore((s) => s.addDrawNode)
   const removeNode = useCanvasStore((s) => s.removeNode)
   const removeEdgesForNode = useCanvasStore((s) => s.removeEdgesForNode)
   const activeCwd = useCanvasStore((s) => s.activeCwd)
@@ -82,7 +85,7 @@ export function Canvas(): JSX.Element {
   const [newTermOpen, setNewTermOpen] = useState(false)
   // "Arrastar para criar" (Figma-like): ferramenta pendente escolhida na barra (nota/site/arquivos).
   // Enquanto != null, o CreateOverlay captura o gesto e cria o item com a posição/tamanho arrastados.
-  const [pendingTool, setPendingTool] = useState<'note' | 'portal' | 'filetree' | null>(null)
+  const [pendingTool, setPendingTool] = useState<'note' | 'portal' | 'filetree' | 'draw' | null>(null)
   const [minimapOn, setMinimapOn] = useState(true)
   // R4: menu de contexto (botão direito). nodeId!==null => menu de ações do nó; senão => menu de
   // criação no ponto do cursor (flowX/flowY já em coordenadas do canvas). x/y são de tela (posição
@@ -132,6 +135,7 @@ export function Canvas(): JSX.Element {
     if (pendingTool === 'note') addNoteNode(pos, opts)
     else if (pendingTool === 'portal') addPortalNode(pos, opts)
     else if (pendingTool === 'filetree') addFileTreeNode(pos, opts)
+    else if (pendingTool === 'draw') addDrawNode(pos, opts)
     setPendingTool(null)
   }
 
@@ -263,6 +267,7 @@ export function Canvas(): JSX.Element {
         }}
         onFiles={() => setPendingTool('filetree')}
         onPortal={() => setPendingTool('portal')}
+        onDraw={() => setPendingTool('draw')}
         onOpenIde={() => {
           // R1: abre a pasta do projeto no editor externo (o main tenta VS Code/Cursor/… e cai no
           // gerenciador de arquivos se nenhum estiver instalado). No-op sem pasta vinculada.

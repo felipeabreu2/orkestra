@@ -19,6 +19,7 @@ export function Topbar({
   onFile,
   onFiles,
   onPortal,
+  onDraw,
   onOpenIde
 }: {
   cwd: string | null
@@ -31,6 +32,7 @@ export function Topbar({
   onFile: () => void
   onFiles: () => void
   onPortal: () => void
+  onDraw: () => void
   onOpenIde: () => void
 }): JSX.Element {
   const workspace = cwd ? basename(cwd) : 'My Workspace'
@@ -84,7 +86,7 @@ export function Topbar({
         <button className="ork-topbar-tool" title="Texto (em breve)" aria-label="Texto" disabled>
           <Icon name="ALargeSmall" animation="pop" />
         </button>
-        <button className="ork-topbar-tool" title="Desenhar (em breve)" aria-label="Desenhar" disabled>
+        <button className="ork-topbar-tool" title="Desenhar" aria-label="Desenhar" onClick={onDraw}>
           <Icon name="PenTool" animation="wiggle" />
         </button>
       </div>
