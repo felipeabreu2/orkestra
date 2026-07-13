@@ -104,7 +104,12 @@ describe('buildPaletteItems', () => {
     const actions = noopActions()
     const circuito = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], edgeStyle: 'circuito', actions })
     const itemCircuito = circuito.find((i) => i.id === 'action:edgestyle')
-    expect(itemCircuito?.label).toContain('circuito → curva')
+    expect(itemCircuito?.label).toContain('circuito → corda')
+
+    const corda = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], edgeStyle: 'corda', actions: noopActions() })
+    const itemCorda = corda.find((i) => i.id === 'action:edgestyle')
+    expect(itemCorda?.label).toContain('corda → curva')
+
     itemCircuito?.run?.()
     expect(actions.toggleEdgeStyle).toHaveBeenCalled()
   })

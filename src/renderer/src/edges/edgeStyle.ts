@@ -1,17 +1,20 @@
-// R5 (estilo de conexão): as conexões do canvas podem ser desenhadas como curvas (bezier, padrão)
-// ou como "circuito" (trilhos ortogonais com cantos de 90°). Preferência global de UI, persistida
-// em localStorage — espelha o padrão de theme.ts, mas SEM tocar o DOM: a reatividade vem do store
-// (TypedEdge lê s.edgeStyle), então aqui só resolvemos/persistimos o valor.
-export type EdgeStyle = 'curva' | 'circuito'
+// R5/Onda 2: estilo global das conexões — 'curva' (bezier), 'circuito' (trilhos ortogonais) ou
+// 'corda' (bezier com barriga por gravidade + traço pontilhado grosso + balanço; F02). Preferência
+// de UI persistida em localStorage; TypedEdge lê s.edgeStyle. 'corda' é o padrão (a referência usa
+// cordas), mas uma preferência salva anterior é respeitada.
+export type EdgeStyle = 'curva' | 'circuito' | 'corda'
 
 const STORAGE_KEY = 'orkestra-edge-style'
 
 export function resolveInitialEdgeStyle(stored: string | null): EdgeStyle {
-  return stored === 'circuito' ? 'circuito' : 'curva'
+  if (stored === 'curva' || stored === 'circuito' || stored === 'corda') return stored
+  return 'corda'
 }
 
 export function nextEdgeStyle(current: EdgeStyle): EdgeStyle {
-  return current === 'curva' ? 'circuito' : 'curva'
+  if (current === 'curva') return 'circuito'
+  if (current === 'circuito') return 'corda'
+  return 'curva'
 }
 
 export function loadEdgeStyle(): EdgeStyle {

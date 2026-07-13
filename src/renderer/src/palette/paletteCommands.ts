@@ -1,3 +1,5 @@
+import { nextEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
+
 export interface PaletteItem {
   id: string
   label: string
@@ -62,7 +64,7 @@ function connected(edges: PaletteEdge[], a: string, b: string): boolean {
 
 export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
   const { nodes, edges, selectedNodes, actions } = ctx
-  const edgeStyle = ctx.edgeStyle ?? 'curva'
+  const edgeStyle = ctx.edgeStyle ?? 'corda'
   const items: PaletteItem[] = [
     { id: 'action:terminal', label: 'Criar Terminal', kind: 'action', run: actions.addTerminalNode },
     { id: 'action:note', label: 'Criar Nota', kind: 'action', run: actions.addNoteNode },
@@ -73,7 +75,7 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
   // R5: alterna o estilo de conexão. O rótulo mostra a direção da troca (estado atual -> próximo).
   items.push({
     id: 'action:edgestyle',
-    label: `Estilo de conexão: ${edgeStyle === 'circuito' ? 'circuito → curva' : 'curva → circuito'}`,
+    label: `Estilo de conexão: ${edgeStyle} → ${nextEdgeStyle(edgeStyle as EdgeStyle)}`,
     kind: 'action',
     run: actions.toggleEdgeStyle
   })
