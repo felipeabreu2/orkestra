@@ -8,6 +8,7 @@ import { ProjectManager } from './projects/ProjectManager'
 import { registerProjectIpc } from './projects/registerProjectIpc'
 import { FileTreeService } from './filetree/FileTreeService'
 import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
+import { registerIdeIpc } from './ide/registerIdeIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
 import { AgentBus } from './orchestration/AgentBus'
@@ -80,6 +81,13 @@ const orchestration = new OrchestrationServer({
     agentBus.ask(p, prompt)
     const output = await agentBus.waitForIdle(p)
     return { ok: true, output }
+  },
+  // R2 (orq ask --raw): escreve os bytes crus no pty do agente (sem '\n') — controlar TUIs/pagers.
+  askRaw: (name, data) => {
+    const p = resolvePtyByName(name)
+    if (!p) return { ok: false, error: 'not found' }
+    agentBus.writeRaw(p, data)
+    return { ok: true }
   },
   check: (name) => {
     const p = resolvePtyByName(name)
@@ -206,6 +214,9 @@ app.whenReady().then(async () => {
   // file-explorer do canvas (renderer, Task 2). Sem estado próprio — não precisa de bootstrap.
   const fileTreeService = new FileTreeService()
   registerFileTreeIpc(ipcMain, fileTreeService)
+  // R1 (abrir no editor externo): handler 'ide:open' — abre a pasta do projeto no editor de código
+  // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.
+  registerIdeIpc(ipcMain)
   createWindow()
   // Auto-update (Fase 12 Task 2): no-op em dev/test (app.isPackaged=false); só em build
   // empacotado tenta checkForUpdatesAndNotify() contra o feed do GitHub Releases (ver

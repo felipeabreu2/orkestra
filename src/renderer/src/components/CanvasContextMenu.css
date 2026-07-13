@@ -1,0 +1,49 @@
+/* R4: menu de contexto do canvas. Overlay em tela cheia (fecha ao clicar fora) + card do menu
+   posicionado no cursor. Tokens => tema claro/escuro. */
+
+.ork-ctxmenu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.ork-ctxmenu {
+  position: fixed;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ork-ctxmenu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.ork-ctxmenu-item:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+.ork-ctxmenu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ork-ctxmenu-item--danger {
+  color: var(--err, #e5615f);
+}
+.ork-ctxmenu-item--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err, #e5615f) 14%, transparent);
+}

@@ -61,6 +61,14 @@ function SearchIcon(): JSX.Element {
     </svg>
   )
 }
+function CodeIcon(): JSX.Element {
+  return (
+    <svg {...svg}>
+      <path d="M9 8l-4 4 4 4" />
+      <path d="M15 8l4 4-4 4" />
+    </svg>
+  )
+}
 
 export function Topbar({
   cwd,
@@ -68,7 +76,8 @@ export function Topbar({
   onNote,
   onPortal,
   onFiles,
-  onSearch
+  onSearch,
+  onOpenIde
 }: {
   cwd: string | null
   onNewTerminal: () => void
@@ -76,12 +85,23 @@ export function Topbar({
   onPortal: () => void
   onFiles: () => void
   onSearch: () => void
+  onOpenIde: () => void
 }): JSX.Element {
   return (
     <div className="ork-topbar">
       <div className="ork-topbar-left" title={cwd ?? 'Nenhuma pasta vinculada a este projeto'}>
         <FolderIcon />
         <span className="ork-topbar-path">{cwd ?? 'Sem pasta'}</span>
+        {/* R1: abrir a pasta do projeto no editor de código externo. Desabilitado sem pasta. */}
+        <button
+          className="ork-topbar-ide"
+          title={cwd ? 'Abrir no editor de código' : 'Vincule uma pasta ao projeto para abrir no editor'}
+          aria-label="Abrir no editor de código"
+          onClick={onOpenIde}
+          disabled={!cwd}
+        >
+          <CodeIcon />
+        </button>
       </div>
       <div className="ork-topbar-tools">
         <button className="ork-topbar-tool" title="Novo terminal" aria-label="Novo terminal" onClick={onNewTerminal}>

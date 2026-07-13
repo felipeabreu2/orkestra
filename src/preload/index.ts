@@ -83,6 +83,12 @@ const api = {
       return () => ipcRenderer.removeListener('orchestration:command', listener)
     }
   },
+  // R1 (abrir no editor externo): pede ao main para abrir um caminho (a pasta do projeto ativo) no
+  // editor de código instalado, com fallback pro gerenciador de arquivos do SO. Retorna qual editor
+  // abriu ({ ok, editor }) — o renderer nunca toca em child_process/shell.
+  ide: {
+    open: (path: string): Promise<{ ok: boolean; editor?: string }> => ipcRenderer.invoke('ide:open', path)
+  },
   // Fase 9 (Portais): o PortalNode reporta {name,url,title,text} ao main a cada did-finish-load
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
   // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.

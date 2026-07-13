@@ -29,11 +29,18 @@ export interface PaletteActions {
   connect: (source: string, target: string) => void
   removeEdge: (id: string) => void
   addSshTerminal: (host: string) => void
+  // R5: alterna o estilo global de conexão (curva <-> circuito).
+  toggleEdgeStyle: () => void
+  // R6: remove todas as conexões de um nó de uma vez.
+  removeEdgesForNode: (nodeId: string) => void
 }
 export interface PaletteContext {
   nodes: PaletteNode[]
   edges: PaletteEdge[]
   selectedNodes: PaletteNode[]
+  // R5: estilo de conexão atual, só para compor o rótulo do item de alternância. Opcional
+  // (default 'curva') — é puramente cosmético, então testes que não o informam seguem válidos.
+  edgeStyle?: string
   actions: PaletteActions
 }
 
@@ -55,12 +62,21 @@ function connected(edges: PaletteEdge[], a: string, b: string): boolean {
 
 export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
   const { nodes, edges, selectedNodes, actions } = ctx
+  const edgeStyle = ctx.edgeStyle ?? 'curva'
   const items: PaletteItem[] = [
     { id: 'action:terminal', label: 'Criar Terminal', kind: 'action', run: actions.addTerminalNode },
     { id: 'action:note', label: 'Criar Nota', kind: 'action', run: actions.addNoteNode },
     { id: 'action:portal', label: 'Criar Portal', kind: 'action', run: actions.addPortalNode },
     { id: 'action:filetree', label: 'Criar Árvore de Arquivos', kind: 'action', run: actions.addFileTreeNode }
   ]
+
+  // R5: alterna o estilo de conexão. O rótulo mostra a direção da troca (estado atual -> próximo).
+  items.push({
+    id: 'action:edgestyle',
+    label: `Estilo de conexão: ${edgeStyle === 'circuito' ? 'circuito → curva' : 'curva → circuito'}`,
+    kind: 'action',
+    run: actions.toggleEdgeStyle
+  })
 
   // Fase 27 (Task 4): "Criar terminal SSH remoto" é uma ação global (não depende de seleção),
   // igual às 4 acima, mas pede um valor (destino) — por isso usa `input` em vez de `run`, o mesmo
@@ -82,6 +98,15 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
     const name = nodeLabel(n)
     items.push({ id: `ctx:focus:${n.id}`, label: `Focar ${name}`, kind: 'context', run: () => actions.focusNode(n.id) })
     items.push({ id: `ctx:remove:${n.id}`, label: `Remover ${name}`, kind: 'context', run: () => actions.removeNode(n.id) })
+    // R6: só oferece "remover todas as conexões" quando o nó realmente tem alguma edge.
+    if (edges.some((e) => e.source === n.id || e.target === n.id)) {
+      items.push({
+        id: `ctx:disconnectall:${n.id}`,
+        label: `Remover todas as conexões de ${name}`,
+        kind: 'disconnect',
+        run: () => actions.removeEdgesForNode(n.id)
+      })
+    }
     if (n.type === 'terminal') {
       items.push({
         id: `ctx:rename:${n.id}`,

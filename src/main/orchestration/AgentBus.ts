@@ -60,6 +60,13 @@ export class AgentBus {
   ask(ptyId: string, prompt: string): void {
     this.pty.write(ptyId, prompt + '\n')
   }
+  // R2 (orq ask --raw): escreve os bytes no pty EXATAMENTE como recebidos — sem o '\n' que ask()
+  // acrescenta. Permite enviar teclas de controle (Ctrl+C, setas, ESC) a um TUI/pager rodando no
+  // agente. A interpretação dos escapes (\x03 etc.) acontece no cliente orq (escapes.ts); aqui já
+  // chega o byte final.
+  writeRaw(ptyId: string, data: string): void {
+    this.pty.write(ptyId, data)
+  }
   read(ptyId: string): string {
     return this.buffers.get(ptyId) ?? ''
   }

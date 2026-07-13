@@ -11,6 +11,7 @@ import {
 } from '@xyflow/react'
 import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapshot'
 import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
+import { loadEdgeStyle, saveEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -28,6 +29,11 @@ interface CanvasState {
   // ProjectsSidebar ao carregar/trocar de projeto (o cwd vive no ProjectManager, no main).
   activeCwd: string | null
   setActiveCwd: (cwd: string | null) => void
+  // R5 (estilo de conexão): 'curva' (bezier, padrão) ou 'circuito' (trilhos ortogonais). Preferência
+  // global de UI lida por TypedEdge — inicializada de localStorage (loadEdgeStyle) e persistida por
+  // setEdgeStyle. Efêmera do ponto de vista do canvas: NÃO entra em serialize()/hydrate().
+  edgeStyle: EdgeStyle
+  setEdgeStyle: (style: EdgeStyle) => void
   // Fase 20 (Task 2): indicador de "atenção do agente" — ids de nós (terminal) cujo agente
   // produziu output e depois ficou ocioso (watcher no AgentBus do main, avisado via
   // window.orkestra.onAgentAttention em Canvas.tsx). Puramente efêmero/UI: nunca serializado
@@ -95,6 +101,9 @@ interface CanvasState {
   // Fase 22 (Task 1): remove uma edge pelo id — usado pelo badge/UI da edge tipada (Task 2) para
   // desconectar sem passar por onEdgesChange (que espera EdgeChange[] do próprio React Flow).
   removeEdge: (id: string) => void
+  // R6: remove de uma vez TODAS as conexões que tocam um nó (como source ou target). Retorna à
+  // mesma referência de state quando o nó não tem nenhuma edge (no-op — o Zustand pula o update).
+  removeEdgesForNode: (nodeId: string) => void
   serialize: () => CanvasSnapshot
   hydrate: (snapshot: CanvasSnapshot) => void
 }
@@ -106,6 +115,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setSwitching: (v): void => set({ switching: v }),
   activeCwd: null,
   setActiveCwd: (cwd): void => set({ activeCwd: cwd }),
+  edgeStyle: loadEdgeStyle(),
+  setEdgeStyle: (style): void => {
+    saveEdgeStyle(style)
+    set({ edgeStyle: style })
+  },
   attention: new Set(),
   setAttention: (nodeId, on): void =>
     set((state) => {
@@ -377,6 +391,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return { edges: addEdge(edge, state.edges) }
     }),
   removeEdge: (id): void => set((state) => ({ edges: state.edges.filter((e) => e.id !== id) })),
+  removeEdgesForNode: (nodeId): void =>
+    set((state) => {
+      const next = state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
+      // Sem nenhuma edge tocando o nó, devolve a MESMA referência (evita re-render à toa).
+      return next.length === state.edges.length ? state : { edges: next }
+    }),
   serialize: (): CanvasSnapshot => ({
     version: 2,
     nodes: get().nodes.map((n) => {

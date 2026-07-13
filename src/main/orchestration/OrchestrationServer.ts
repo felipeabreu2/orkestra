@@ -15,6 +15,9 @@ interface Opts {
   // Fase 14 (Task 1): variante bloqueante de ask — usada por POST /ask quando o body traz
   // wait:true. Aguarda o agente ficar ocioso (ver AgentBus.waitForIdle) antes de responder.
   askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
+  // R2 (orq ask --raw): usada por POST /ask quando o body traz raw:true. Escreve os bytes crus no
+  // pty do agente (sem '\n'), para controlar TUIs/pagers. Fire-and-forget, como o ask normal.
+  askRaw?: (name: string, data: string) => { ok: boolean; error?: string }
   check?: (name: string) => { output: string } | null
   getPortalState?: (name: string) => PortalState | null
 }
@@ -232,9 +235,20 @@ export class OrchestrationServer {
         // rejeite — preserva o comportamento pré-refactor de responder 400 nesse caso.
         void (async () => {
           try {
-            const parsed = raw as { name?: unknown; prompt?: unknown; wait?: unknown }
+            const parsed = raw as { name?: unknown; prompt?: unknown; wait?: unknown; raw?: unknown }
             if (typeof parsed.name !== 'string' || typeof parsed.prompt !== 'string') {
               res.writeHead(400).end('bad request')
+              return
+            }
+            // R2 (orq ask --raw): raw:true escreve os bytes crus no pty e responde na hora (sem
+            // esperar) — precede o ramo wait para não confundir os dois modos.
+            if (parsed.raw === true) {
+              const result = this.opts.askRaw?.(parsed.name, parsed.prompt) ?? { ok: false, error: 'not available' }
+              if (result.ok) {
+                res.writeHead(200).end('ok')
+              } else {
+                res.writeHead(404).end(result.error ?? 'not found')
+              }
               return
             }
             if (parsed.wait === true) {

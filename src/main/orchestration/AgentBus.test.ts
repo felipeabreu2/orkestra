@@ -41,6 +41,17 @@ describe('AgentBus', () => {
     bus.ask(id, 'olá agente')
     expect(f.pty.write).toHaveBeenCalledWith('olá agente\n')
   })
+  // R2 (orq ask --raw): writeRaw escreve os bytes EXATAMENTE como recebidos — sem o '\n' que ask()
+  // acrescenta — para permitir teclas de controle (Ctrl+C etc.) a um TUI rodando no agente.
+  it('writeRaw escreve os bytes crus no pty, sem acrescentar newline', () => {
+    const f = fakePty()
+    const mgr = new PtyManager(() => f.pty)
+    const bus = new AgentBus(mgr)
+    const id = mgr.spawn({})
+    bus.writeRaw(id, '\x03') // Ctrl+C
+    expect(f.pty.write).toHaveBeenCalledWith('\x03')
+    expect(f.pty.write).not.toHaveBeenCalledWith('\x03\n')
+  })
   it('read limita o buffer aos últimos ~8000 chars', () => {
     const f = fakePty()
     const mgr = new PtyManager(() => f.pty)

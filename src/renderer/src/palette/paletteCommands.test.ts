@@ -13,7 +13,9 @@ function noopActions(): PaletteActions {
     setTerminalRole: vi.fn(),
     connect: vi.fn(),
     removeEdge: vi.fn(),
-    addSshTerminal: vi.fn()
+    addSshTerminal: vi.fn(),
+    toggleEdgeStyle: vi.fn(),
+    removeEdgesForNode: vi.fn()
   }
 }
 
@@ -85,10 +87,47 @@ describe('buildPaletteItems', () => {
     const actions = noopActions()
     const items = buildPaletteItems({ nodes: [a, b], edges, selectedNodes: [a], actions })
     expect(items.some((i) => i.kind === 'connect')).toBe(false)
-    const disc = items.find((i) => i.kind === 'disconnect')
+    // Busca pelo id específico da edge: a mesma seleção também gera o item R6 "remover todas as
+    // conexões" (kind 'disconnect'), então um find por kind poderia pegar o item errado.
+    const disc = items.find((i) => i.id === 'disconnect:t1:e1')
     expect(disc?.label).toContain('B')
     disc?.run?.()
     expect(actions.removeEdge).toHaveBeenCalledWith('e1')
+  })
+
+  // R5: item global de alternância do estilo de conexão, com rótulo dependente do estado atual.
+  it('inclui o item de alternar estilo de conexão, com rótulo pela direção da troca', () => {
+    const curva = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], edgeStyle: 'curva', actions: noopActions() })
+    const itemCurva = curva.find((i) => i.id === 'action:edgestyle')
+    expect(itemCurva?.label).toContain('curva → circuito')
+
+    const actions = noopActions()
+    const circuito = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], edgeStyle: 'circuito', actions })
+    const itemCircuito = circuito.find((i) => i.id === 'action:edgestyle')
+    expect(itemCircuito?.label).toContain('circuito → curva')
+    itemCircuito?.run?.()
+    expect(actions.toggleEdgeStyle).toHaveBeenCalled()
+  })
+
+  // R6: "remover todas as conexões" só aparece quando o nó selecionado tem alguma edge.
+  it('oferece "remover todas as conexões" só quando o nó selecionado tem edges', () => {
+    const a = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
+    const b = { id: 't2', type: 'terminal', data: { name: 'B' } }
+    // sem edges: não aparece
+    const semEdges = buildPaletteItems({ nodes: [a, b], edges: [], selectedNodes: [a], actions: noopActions() })
+    expect(semEdges.some((i) => i.id === 'ctx:disconnectall:t1')).toBe(false)
+    // com edge tocando t1: aparece e aciona removeEdgesForNode
+    const actions = noopActions()
+    const comEdges = buildPaletteItems({
+      nodes: [a, b],
+      edges: [{ id: 'e1', source: 't1', target: 't2' }],
+      selectedNodes: [a],
+      actions
+    })
+    const item = comEdges.find((i) => i.id === 'ctx:disconnectall:t1')
+    expect(item?.label).toContain('A')
+    item?.run?.()
+    expect(actions.removeEdgesForNode).toHaveBeenCalledWith('t1')
   })
 
   it('nó não-terminal selecionado não oferece renomear/definir papel', () => {
