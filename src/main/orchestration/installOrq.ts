@@ -39,7 +39,8 @@ fi
 
 // Copia o orq compilado para ~/.orkestra/bin/orq e instala o onboarding + o wrapper `claude`.
 // Retorna o diretório bin, para ser prefixado no PATH dos terminais spawnados.
-export function installOrq(compiledBinPath: string): string {
+// `platform` é injetável (default process.platform) só para teste do ramo Windows.
+export function installOrq(compiledBinPath: string, platform: NodeJS.Platform = process.platform): string {
   const home = homedir()
   const orkestraDir = join(home, '.orkestra')
   const binDir = join(orkestraDir, 'bin')
@@ -49,8 +50,18 @@ export function installOrq(compiledBinPath: string): string {
   copyFileSync(compiledBinPath, dest)
   chmodSync(dest, 0o755)
 
+  // BLD-1/BLD-7 (auditoria 2026-07-14): no Windows o `orq` (bin.js com shebang #!/usr/bin/env node)
+  // não roda como comando bare — cmd.exe procura orq.exe/.cmd/.bat via PATHEXT. Escreve um shim
+  // orq.cmd (padrão npm) que invoca `node` sobre o arquivo copiado. %~dp0 é o diretório do próprio
+  // .cmd; CRLF é a convenção de arquivos de lote do Windows. Só no Windows — no POSIX o shebang basta.
+  if (platform === 'win32') {
+    writeFileSync(join(binDir, 'orq.cmd'), '@echo off\r\nnode "%~dp0orq" %*\r\n', 'utf-8')
+  }
+
   // Onboarding + wrapper do claude (best-effort: se falhar, o orq ainda funciona e o claude roda
   // sem onboarding). Reescritos a cada boot, então editar o texto acima basta para atualizar.
+  // O wrapper `claude` é um script sh — no Windows ele é escrito mas não é usado (registerPtyIpc
+  // cai no `claude` puro lá); um claude.cmd de Windows é um follow-up que precisa de máquina Windows.
   writeFileSync(join(orkestraDir, 'onboarding.txt'), ONBOARDING, 'utf-8')
   const claudeWrapper = join(binDir, 'claude')
   writeFileSync(claudeWrapper, CLAUDE_WRAPPER, 'utf-8')

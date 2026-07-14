@@ -6,6 +6,8 @@ export interface IPtyLike {
   kill(): void
 }
 
+import { defaultShell } from './shell'
+
 export type PtySpawner = (
   file: string,
   args: string[],
@@ -40,7 +42,8 @@ export class PtyManager {
     initialCommand?: string
   }): string {
     const id = String(this.nextId++)
-    const file = opts.file ?? process.env.SHELL ?? '/bin/bash'
+    // BLD-1: shell padrão por plataforma (Windows: ComSpec/cmd.exe; POSIX: $SHELL/bin/bash).
+    const file = opts.file ?? defaultShell()
     const pty = this.spawner(file, opts.args ?? [], {
       cwd: opts.cwd ?? process.env.HOME ?? process.cwd(),
       env: { ...process.env, ...opts.env },

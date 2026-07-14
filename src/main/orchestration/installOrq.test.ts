@@ -14,12 +14,12 @@ describe('installOrq', () => {
     if (home) rmSync(home, { recursive: true, force: true })
   })
 
-  function run(): string {
+  function run(platform?: NodeJS.Platform): string {
     home = mkdtempSync(join(tmpdir(), 'orq-home-'))
     process.env.HOME = home
     const fakeBin = join(home, 'fake-orq.js')
     writeFileSync(fakeBin, '// orq fake')
-    return installOrq(fakeBin)
+    return platform ? installOrq(fakeBin, platform) : installOrq(fakeBin)
   }
 
   it('instala orq + wrapper claude + onboarding, todos executáveis onde faz sentido', () => {
@@ -41,6 +41,20 @@ describe('installOrq', () => {
     const binDir = run()
     // sh -n valida a sintaxe sem executar — pega qualquer escape de template quebrado.
     expect(() => execFileSync('sh', ['-n', join(binDir, 'claude')])).not.toThrow()
+  })
+
+  // BLD-1/BLD-7: no Windows, escreve um shim orq.cmd (node sobre o orq.js) para o `orq` rodar como
+  // comando bare; no POSIX o shebang basta e nenhum .cmd é escrito.
+  it('Windows: escreve orq.cmd que invoca node sobre o orq', () => {
+    const binDir = run('win32')
+    const cmd = readFileSync(join(binDir, 'orq.cmd'), 'utf-8')
+    expect(cmd).toContain('node')
+    expect(cmd).toContain('%~dp0orq')
+  })
+
+  it('POSIX: não escreve orq.cmd (o shebang basta)', () => {
+    const binDir = run('linux')
+    expect(() => statSync(join(binDir, 'orq.cmd'))).toThrow() // não existe
   })
 
   it('o onboarding descreve os comandos orq que o agente pode usar', () => {

@@ -1,4 +1,5 @@
 import type { IpcMain, WebContents } from 'electron'
+import { join } from 'node:path'
 import type { PtyManager } from './PtyManager'
 import { isValidSshHost } from '../../shared/ssh'
 import { PtyDataBatcher } from './PtyDataBatcher'
@@ -73,9 +74,12 @@ export function registerPtyIpc(
     // wrapper (~/.orkestra/bin/claude) injeta o onboarding, mas o `.zshrc` do usuário costuma
     // reordenar o PATH e mascará-lo com o binário real (ex.: prepende ~/.local/bin) — então não dá
     // pra confiar que "claude" resolva pro wrapper. O caminho absoluto ignora o PATH por completo.
+    // BLD-1: no Windows o wrapper é um script `sh` (inexecutável lá) — cai no `claude` puro (sem
+    // onboarding, mas funcional); o wrapper .cmd de Windows é um follow-up que precisa de máquina
+    // Windows para validar. join() garante o separador de caminho correto por plataforma.
     const resolvedCommand =
-      initialCommand === 'claude' && baseEnv.ORKESTRA_BIN
-        ? `${baseEnv.ORKESTRA_BIN}/claude`
+      initialCommand === 'claude' && baseEnv.ORKESTRA_BIN && process.platform !== 'win32'
+        ? join(baseEnv.ORKESTRA_BIN, 'claude')
         : initialCommand
     const id = ptyManager.spawn({
       cols,

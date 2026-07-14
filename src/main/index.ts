@@ -11,6 +11,7 @@ import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
 import { registerIdeIpc } from './ide/registerIdeIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { installOrq } from './orchestration/installOrq'
+import { buildEnvPath } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
 import { setupAutoUpdater } from './updater'
 import type { CanvasMirror, PortalState } from '../shared/orchestration'
@@ -365,15 +366,18 @@ app.whenReady().then(async () => {
   // installOrq é só cópia/writeFile de arquivos pequenos — não atrasa o boot de forma perceptível.
   try {
     const binDir = installOrq(join(__dirname, '../orq/bin.js'))
+    // BLD-2: augmenta o PATH com os diretórios comuns de instalação que faltam num app empacotado
+    // lançado pelo Finder (PATH mínimo do launchd) — em dev é no-op. Separador por plataforma.
+    const { path, realPath } = buildEnvPath(binDir, process.env.PATH ?? '', process.platform, app.getPath('home'))
     orchestrationEnv = {
       // Diretório dos wrappers/orq. registerPtyIpc usa para chamar o wrapper `claude` pelo CAMINHO
       // ABSOLUTO no auto-início — o PATH não é confiável (o .zshrc do usuário o reordena e mascara
       // o wrapper com o binário real).
       ORKESTRA_BIN: binDir,
-      // PATH original (sem o binDir) — o wrapper `claude` usa para achar o binário real do claude
+      // PATH augmentado SEM o binDir — o wrapper `claude` usa para achar o binário real do claude
       // sem chamar a si mesmo (ver installOrq).
-      ORKESTRA_REAL_PATH: process.env.PATH ?? '',
-      PATH: `${binDir}:${process.env.PATH ?? ''}`
+      ORKESTRA_REAL_PATH: realPath,
+      PATH: path
     }
   } catch (err) {
     console.error('[orchestration] falha ao instalar o orq:', err)
