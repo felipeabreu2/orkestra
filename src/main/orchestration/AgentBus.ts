@@ -3,6 +3,11 @@ import type { PtyManager } from '../pty/PtyManager'
 const MAX = 8000
 const DEFAULT_IDLE_MS = 1500
 const DEFAULT_TIMEOUT_MS = 120000
+// PTY-4 (auditoria 2026-07-14): teto do delta acumulado por waitForIdle. Sem ele, um agente com
+// output contínuo sob `orq ask --wait` acumularia sem limite por até timeoutMs (120s) — output
+// pesado poderia chegar a centenas de MB no processo main. Mantém a cauda (o fim da resposta é o
+// que interessa), como o buffer de read() acima.
+const MAX_WAIT_DELTA = 256 * 1024
 // Fase 20 (Task 1): default do watcher de atenção (abaixo) — distinto do DEFAULT_IDLE_MS do
 // waitForIdle acima (propósito diferente: um é polling bloqueante sob demanda, o outro é um
 // watcher contínuo e passivo). Valor empírico (mesma ressalva de DEFAULT_IDLE_MS).
@@ -143,8 +148,14 @@ export class AgentBus {
       this.pty.onData(ptyId, (chunk) => {
         if (done) return
         delta += chunk
+        // PTY-4: teto do acumulador — mantém só a cauda para não crescer sem limite.
+        if (delta.length > MAX_WAIT_DELTA) delta = delta.slice(-MAX_WAIT_DELTA)
         resetIdleTimer() // arma/reseta o timer de ociosidade só quando há saída de verdade
       })
+      // PTY-8 (auditoria 2026-07-14): fast-path de saída — se o pty morrer durante a espera (agente
+      // fechado no meio de um `orq ask --wait`), resolve NA HORA com o que houver, em vez de
+      // pendurar a requisição HTTP até o teto de 120s. finish() é idempotente (guard `done`).
+      this.pty.onExit(ptyId, finish)
     })
   }
 }

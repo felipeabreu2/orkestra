@@ -17,7 +17,12 @@ export function registerPtyIpc(
   // em produção) — chamado a cada pty:spawn, nunca cacheado, então trocar de projeto muda a pasta
   // dos PRÓXIMOS terminais sem afetar os já abertos. Parâmetro opcional/appended por
   // retrocompatibilidade; sem ele (ou sem cwd ativo), o fallback de HOME em PtyManager.spawn segue valendo.
-  getProjectCwd?: () => string | undefined
+  getProjectCwd?: () => string | undefined,
+  // Escopo de projeto (auditoria 2026-07-14): id do projeto ATIVO no momento do spawn — vira
+  // ORKESTRA_PROJECT_ID no env do pty, e o orq o envia em toda request (x-orkestra-project) para
+  // o servidor rejeitar comandos de agentes cujo projeto não está mais ativo (os ptys sobrevivem
+  // à troca de projeto). Late-bound como getProjectCwd; opcional por retrocompatibilidade.
+  getProjectId?: () => string | undefined
 ): void {
   type SpawnOpts = {
     cwd?: string
@@ -56,8 +61,14 @@ export function registerPtyIpc(
     }
     // ORKESTRA_NODE_ID: id do nó deste terminal no canvas — deixa o `orq` resolver "as notas
     // ligadas à MINHA saída" sem o agente precisar adivinhar (ex.: orq note write "...").
+    // ORKESTRA_PROJECT_ID: projeto dono deste terminal (ver comentário em getProjectId acima).
     const baseEnv = getEnv()
-    const env = { ...baseEnv, ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}) }
+    const projectId = getProjectId?.()
+    const env = {
+      ...baseEnv,
+      ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}),
+      ...(projectId ? { ORKESTRA_PROJECT_ID: projectId } : {})
+    }
     // Auto-início do agente: chama o wrapper do Orkestra pelo CAMINHO ABSOLUTO, não pelo nome. O
     // wrapper (~/.orkestra/bin/claude) injeta o onboarding, mas o `.zshrc` do usuário costuma
     // reordenar o PATH e mascará-lo com o binário real (ex.: prepende ~/.local/bin) — então não dá

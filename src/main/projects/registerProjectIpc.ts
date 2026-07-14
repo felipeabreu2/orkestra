@@ -16,7 +16,11 @@ export function registerProjectIpc(
   ipcMain: IpcMain,
   pm: ProjectManager,
   pickDirectory?: PickDirectory,
-  pickFile?: PickFile
+  pickFile?: PickFile,
+  // PTY-1 (auditoria 2026-07-14): chamado com os nodeIds dos terminais do projeto removido, para o
+  // main matar os ptys (que sobrevivem à troca de projeto e ficariam órfãos vivos após a remoção).
+  // Opcional/appended por retrocompatibilidade (testes e chamadores antigos seguem válidos).
+  onProjectRemoved?: (nodeIds: string[]) => void
 ): void {
   ipcMain.handle('projects:list', () => pm.list())
   // Fase 17 (Task 1): create agora aceita uma pasta (cwd) opcional — escolhida no renderer via
@@ -24,7 +28,11 @@ export function registerProjectIpc(
   ipcMain.handle('projects:create', (_e, name: string, cwd?: string) => pm.create(name, cwd))
   ipcMain.handle('projects:switch', (_e, id: string) => pm.switch(id))
   ipcMain.handle('projects:rename', (_e, id: string, name: string) => pm.rename(id, name))
-  ipcMain.handle('projects:remove', (_e, id: string) => pm.remove(id))
+  ipcMain.handle('projects:remove', (_e, id: string) => {
+    const { activeId, snapshot, removedNodeIds } = pm.remove(id)
+    onProjectRemoved?.(removedNodeIds) // mata os ptys dos terminais do projeto removido
+    return { activeId, snapshot } // shape para o renderer é inalterado ({activeId, snapshot})
+  })
   // Fase 15 (Task 3): flush explícito por id na troca de projeto. Via handle (não send/on) porque
   // o renderer precisa AGUARDAR a gravação terminar antes de chamar projects:switch — ao
   // contrário de persistence:save, aqui a ordem entre este flush e o switch importa.

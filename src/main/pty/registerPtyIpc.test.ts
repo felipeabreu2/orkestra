@@ -79,6 +79,33 @@ describe('registerPtyIpc', () => {
     expect(call[2].env.ORKESTRA_TOKEN).toBe('tok')
   })
 
+  // Escopo de projeto (auditoria 2026-07-14): cada pty nasce etiquetado com o projeto ativo no
+  // momento do spawn (ORKESTRA_PROJECT_ID) — o orq envia isso em toda request e o servidor
+  // rejeita comandos de agentes cujo projeto não está mais ativo.
+  it('pty:spawn injeta ORKESTRA_PROJECT_ID (getProjectId) no env do pty', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null, () => ({}), () => {}, undefined, () => 'proj-42')
+
+    await ipc.handlers.get('pty:spawn')!({}, { nodeId: 'terminal-1' })
+
+    const call = spawner.mock.calls[0]
+    expect(call[2].env.ORKESTRA_PROJECT_ID).toBe('proj-42')
+    expect(call[2].env.ORKESTRA_NODE_ID).toBe('terminal-1')
+  })
+
+  it('pty:spawn sem getProjectId (ou sem projeto ativo) não injeta ORKESTRA_PROJECT_ID', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+
+    await ipc.handlers.get('pty:spawn')!({}, {})
+
+    expect(spawner.mock.calls[0][2].env.ORKESTRA_PROJECT_ID).toBeUndefined()
+  })
+
   it('pty:spawn resolve "claude" para o caminho absoluto do wrapper (ORKESTRA_BIN)', async () => {
     // multi-sub: o registerPtyIpc assina o batcher no mesmo pty do auto-início — o fake de slot
     // único apagaria o handler do auto-início e o write nunca dispararia.

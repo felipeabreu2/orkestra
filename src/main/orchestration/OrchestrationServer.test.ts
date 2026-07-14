@@ -14,11 +14,16 @@ function makeServer(
     askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     check?: (name: string) => { output: string } | null
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
+    getActiveProjectId?: () => string | undefined
+    onCommand?: (cmd: OrchestrationCommand) => boolean
   } = {}
 ) {
   server = new OrchestrationServer({
     getMirror: () => ({ edges: [], ...mirror }),
-    onCommand: (c) => commands.push(c),
+    onCommand: (c) => {
+      commands.push(c)
+      return true
+    },
     ...extra
   })
   return server
@@ -496,6 +501,81 @@ describe('OrchestrationServer', () => {
     })
     expect(res.status).toBe(400)
     expect(commands).toEqual([])
+  })
+
+  // Escopo de projeto (auditoria 2026-07-14): os ptys sobrevivem à troca de projeto, então um
+  // agente do projeto A pode emitir comandos enquanto o usuário exibe o projeto B — e o comando
+  // mutaria/leria o canvas de B (o espelho é sempre o canvas EXIBIDO). Cada pty nasce com
+  // ORKESTRA_PROJECT_ID; o orq envia em x-orkestra-project; o servidor rejeita com 409 quando o
+  // projeto do agente NÃO é o ativo. Fail-open quando qualquer lado é desconhecido (header
+  // ausente = orq externo/legado; getActiveProjectId ausente = testes/fakes antigos).
+  it('request com x-orkestra-project DIFERENTE do ativo retorna 409 sem emitir comando', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands, { getActiveProjectId: () => 'proj-B' })
+    const { port, token } = await s.start()
+    const headers = { 'x-orkestra-token': token, 'content-type': 'application/json', 'x-orkestra-project': 'proj-A' }
+    const post = await fetch(`http://127.0.0.1:${port}/note`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ target: 'Nota', content: 'de outro projeto' })
+    })
+    expect(post.status).toBe(409)
+    const get = await fetch(`http://127.0.0.1:${port}/list`, { headers })
+    expect(get.status).toBe(409) // leitura também: o espelho é do projeto exibido, não do agente
+    expect(commands).toEqual([])
+  })
+
+  it('request com x-orkestra-project IGUAL ao ativo passa normalmente', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands, { getActiveProjectId: () => 'proj-A' })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/note`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json', 'x-orkestra-project': 'proj-A' },
+      body: JSON.stringify({ target: 'Nota', content: 'ok' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toHaveLength(1)
+  })
+
+  it('request SEM header de projeto passa (orq externo/legado) mesmo com ativo conhecido', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands, { getActiveProjectId: () => 'proj-A' })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/list`, { headers: { 'x-orkestra-token': token } })
+    expect(res.status).toBe(200)
+  })
+
+  it('sem getActiveProjectId nas opts, o header de projeto é ignorado (fail-open)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/list`, {
+      headers: { 'x-orkestra-token': token, 'x-orkestra-project': 'proj-A' }
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('mismatch de projeto com token INVÁLIDO ainda é 401 (auth vem antes do escopo)', async () => {
+    const s = makeServer({ nodes: [] }, [], { getActiveProjectId: () => 'proj-B' })
+    const { port } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/list`, {
+      headers: { 'x-orkestra-token': 'errado', 'x-orkestra-project': 'proj-A' }
+    })
+    expect(res.status).toBe(401)
+  })
+
+  // BLD-6 (auditoria 2026-07-14): sem renderer vivo (janela fechada → onCommand devolve false), o
+  // POST responde 503 em vez de 200 "ok" — o agente sabe que o comando NÃO foi aplicado.
+  it('POST responde 503 quando onCommand não entrega (sem janela)', async () => {
+    const s = makeServer({ nodes: [] }, [], { onCommand: () => false })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/note`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Nota', content: 'x' })
+    })
+    expect(res.status).toBe(503)
   })
 
 })

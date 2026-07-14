@@ -13,32 +13,32 @@ function fakeIpcMain() {
 }
 
 describe('registerPersistenceIpc', () => {
-  it('persistence:load chama persistence.load', async () => {
-    const persistence = { load: vi.fn(() => null), save: vi.fn() }
+  it('persistence:load chama persistence.load (shape legado: projectId null)', async () => {
+    const persistence = { load: vi.fn(() => null) }
     const ipc = fakeIpcMain()
     registerPersistenceIpc(ipc as any, persistence as any)
     const result = await ipc.handlers.get('persistence:load')!({})
     expect(persistence.load).toHaveBeenCalled()
-    expect(result).toBeNull()
+    expect(result).toEqual({ projectId: null, snapshot: null })
   })
 
-  it('persistence:save encaminha o snapshot a persistence.save', () => {
-    const persistence = { load: vi.fn(), save: vi.fn() }
+  // INT-6 (auditoria 2026-07-14): o canal persistence:save foi REMOVIDO (era o vetor da corrupção
+  // cross-project e não tinha mais chamadores). Só persistence:load permanece registrado.
+  it('persistence:save NÃO é mais registrado (canal removido)', () => {
+    const persistence = { load: vi.fn(() => null) }
     const ipc = fakeIpcMain()
     registerPersistenceIpc(ipc as any, persistence as any)
-    const snap = { version: 1, nodes: [] }
-    ipc.listeners.get('persistence:save')!({}, snap)
-    expect(persistence.save).toHaveBeenCalledWith(snap)
+    expect(ipc.listeners.has('persistence:save')).toBe(false)
   })
 
-  // Fase 15 (Task 2): registerPersistenceIpc agora também aceita um ProjectManager (que não tem
-  // load/save, e sim loadActiveCanvas/saveActiveCanvas) — persistence:load/save passam a operar
-  // sobre o projeto ATIVO. Detecção por duck-typing (presença de loadActiveCanvas), então o
-  // shape antigo {load,save} acima continua funcionando sem mudança (testes anteriores intactos).
-  it('persistence:load delega a pm.loadActiveCanvas quando o alvo é um ProjectManager', async () => {
+  // Fase 15 (Task 2): registerPersistenceIpc também aceita um ProjectManager (loadActiveCanvas em
+  // vez de load), detectado por duck-typing. Fix de corrupção cross-project (2026-07-14): o load
+  // devolve TAMBÉM o id do projeto ativo, num round-trip atômico — o renderer guarda esse id
+  // (canvasStore.activeProjectId) e salva por id explícito (projects:saveCanvas).
+  it('persistence:load delega a pm.loadActiveCanvas e inclui o projectId ativo', async () => {
     const pm = {
       loadActiveCanvas: vi.fn(() => ({ version: 2, nodes: [], edges: [] })),
-      saveActiveCanvas: vi.fn()
+      getActive: vi.fn(() => ({ id: 'proj-1', name: 'P1' }))
     }
     const ipc = fakeIpcMain()
     registerPersistenceIpc(ipc as any, pm as any)
@@ -46,17 +46,6 @@ describe('registerPersistenceIpc', () => {
     const result = await ipc.handlers.get('persistence:load')!({})
 
     expect(pm.loadActiveCanvas).toHaveBeenCalled()
-    expect(result).toEqual({ version: 2, nodes: [], edges: [] })
-  })
-
-  it('persistence:save delega a pm.saveActiveCanvas quando o alvo é um ProjectManager', () => {
-    const pm = { loadActiveCanvas: vi.fn(), saveActiveCanvas: vi.fn() }
-    const ipc = fakeIpcMain()
-    registerPersistenceIpc(ipc as any, pm as any)
-    const snap = { version: 2, nodes: [], edges: [] }
-
-    ipc.listeners.get('persistence:save')!({}, snap)
-
-    expect(pm.saveActiveCanvas).toHaveBeenCalledWith(snap)
+    expect(result).toEqual({ projectId: 'proj-1', snapshot: { version: 2, nodes: [], edges: [] } })
   })
 })

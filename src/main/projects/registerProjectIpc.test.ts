@@ -152,6 +152,21 @@ describe('registerProjectIpc', () => {
     expect(result).toEqual({ activeId: 'p1', snapshot: null })
   })
 
+  // PTY-1 (auditoria 2026-07-14): o handler mata os ptys dos terminais do projeto removido (via
+  // callback) e devolve ao renderer o mesmo shape {activeId, snapshot} de sempre (sem removedNodeIds).
+  it('projects:remove mata os ptys do projeto removido e não vaza removedNodeIds ao renderer', async () => {
+    const mgr = fakeMgr()
+    mgr.remove = vi.fn((_id: string) => ({ activeId: 'p1', snapshot: null, removedNodeIds: ['terminal-a', 'terminal-b'] }))
+    const killed: string[] = []
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager, undefined, undefined, (ids) => killed.push(...ids))
+
+    const result = await ipc.handlers.get('projects:remove')!({}, 'p1')
+
+    expect(killed).toEqual(['terminal-a', 'terminal-b'])
+    expect(result).toEqual({ activeId: 'p1', snapshot: null })
+  })
+
   // Fase 15 (Task 3): flush explícito por id na troca de projeto — precisa ser awaitable
   // (ipcMain.handle/invoke), diferente do persistence:save fire-and-forget, porque o renderer
   // precisa aguardar a gravação do projeto ANTIGO terminar antes de trocar o ativo.

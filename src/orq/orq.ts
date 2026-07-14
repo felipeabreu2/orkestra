@@ -14,12 +14,30 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return { code: 1, out: 'orq: não está rodando dentro de um terminal do Orkestra (faltam ORKESTRA_PORT/ORKESTRA_TOKEN)' }
   }
   const base = `http://127.0.0.1:${port}`
-  const headers = { 'x-orkestra-token': token, 'content-type': 'application/json' }
+  // x-orkestra-project (escopo de projeto, 2026-07-14): o projeto dono DESTE terminal, injetado
+  // no env ao spawnar o pty. O servidor responde 409 quando ele não é mais o projeto ativo —
+  // sem isso, um agente de um projeto em segundo plano mutaria/leria o canvas do projeto exibido.
+  const headers = {
+    'x-orkestra-token': token,
+    'content-type': 'application/json',
+    ...(env.ORKESTRA_PROJECT_ID ? { 'x-orkestra-project': env.ORKESTRA_PROJECT_ID } : {})
+  }
+  // Erro padrão de resposta não-ok: o 409 do escopo de projeto ganha uma orientação acionável
+  // para o agente (é uma condição esperada, não um bug); o resto mantém o "orq: erro <status>".
+  const errOut = (res: { status: number }): string =>
+    res.status === 409
+      ? 'orq: este terminal pertence a um projeto que NÃO está ativo no Orkestra — os comandos orq atuam sobre o projeto aberto na tela. Avise o usuário e aguarde ele voltar para o projeto deste terminal.'
+      : res.status === 503
+        ? 'orq: o Orkestra está sem janela ativa no momento — o comando NÃO foi aplicado. Abra/reative a janela e tente de novo.'
+        : `orq: erro ${res.status}`
 
   const [cmd, sub, ...rest] = argv
   try {
     if (cmd === 'list') {
       const res = await fetch(`${base}/list`, { headers })
+      // Sem o check, um 409 (projeto não-ativo) viraria erro de parse de JSON mascarado como
+      // "falha de conexão" — o agente precisa da mensagem real do errOut.
+      if (!res.ok) return { code: 1, out: errOut(res) }
       const mirror = (await res.json()) as { nodes: { id: string; type: string; name: string }[] }
       const out = mirror.nodes.map((n) => `${n.type}\t${n.name}\t${n.id}`).join('\n')
       return { code: 0, out }
@@ -30,6 +48,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       // não depende de o texto ter sido digitado no prompt no instante da ligação.
       const from = encodeURIComponent(env.ORKESTRA_NODE_ID ?? '')
       const res = await fetch(`${base}/context?from=${from}`, { headers })
+      if (!res.ok) return { code: 1, out: errOut(res) } // mesmo motivo do check em `list`
       const data = (await res.json()) as { context?: string }
       const ctx = (data.context ?? '').trim()
       return { code: 0, out: ctx || 'orq: nenhum bloco (nota/arquivo/site) conectado a este terminal.' }
@@ -52,7 +71,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         headers,
         body: JSON.stringify({ target, content, from: env.ORKESTRA_NODE_ID ?? '' })
       })
-      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
     if (cmd === 'ask') {
       // As flags (--wait/--raw/--batch) podem aparecer em QUALQUER posição depois de "ask" —
@@ -99,7 +118,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ name, prompt: interpretEscapes(prompt), raw: true })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
 
       // --wait: pede wait:true e imprime o output devolvido em vez do "ok" de sempre.
@@ -111,15 +130,15 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         body: JSON.stringify(body)
       })
       if (wait) {
-        if (!res.ok) return { code: 1, out: `orq: erro ${res.status}` }
+        if (!res.ok) return { code: 1, out: errOut(res) }
         const data = (await res.json()) as { output: string }
         return { code: 0, out: data.output }
       }
-      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
     if (cmd === 'check') {
       const res = await fetch(`${base}/check?name=${encodeURIComponent(sub ?? '')}`, { headers })
-      if (!res.ok) return { code: 1, out: `orq: erro ${res.status}` }
+      if (!res.ok) return { code: 1, out: errOut(res) }
       const data = (await res.json()) as { output: string }
       return { code: 0, out: data.output }
     }
@@ -130,7 +149,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         headers,
         body: JSON.stringify({ name: sub, preset, role })
       })
-      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
     if (cmd === 'dismiss') {
       const res = await fetch(`${base}/dismiss`, {
@@ -138,7 +157,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         headers,
         body: JSON.stringify({ target: sub })
       })
-      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
     if (cmd === 'connect') {
       const [target] = rest
@@ -147,7 +166,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         headers,
         body: JSON.stringify({ source: sub, target })
       })
-      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
     if (cmd === 'portal') {
       // sub aqui é a ação (open/navigate/click/fill/eval/snapshot); rest[0] é o nome do portal
@@ -160,7 +179,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, url })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
       if (sub === 'click') {
         const selector = args.join(' ')
@@ -169,7 +188,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, selector })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
       if (sub === 'fill') {
         const [selector, ...textWords] = args
@@ -179,7 +198,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, selector, text })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
       if (sub === 'eval') {
         const js = args.join(' ')
@@ -188,11 +207,11 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, js })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : `orq: erro ${res.status}` }
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
       if (sub === 'snapshot') {
         const res = await fetch(`${base}/portal?name=${encodeURIComponent(target ?? '')}`, { headers })
-        if (!res.ok) return { code: 1, out: `orq: erro ${res.status}` }
+        if (!res.ok) return { code: 1, out: errOut(res) }
         const data = (await res.json()) as { url: string; title: string; text: string }
         return { code: 0, out: `url: ${data.url}\ntitle: ${data.title}\ntext: ${data.text}` }
       }

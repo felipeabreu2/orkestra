@@ -1,4 +1,3 @@
-/* eslint-disable no-control-regex */
 // Remove sequências de escape ANSI/VT (cores SGR, movimento de cursor, limpeza de tela/linha,
 // títulos OSC etc.) de um chunk de saída do pty, preservando o texto legível — usado pela
 // paleta Cmd+K (Fase 24 Task 2) para exibir a resposta do agente sem lixo de terminal.

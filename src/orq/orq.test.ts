@@ -16,11 +16,16 @@ async function startServer(
     askRaw?: (name: string, data: string) => { ok: boolean; error?: string }
     check?: (name: string) => { output: string } | null
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
+    getActiveProjectId?: () => string | undefined
+    onCommand?: (cmd: OrchestrationCommand) => boolean
   } = {}
 ) {
   server = new OrchestrationServer({
     getMirror: () => ({ edges: [], ...mirror }),
-    onCommand: (c) => commands.push(c),
+    onCommand: (c) => {
+      commands.push(c)
+      return true
+    },
     ...extra
   })
   const { port, token } = await server.start()
@@ -322,5 +327,57 @@ describe('runOrq', () => {
     const env = await startServer({ nodes: [] }, [])
     const { code } = await runOrq(['portal', 'blah', 'P'], env)
     expect(code).not.toBe(0)
+  })
+
+  // Escopo de projeto (auditoria 2026-07-14): o orq envia o ORKESTRA_PROJECT_ID do env (projeto
+  // dono do terminal) em x-orkestra-project; agente de projeto que NÃO está ativo recebe uma
+  // orientação clara em vez de mutar/ler o canvas do projeto exibido.
+  it('comando de terminal do projeto ATIVO passa (header igual ao ativo)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands, { getActiveProjectId: () => 'proj-A' })
+    const { code } = await runOrq(['note', 'write', '--to', 'Spec', 'oi'], { ...env, ORKESTRA_PROJECT_ID: 'proj-A' })
+    expect(code).toBe(0)
+    expect(commands).toHaveLength(1)
+  })
+
+  it('comando de terminal de projeto NÃO-ativo falha com orientação (409), sem emitir comando', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands, { getActiveProjectId: () => 'proj-B' })
+    const { code, out } = await runOrq(['note', 'write', '--to', 'Spec', 'oi'], { ...env, ORKESTRA_PROJECT_ID: 'proj-A' })
+    expect(code).toBe(1)
+    expect(out).toContain('NÃO está ativo')
+    expect(commands).toEqual([])
+  })
+
+  it('leituras (list/context) de projeto NÃO-ativo também falham com a mesma orientação', async () => {
+    const env = await startServer({ nodes: [{ id: 'n1', type: 'note', name: 'Spec' }] }, [], {
+      getActiveProjectId: () => 'proj-B'
+    })
+    const list = await runOrq(['list'], { ...env, ORKESTRA_PROJECT_ID: 'proj-A' })
+    expect(list.code).toBe(1)
+    expect(list.out).toContain('NÃO está ativo')
+    const ctx = await runOrq(['context'], { ...env, ORKESTRA_PROJECT_ID: 'proj-A', ORKESTRA_NODE_ID: 't1' })
+    expect(ctx.code).toBe(1)
+    expect(ctx.out).toContain('NÃO está ativo')
+  })
+
+  it('sem ORKESTRA_PROJECT_ID no env (orq externo/legado) segue funcionando', async () => {
+    const env = await startServer({ nodes: [{ id: 'n1', type: 'note', name: 'Spec' }] }, [], {
+      getActiveProjectId: () => 'proj-B'
+    })
+    const { code, out } = await runOrq(['list'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('Spec')
+  })
+})
+
+// BLD-6 (auditoria 2026-07-14): quando o app está sem janela ativa (onCommand devolve false), o
+// servidor responde 503 e o orq traduz numa orientação clara, em vez de dizer "ok".
+describe('runOrq — app sem janela ativa (503)', () => {
+  it('note write com 503 devolve orientação e código != 0', async () => {
+    const env = await startServer({ nodes: [] }, [], { onCommand: () => false })
+    const { code, out } = await runOrq(['note', 'write', '--to', 'X', 'oi'], env)
+    expect(code).not.toBe(0)
+    expect(out).toContain('sem janela ativa')
   })
 })

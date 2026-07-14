@@ -10,7 +10,20 @@ const MAX_BODY = 1_000_000
 
 interface Opts {
   getMirror: () => CanvasMirror
-  onCommand: (cmd: OrchestrationCommand) => void
+  // BLD-6 (auditoria 2026-07-14): devolve se havia um renderer VIVO para receber o comando. Com a
+  // janela fechada / webContents destruído, o main devolve false e o servidor responde 503 em vez
+  // de 200 "ok" — o agente saberia que o comando NÃO foi aplicado, em vez de receber "ok" por algo
+  // jogado fora. (Não cobre o descarte pelo guard de projeto do renderer, que é assíncrono e
+  // invisível ao main — mas fecha o caso "janela fechada", o mais comum e detectável.)
+  onCommand: (cmd: OrchestrationCommand) => boolean
+  // Escopo de projeto (auditoria 2026-07-14): id do projeto ATIVO no ProjectManager, resolvido a
+  // cada request. Os ptys sobrevivem à troca de projeto, então um agente do projeto A pode chamar
+  // o orq enquanto o usuário exibe o projeto B — e tanto os comandos quanto as leituras (/list,
+  // /context) atuariam sobre o canvas EXIBIDO (de B), misturando projetos. Com o resolver
+  // presente e o header x-orkestra-project na request (injetado no env do pty ao spawnar),
+  // mismatch → 409. Opcional para fail-open: header ausente (orq externo/legado) ou resolver
+  // ausente (fakes de teste) mantêm o comportamento anterior.
+  getActiveProjectId?: () => string | undefined
   ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
   // Fase 14 (Task 1): variante bloqueante de ask — usada por POST /ask quando o body traz
   // wait:true. Aguarda o agente ficar ocioso (ver AgentBus.waitForIdle) antes de responder.
@@ -102,9 +115,32 @@ export class OrchestrationServer {
     })
   }
 
+  // Escopo de projeto: true quando a request declara um projeto (x-orkestra-project) e ele NÃO é
+  // o ativo. Fail-closed só no mismatch explícito; header ausente ou ativo desconhecido → false.
+  private isForeignProject(req: import('http').IncomingMessage): boolean {
+    const requested = req.headers['x-orkestra-project']
+    if (typeof requested !== 'string' || requested === '') return false
+    const active = this.opts.getActiveProjectId?.()
+    if (!active) return false
+    return requested !== active
+  }
+
+  // BLD-6: emite o comando e responde conforme a entrega (200 se o renderer recebeu, 503 se não).
+  private emit(cmd: OrchestrationCommand, res: import('http').ServerResponse): void {
+    if (this.opts.onCommand(cmd)) res.writeHead(200).end('ok')
+    else res.writeHead(503).end('app unavailable')
+  }
+
   private handle(req: import('http').IncomingMessage, res: import('http').ServerResponse): void {
     if (!this.isAuthorized(req)) {
       res.writeHead(401).end('unauthorized')
+      return
+    }
+    // Depois da auth, antes de qualquer rota: agente de projeto que não está ativo não pode nem
+    // mutar nem LER o canvas exibido (o espelho é do projeto na tela, não o dele). 409 com corpo
+    // estável — o orq o traduz numa mensagem de orientação para o agente.
+    if (this.isForeignProject(req)) {
+      res.writeHead(409).end('project not active')
       return
     }
     if (req.method === 'GET' && req.url === '/list') {
@@ -122,8 +158,7 @@ export class OrchestrationServer {
         // `from` (opcional): id do nó do terminal do agente (ORKESTRA_NODE_ID) — usado no renderer
         // para resolver as notas ligadas à SAÍDA desse terminal quando não há target explícito.
         const from = typeof parsed.from === 'string' ? parsed.from : undefined
-        this.opts.onCommand({ type: 'updateNote', target: parsed.target, content: parsed.content, from })
-        res.writeHead(200).end('ok')
+        this.emit({ type: 'updateNote', target: parsed.target, content: parsed.content, from }, res)
       })
       return
     }
@@ -138,13 +173,10 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({
-          type: 'recruit',
-          name: parsed.name,
-          preset: parsed.preset,
-          role: parsed.role as string | undefined
-        })
-        res.writeHead(200).end('ok')
+        this.emit(
+          { type: 'recruit', name: parsed.name, preset: parsed.preset, role: parsed.role as string | undefined },
+          res
+        )
       })
       return
     }
@@ -155,8 +187,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({ type: 'dismiss', target: parsed.target })
-        res.writeHead(200).end('ok')
+        this.emit({ type: 'dismiss', target: parsed.target }, res)
       })
       return
     }
@@ -167,8 +198,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({ type: 'connect', source: parsed.source, target: parsed.target })
-        res.writeHead(200).end('ok')
+        this.emit({ type: 'connect', source: parsed.source, target: parsed.target }, res)
       })
       return
     }
@@ -179,8 +209,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({ type: 'portalOpen', target: parsed.target, url: parsed.url })
-        res.writeHead(200).end('ok')
+        this.emit({ type: 'portalOpen', target: parsed.target, url: parsed.url }, res)
       })
       return
     }
@@ -191,8 +220,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({ type: 'portalClick', target: parsed.target, selector: parsed.selector })
-        res.writeHead(200).end('ok')
+        this.emit({ type: 'portalClick', target: parsed.target, selector: parsed.selector }, res)
       })
       return
     }
@@ -207,13 +235,10 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({
-          type: 'portalFill',
-          target: parsed.target,
-          selector: parsed.selector,
-          text: parsed.text
-        })
-        res.writeHead(200).end('ok')
+        this.emit(
+          { type: 'portalFill', target: parsed.target, selector: parsed.selector, text: parsed.text },
+          res
+        )
       })
       return
     }
@@ -224,8 +249,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.opts.onCommand({ type: 'portalEval', target: parsed.target, js: parsed.js })
-        res.writeHead(200).end('ok')
+        this.emit({ type: 'portalEval', target: parsed.target, js: parsed.js }, res)
       })
       return
     }

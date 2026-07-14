@@ -261,3 +261,25 @@ describe('AgentBus attention', () => {
     // exceção já comprova que o watcher não quebra o construtor de 1 argumento.
   })
 })
+
+// PTY-4 / PTY-8 (auditoria 2026-07-14): teto do delta + fast-path de saída no waitForIdle.
+describe('AgentBus.waitForIdle — cap e fast-path de saída', () => {
+  it('PTY-8: resolve imediatamente quando o pty sai, sem esperar o teto de tempo', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({})
+    const p = bus.waitForIdle(id, { idleMs: 5000, timeoutMs: 120000 })
+    f.emit('parcial')
+    f.emitExit(0) // pty morre no meio da espera → finish() na hora
+    await expect(p).resolves.toContain('parcial')
+  })
+
+  it('PTY-4: limita o delta acumulado à cauda (não cresce sem teto)', async () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty); const bus = new AgentBus(mgr)
+    const id = mgr.spawn({})
+    const p = bus.waitForIdle(id, { idleMs: 1000, timeoutMs: 120000 })
+    f.emit('A'.repeat(300 * 1024)) // acima do teto de 256KB
+    f.emitExit(0)
+    const out = await p
+    expect(out.length).toBeLessThanOrEqual(256 * 1024)
+  })
+})

@@ -3,6 +3,7 @@ import type { WebviewTag } from 'electron'
 import { useCanvasStore } from '../store/canvasStore'
 import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchestration'
 import { clickScript, fillScript } from '../../../shared/portalScripts'
+import { isSafePortalUrl } from '../../../shared/portalUrl'
 import { getPortal } from '../portalRegistry'
 import { markdownToHtml } from '../markdown/markdownToHtml'
 import { htmlToText } from '../context/contextBlock'
@@ -67,8 +68,13 @@ export function useOrchestrationSync(): void {
   // Aplica comandos vindos do orq (via main). Sempre lê o estado fresco via getState() (em vez
   // de depender de `nodes` no dep array) para evitar closures obsoletas entre re-renders.
   useEffect(() => {
-    const dispose = window.orkestra.orchestration.onCommand((cmd: OrchestrationCommand) => {
+    const dispose = window.orkestra.orchestration.onCommand((cmd: OrchestrationCommand, projectId?: string | null) => {
       const store = useCanvasStore.getState()
+      // Escopo de projeto (2026-07-14): o main carimba cada comando com o projeto ativo no
+      // momento do relay; se o canvas exibido aqui já/ainda é OUTRO projeto (janela de ms no meio
+      // de uma troca), descarta — aplicar mutaria o canvas errado. Sem carimbo ou sem dono
+      // conhecido (legado/boot), aplica como antes.
+      if (projectId != null && store.activeProjectId != null && projectId !== store.activeProjectId) return
       if (cmd.type === 'updateNote') {
         const notes = store.nodes.filter((n) => n.type === 'note')
         // Alvo: por id/nome explícito; senão a nota ligada à SAÍDA do terminal `from` (edge
@@ -100,6 +106,11 @@ export function useOrchestrationSync(): void {
           store.onConnect({ source: source.id, target: target.id, sourceHandle: null, targetHandle: null })
         }
       } else if (cmd.type === 'portalOpen') {
+        // SEC-3 (auditoria 2026-07-14): a URL vem de um agente (não confiável) — só navega para
+        // http/https. Bloqueia file:// (leitura de arquivo local via snapshot) e javascript:/data:
+        // (execução de script na sessão possivelmente autenticada do portal). Silencioso, como
+        // toda automação de portal (best-effort).
+        if (!isSafePortalUrl(cmd.url)) return
         try {
           resolvePortalWebview(store.nodes, cmd.target)?.loadURL(cmd.url)?.catch(() => {})
         } catch {

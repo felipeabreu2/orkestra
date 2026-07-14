@@ -152,16 +152,27 @@ export function ProjectsSidebar(): JSX.Element {
     // fix complementar ao flush explícito por id já existente).
     useCanvasStore.getState().setSwitching(true)
     try {
-      await window.orkestra.projects.saveCanvas(activeId, useCanvasStore.getState().serialize())
+      // Flush do projeto que está SAINDO: o id vem do STORE (activeProjectId, setado atomicamente
+      // com o conteúdo pelo hydrate) — não do estado React desta sidebar, que pode estar vazio
+      // (boot) ou obsoleto. Conteúdo e destino saem do mesmo lugar: nunca cruza projetos. Sem
+      // dono conhecido, não salva (preferível a chutar um arquivo).
+      const fromId = useCanvasStore.getState().activeProjectId
+      if (fromId) {
+        await window.orkestra.projects.saveCanvas(fromId, useCanvasStore.getState().serialize())
+      }
       const snap = await window.orkestra.projects.switch(id)
       if (snap === null) {
-        // id inválido (não deveria acontecer em uso normal, ver review Fase 15 Task 3, Minor #2):
-        // não hidrata canvas vazio nem seta um activeId local bogus — early-return preserva o
-        // canvas e o projeto ativo atuais intactos.
-        setError('Não foi possível trocar de projeto (id inválido).')
+        // Contrato do switch() (fix 2026-07-14): null SÓ quando o id não existe no índice — e aí
+        // o main garantidamente NÃO trocou o ativo (sem efeito colateral), então preservar o
+        // canvas atual é correto. Canvas ausente/corrompido já não cai aqui (degrada para canvas
+        // vazio no main). refresh() re-sincroniza a lista, já que nosso id estava obsoleto.
+        setError('Projeto não existe mais — lista atualizada.')
+        await refresh()
         return
       }
-      useCanvasStore.getState().hydrate(snap)
+      // hydrate com o id do dono: activeProjectId troca no MESMO set() que nodes/edges — o
+      // autosave/flush por id nunca vê conteúdo de um projeto com id de outro.
+      useCanvasStore.getState().hydrate(snap, id)
       setActiveId(id)
       setError('')
     } catch (err) {
@@ -278,7 +289,7 @@ export function ProjectsSidebar(): JSX.Element {
       // borda de edição não salva à toa.
       const { activeId: newActiveId, snapshot } = await window.orkestra.projects.remove(id)
       if (newActiveId !== activeId) {
-        useCanvasStore.getState().hydrate(snapshot ?? { version: 2, nodes: [], edges: [] })
+        useCanvasStore.getState().hydrate(snapshot ?? { version: 2, nodes: [], edges: [] }, newActiveId)
       }
       setActiveId(newActiveId)
       await refresh()

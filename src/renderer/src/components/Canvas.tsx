@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 import {
   ReactFlow,
   Background,
@@ -7,11 +7,12 @@ import {
   MiniMap,
   useReactFlow,
   type NodeChange,
+  type NodeProps,
   type Connection
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
-import { useCanvasStore } from '../store/canvasStore'
+import { useCanvasStore, hasWidgetClipboard, absolutePositionOf } from '../store/canvasStore'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
@@ -27,18 +28,35 @@ import { emitNewProject } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
 import { CreateOverlay } from './CreateOverlay'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
+import { ErrorBoundary } from './ErrorBoundary'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
 
+// REN-3 (auditoria 2026-07-14): cada nó renderiza dentro do seu próprio ErrorBoundary. Um
+// data.scene do Excalidraw (DrawNode) ou html do TipTap (NoteNode) corrompido faz o componente
+// lançar no render; sem o boundary local, o erro sobe até o boundary do App (App.tsx) e a UI
+// INTEIRA — sidebar, canvas, todos os outros nós — vira o fallback de erro. Com ele, só o nó
+// problemático mostra o fallback e o resto segue vivo. TerminalFlowNode já tem boundary interno.
+// Wrappers criados UMA vez, no nível do módulo (nodeTypes precisa de identidade estável).
+function withNodeBoundary(Comp: ComponentType<NodeProps>): ComponentType<NodeProps> {
+  const Wrapped = (props: NodeProps): JSX.Element => (
+    <ErrorBoundary>
+      <Comp {...props} />
+    </ErrorBoundary>
+  )
+  Wrapped.displayName = `NodeBoundary(${Comp.displayName ?? Comp.name ?? 'Node'})`
+  return Wrapped
+}
+
 const nodeTypes = {
   terminal: TerminalFlowNode,
-  note: NoteNode,
-  portal: PortalFlowNode,
-  filetree: FileTreeNode,
-  file: FileNode,
-  draw: DrawNode,
-  group: GroupNode
+  note: withNodeBoundary(NoteNode),
+  portal: withNodeBoundary(PortalFlowNode),
+  filetree: withNodeBoundary(FileTreeNode),
+  file: withNodeBoundary(FileNode),
+  draw: withNodeBoundary(DrawNode),
+  group: withNodeBoundary(GroupNode)
 }
 
 // Fase 22 (Task 2): registro de edge customizada, mesmo padrão do nodeTypes acima — constante
@@ -117,7 +135,11 @@ export function Canvas(): JSX.Element {
       // indicador para este terminal. Lê o estado atual via getState (não põe `nodes` nas deps,
       // evitando re-inscrever o listener a cada mudança do canvas).
       const node = useCanvasStore.getState().nodes.find((n) => n.id === nodeId)
-      if (node && (node.data as { monitor?: boolean }).monitor === false) return
+      // Nó ausente = terminal de OUTRO projeto (pty vivo em segundo plano): não acumula um id
+      // órfão em attention (Shift+A panaria para nó inexistente) — a notificação do SO, disparada
+      // no main, continua cobrindo o aviso cross-project.
+      if (!node) return
+      if ((node.data as { monitor?: boolean }).monitor === false) return
       setAttention(nodeId, true)
     })
     return off
@@ -129,8 +151,11 @@ export function Canvas(): JSX.Element {
   // roda a função pura correspondente e aplica o resultado via setNodePositions — nenhuma
   // lógica de geometria vive aqui, só a ponte store<->arrange.
   const selectedNodes = nodes.filter((n) => n.selected)
+  // REN-6 (auditoria 2026-07-14): passa posições ABSOLUTAS ao arrange (resolve parentId de filhos
+  // de grupo) — senão alinhar/distribuir uma seleção que mistura filhos de grupo com nós de fora
+  // operaria em sistemas de coordenadas diferentes. setNodePositions reconverte p/ relativo ao aplicar.
   const toPosNodes = (): PosNode[] =>
-    selectedNodes.map((n) => ({ id: n.id, position: n.position, width: n.width, height: n.height }))
+    selectedNodes.map((n) => ({ id: n.id, position: absolutePositionOf(n, nodes), width: n.width, height: n.height }))
   const runAlign = (axis: AlignAxis): void => setNodePositions(alignNodes(toPosNodes(), axis))
   const runDistribute = (axis: DistributeAxis): void => setNodePositions(distributeNodes(toPosNodes(), axis))
   const runGrid = (): void => setNodePositions(gridArrange(toPosNodes()))
@@ -157,14 +182,22 @@ export function Canvas(): JSX.Element {
     onConnect(connection)
   }
 
-  // R4: itens do menu de contexto. Com nodeId => ações do nó (remover conexões / excluir); sem
-  // nodeId => criar um nó no ponto do cursor (flowX/flowY já convertidos para o canvas).
+  // R4: itens do menu de contexto. Com nodeId => ações do nó (copiar/duplicar/remover conexões/
+  // excluir); sem nodeId => criar um nó no ponto do cursor ou colar o clipboard de widgets ali
+  // (flowX/flowY já convertidos para o canvas).
   const ctxMenuItems = (): ContextMenuItem[] => {
     if (!ctxMenu) return []
     if (ctxMenu.nodeId) {
       const id = ctxMenu.nodeId
       const hasEdges = edges.some((e) => e.source === id || e.target === id)
+      // Botão direito num nó que faz parte da seleção atual age sobre a seleção INTEIRA (copiar/
+      // duplicar 3 nós de uma vez); num nó fora dela, só sobre ele.
+      const selIds = nodes.filter((n) => n.selected).map((n) => n.id)
+      const targetIds = selIds.includes(id) ? selIds : [id]
+      const suffix = targetIds.length > 1 ? ` (${targetIds.length} nós)` : ''
       return [
+        { label: `Copiar${suffix}`, onClick: () => useCanvasStore.getState().copyNodes(targetIds) },
+        { label: `Duplicar${suffix}`, onClick: () => useCanvasStore.getState().duplicateNodes(targetIds) },
         { label: 'Remover todas as conexões', onClick: () => removeEdgesForNode(id), disabled: !hasEdges },
         { label: 'Excluir', onClick: () => removeNode(id), danger: true }
       ]
@@ -174,7 +207,10 @@ export function Canvas(): JSX.Element {
       { label: 'Novo terminal aqui', onClick: () => addTerminalNode(pos) },
       { label: 'Nova nota aqui', onClick: () => addNoteNode(pos) },
       { label: 'Novo portal aqui', onClick: () => addPortalNode(pos) },
-      { label: 'Árvore de arquivos aqui', onClick: () => addFileTreeNode(pos) }
+      { label: 'Árvore de arquivos aqui', onClick: () => addFileTreeNode(pos) },
+      // Cola o conteúdo copiado (deste projeto OU de outro — o clipboard sobrevive à troca)
+      // ancorado no ponto do cursor.
+      { label: 'Colar aqui', onClick: () => useCanvasStore.getState().pasteClipboard(pos), disabled: !hasWidgetClipboard() }
     ]
   }
 
@@ -217,6 +253,28 @@ export function Canvas(): JSX.Element {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         useCanvasStore.getState().undo()
+        return
+      }
+
+      // Copiar/colar/duplicar widgets (auditoria 2026-07-14). DEPOIS do isTypingTarget guard: com
+      // input/nota/terminal focado, Cmd+C/V pertencem ao texto, não ao canvas. O clipboard interno
+      // sobrevive à troca de projeto — copiar aqui e colar em outro projeto funciona.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        // Texto selecionado no DOM (ex.: rótulo de um nó): deixa o copy nativo agir.
+        const domSel = window.getSelection()
+        if (domSel && !domSel.isCollapsed) return
+        const ids = useCanvasStore.getState().nodes.filter((n) => n.selected).map((n) => n.id)
+        if (ids.length && useCanvasStore.getState().copyNodes(ids) > 0) e.preventDefault()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
+        if (useCanvasStore.getState().pasteClipboard() > 0) e.preventDefault()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault() // sempre: o default do Chromium (bookmark) nunca faz sentido aqui
+        const ids = useCanvasStore.getState().nodes.filter((n) => n.selected).map((n) => n.id)
+        if (ids.length) useCanvasStore.getState().duplicateNodes(ids)
         return
       }
 

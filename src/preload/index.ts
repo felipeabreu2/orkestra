@@ -4,6 +4,12 @@ import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/
 import type { Project, ProjectIndex } from '../shared/project'
 import type { FileEntry } from '../shared/filetree'
 
+// PTY-9 (auditoria 2026-07-14): cada TerminalNode registra um listener 'pty:data' no ipcRenderer;
+// com muitos terminais no canvas passaríamos do teto default de 10 e o Node emitiria
+// MaxListenersExceededWarning (ruído no console, falsa pista em debug). Os listeners são removidos
+// corretamente no unmount (não é vazamento) — só precisam de mais folga.
+ipcRenderer.setMaxListeners(200)
+
 const api = {
   pty: {
     spawn: (opts: {
@@ -35,8 +41,12 @@ const api = {
     }
   },
   persistence: {
-    load: (): Promise<CanvasSnapshot | null> => ipcRenderer.invoke('persistence:load'),
-    save: (snapshot: CanvasSnapshot): void => ipcRenderer.send('persistence:save', snapshot)
+    // Fix de corrupção cross-project (2026-07-14): o load devolve snapshot + id do projeto dono
+    // num único round-trip atômico — o renderer guarda o id e salva por id explícito
+    // (projects.saveCanvas), nunca mais "no projeto ativo do momento da escrita". INT-6: o antigo
+    // `save` (canal persistence:save) foi REMOVIDO — era o vetor da corrupção e não tinha mais uso.
+    load: (): Promise<{ projectId: string | null; snapshot: CanvasSnapshot | null }> =>
+      ipcRenderer.invoke('persistence:load')
   },
   // Fase 15 (Task 2): CRUD de projetos (cada um com seu próprio canvas, ver ProjectManager no
   // main). persistence.load/save acima continuam operando sobre o projeto ATIVO — trocar de
@@ -79,8 +89,12 @@ const api = {
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),
-    onCommand: (cb: (cmd: OrchestrationCommand) => void): (() => void) => {
-      const listener = (_e: unknown, cmd: OrchestrationCommand): void => cb(cmd)
+    // projectId (escopo de projeto, 2026-07-14): projeto ativo no main no momento do relay — o
+    // renderer só aplica o comando se ainda estiver exibindo esse projeto (useOrchestrationSync).
+    // null/ausente = relay legado, aplicado como antes.
+    onCommand: (cb: (cmd: OrchestrationCommand, projectId?: string | null) => void): (() => void) => {
+      const listener = (_e: unknown, cmd: OrchestrationCommand, projectId?: string | null): void =>
+        cb(cmd, projectId)
       ipcRenderer.on('orchestration:command', listener)
       return () => ipcRenderer.removeListener('orchestration:command', listener)
     }

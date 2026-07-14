@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useCanvasStore } from './canvasStore'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 
@@ -898,5 +898,435 @@ describe('nó de arquivo', () => {
     expect(n.type).toBe('file')
     expect((n.data as { path?: string }).path).toBe('/a/b/nota.md')
     expect((n.data as { name?: string }).name).toBe('nota.md')
+  })
+})
+
+// Fix de corrupção cross-project (2026-07-14): o hydrate passou a carregar também o ID do projeto
+// DONO do snapshot, atualizado no MESMO set() que troca nodes/edges — o autosave/flush por id
+// (useCanvasPersistence) nunca vê o conteúdo de um projeto emparelhado com o id de outro. Também
+// zera `attention`: ids de terminais do projeto anterior seriam órfãos no novo canvas.
+describe('hydrate e troca de projeto', () => {
+  it('hydrate com projectId troca o dono atomicamente junto com o conteúdo', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], activeProjectId: 'proj-A' })
+    useCanvasStore.getState().hydrate(
+      { version: 2, nodes: [{ id: 'note-b', type: 'note', position: { x: 0, y: 0 }, width: 240, height: 180, data: {} }], edges: [] },
+      'proj-B'
+    )
+    const s = useCanvasStore.getState()
+    expect(s.activeProjectId).toBe('proj-B')
+    expect(s.nodes.map((n) => n.id)).toEqual(['note-b'])
+  })
+
+  it('hydrate sem projectId preserva o dono atual (compat com chamadas antigas)', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], activeProjectId: 'proj-A' })
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().activeProjectId).toBe('proj-A')
+  })
+
+  it('hydrate limpa attention — ids do projeto anterior não vazam para o novo', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], attention: new Set() })
+    useCanvasStore.getState().setAttention('terminal-do-projeto-antigo', true)
+    expect(useCanvasStore.getState().attention.size).toBe(1)
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] }, 'proj-B')
+    expect(useCanvasStore.getState().attention.size).toBe(0)
+  })
+})
+
+// Clipboard de widgets (auditoria 2026-07-14): copiar/colar/duplicar nós — inclusive ENTRE
+// projetos (o clipboard vive no módulo e sobrevive ao hydrate da troca de projeto).
+describe('copiar/colar/duplicar widgets', () => {
+  beforeEach(() => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+  })
+
+  it('copyNodes + pasteClipboard cria nó NOVO (id diferente) com o mesmo conteúdo, deslocado', () => {
+    useCanvasStore.getState().addNoteNode({ x: 100, y: 100 })
+    const orig = useCanvasStore.getState().nodes[0]
+    useCanvasStore.getState().updateNoteHtml(orig.id, '<p>plano</p>')
+
+    expect(useCanvasStore.getState().copyNodes([orig.id])).toBe(1)
+    expect(useCanvasStore.getState().pasteClipboard()).toBe(1)
+
+    const { nodes } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(2)
+    const pasted = nodes.find((n) => n.id !== orig.id)!
+    expect(pasted.type).toBe('note')
+    expect(pasted.id).not.toBe(orig.id)
+    expect((pasted.data as { html?: string }).html).toBe('<p>plano</p>')
+    expect(pasted.position).toEqual({ x: 132, y: 132 }) // +32/+32 do original
+    expect(pasted.selected).toBe(true)
+  })
+
+  it('pasteClipboard(position) ancora o conjunto no ponto pedido (menu "Colar aqui")', () => {
+    useCanvasStore.getState().addNoteNode({ x: 100, y: 100 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().copyNodes([id])
+    useCanvasStore.getState().pasteClipboard({ x: 500, y: 600 })
+    const pasted = useCanvasStore.getState().nodes.find((n) => n.id !== id)!
+    expect(pasted.position).toEqual({ x: 500, y: 600 })
+  })
+
+  it('colar duas vezes gera ids distintos a cada colagem', () => {
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().copyNodes([id])
+    useCanvasStore.getState().pasteClipboard()
+    useCanvasStore.getState().pasteClipboard()
+    const ids = useCanvasStore.getState().nodes.map((n) => n.id)
+    expect(new Set(ids).size).toBe(3)
+  })
+
+  it('edges entre nós copiados são remapeadas para os ids novos', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 600, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes.map((n) => n.id)
+    useCanvasStore.getState().onConnect({ source: a, target: b, sourceHandle: null, targetHandle: null })
+
+    useCanvasStore.getState().copyNodes([a, b])
+    useCanvasStore.getState().pasteClipboard()
+
+    const { nodes, edges } = useCanvasStore.getState()
+    expect(nodes).toHaveLength(4)
+    expect(edges).toHaveLength(2)
+    const pastedIds = new Set(nodes.filter((n) => n.id !== a && n.id !== b).map((n) => n.id))
+    const pastedEdge = edges.find((e) => pastedIds.has(e.source))!
+    expect(pastedIds.has(pastedEdge.source)).toBe(true)
+    expect(pastedIds.has(pastedEdge.target)).toBe(true)
+    expect(pastedEdge.type).toBe('typed')
+  })
+
+  it('clipboard sobrevive ao hydrate (copiar num projeto, colar em outro)', () => {
+    useCanvasStore.getState().addNoteNode({ x: 10, y: 10 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().updateNoteHtml(id, '<p>viaja junto</p>')
+    useCanvasStore.getState().copyNodes([id])
+
+    // troca de projeto: hydrate substitui todo o canvas
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] }, 'projeto-B')
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+
+    expect(useCanvasStore.getState().pasteClipboard()).toBe(1)
+    const pasted = useCanvasStore.getState().nodes[0]
+    expect((pasted.data as { html?: string }).html).toBe('<p>viaja junto</p>')
+  })
+
+  it('copiar um grupo leva os filhos; colar remapeia parentId para o grupo novo', () => {
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addNoteNode({ x: 300, y: 0 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const group = useCanvasStore.getState().nodes.find((n) => n.type === 'group')!
+
+    useCanvasStore.getState().copyNodes([group.id])
+    useCanvasStore.getState().pasteClipboard()
+
+    const { nodes } = useCanvasStore.getState()
+    const groups = nodes.filter((n) => n.type === 'group')
+    expect(groups).toHaveLength(2)
+    const newGroup = groups.find((g) => g.id !== group.id)!
+    const newChildren = nodes.filter((n) => n.parentId === newGroup.id)
+    expect(newChildren).toHaveLength(2)
+    expect(newGroup.dragHandle).toBe('.ork-group-header')
+  })
+
+  it('copiar um filho SEM o grupo cola como nó avulso em posição absoluta', () => {
+    useCanvasStore.getState().addNoteNode({ x: 100, y: 100 })
+    useCanvasStore.getState().addNoteNode({ x: 400, y: 100 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const child = useCanvasStore.getState().nodes.find((n) => n.parentId)!
+    const group = useCanvasStore.getState().nodes.find((n) => n.type === 'group')!
+    const absX = child.position.x + group.position.x
+    const absY = child.position.y + group.position.y
+
+    useCanvasStore.getState().copyNodes([child.id])
+    useCanvasStore.getState().pasteClipboard()
+
+    const pasted = useCanvasStore.getState().nodes.find((n) => n.type === 'note' && !n.parentId && n.id !== child.id)!
+    expect(pasted.parentId).toBeUndefined()
+    expect(pasted.position).toEqual({ x: absX + 32, y: absY + 32 })
+  })
+
+  it('nome que colide com nó existente ganha sufixo " (cópia)" — orq resolve por nome', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 }, { name: 'Builder' })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().copyNodes([id])
+    useCanvasStore.getState().pasteClipboard()
+    useCanvasStore.getState().pasteClipboard()
+    const names = useCanvasStore.getState().nodes.map((n) => (n.data as { name?: string }).name)
+    expect(names).toContain('Builder')
+    expect(names).toContain('Builder (cópia)')
+    expect(names).toContain('Builder (cópia 2)')
+  })
+
+  it('duplicateNodes cria cópia imediata sem sobrescrever o clipboard', () => {
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    const noteId = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().updateNoteHtml(noteId, '<p>do clipboard</p>')
+    useCanvasStore.getState().copyNodes([noteId]) // clipboard = nota
+
+    useCanvasStore.getState().addTerminalNode({ x: 200, y: 200 }, { name: 'Solo' })
+    const termId = useCanvasStore.getState().nodes.find((n) => n.type === 'terminal')!.id
+    expect(useCanvasStore.getState().duplicateNodes([termId])).toBe(1)
+    expect(useCanvasStore.getState().nodes.filter((n) => n.type === 'terminal')).toHaveLength(2)
+
+    // o clipboard ainda é a NOTA copiada antes (duplicate não mexe nele)
+    useCanvasStore.getState().pasteClipboard()
+    const notes = useCanvasStore.getState().nodes.filter((n) => n.type === 'note')
+    expect(notes).toHaveLength(2)
+  })
+
+  it('undo desfaz uma colagem inteira num passo', () => {
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().copyNodes([id])
+    useCanvasStore.getState().pasteClipboard()
+    expect(useCanvasStore.getState().nodes).toHaveLength(2)
+    useCanvasStore.getState().undo()
+    expect(useCanvasStore.getState().nodes).toHaveLength(1)
+  })
+})
+
+// REN-1 / REN-5 (auditoria 2026-07-14): exclusão de grupo fora do caminho Delete não pode orfanar
+// filhos; remoção por tecla precisa limpar attention.
+describe('exclusão de grupo e attention (auditoria)', () => {
+  beforeEach(() => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+  })
+
+  it('removeNode de um grupo desagrupa os filhos (sem parentId órfão) e os mantém vivos', () => {
+    useCanvasStore.getState().addNoteNode({ x: 100, y: 100 })
+    useCanvasStore.getState().addNoteNode({ x: 400, y: 100 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const group = useCanvasStore.getState().nodes.find((n) => n.type === 'group')!
+    const child = useCanvasStore.getState().nodes.find((n) => n.parentId === group.id)!
+    const absX = child.position.x + group.position.x
+    const absY = child.position.y + group.position.y
+
+    useCanvasStore.getState().removeNode(group.id)
+
+    const nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.type === 'group')).toBeUndefined()
+    expect(nodes).toHaveLength(2)
+    const survivor = nodes.find((n) => n.id === child.id)!
+    expect(survivor.parentId).toBeUndefined()
+    expect(survivor.position).toEqual({ x: absX, y: absY })
+  })
+
+  it('onNodesChange remove limpa o id de attention', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().setAttention(id, true)
+    expect(useCanvasStore.getState().attention.has(id)).toBe(true)
+    useCanvasStore.getState().onNodesChange([{ id, type: 'remove' }])
+    expect(useCanvasStore.getState().attention.has(id)).toBe(false)
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+  })
+})
+
+// REN-7/8/9 (auditoria 2026-07-14): regressões do clipboard introduzidas na feature de copiar.
+describe('clipboard — regressões da auditoria', () => {
+  beforeEach(() => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+  })
+
+  it('REN-8: colar repetido (Cmd+V) desloca cada cópia em vez de empilhar no mesmo ponto', () => {
+    useCanvasStore.getState().addNoteNode({ x: 100, y: 100 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().copyNodes([id])
+    useCanvasStore.getState().pasteClipboard()
+    useCanvasStore.getState().pasteClipboard()
+    const pasted = useCanvasStore.getState().nodes.filter((n) => n.id !== id)
+    expect(pasted).toHaveLength(2)
+    expect(pasted[0].position).toEqual({ x: 132, y: 132 })
+    expect(pasted[1].position).toEqual({ x: 164, y: 164 }) // não empilhado
+  })
+
+  it('REN-9: duas cópias de mesmo nome no lote desambiguam ambas', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 }, { name: 'build' })
+    useCanvasStore.getState().addTerminalNode({ x: 300, y: 0 }, { name: 'build' })
+    const ids = useCanvasStore.getState().nodes.map((n) => n.id)
+    useCanvasStore.getState().copyNodes(ids)
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] }, 'novo') // cola num projeto limpo
+    useCanvasStore.getState().pasteClipboard()
+    const names = useCanvasStore.getState().nodes.map((n) => (n.data as { name?: string }).name)
+    expect(names).toContain('build')
+    expect(names).toContain('build (cópia)')
+  })
+
+  it('REN-7: colar um par de portais linkados remapeia linkedTo para o novo id', () => {
+    useCanvasStore.getState().addPortalNode({ x: 0, y: 0 }, { name: 'A' })
+    useCanvasStore.getState().addPortalNode({ x: 300, y: 0 }, { name: 'B' })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().updatePortalLink(b.id, a.id) // B linkado a A
+    useCanvasStore.getState().copyNodes([a.id, b.id])
+    useCanvasStore.getState().pasteClipboard()
+    const pasted = useCanvasStore.getState().nodes.filter((n) => n.id !== a.id && n.id !== b.id)
+    const pastedB = pasted.find((n) => (n.data as { linkedTo?: string }).linkedTo)!
+    const pastedA = pasted.find((n) => !(n.data as { linkedTo?: string }).linkedTo)!
+    expect((pastedB.data as { linkedTo?: string }).linkedTo).toBe(pastedA.id) // aponta para o A NOVO
+  })
+
+  it('REN-7: colar só o portal linkado (sem o alvo) desfaz o link', () => {
+    useCanvasStore.getState().addPortalNode({ x: 0, y: 0 }, { name: 'A' })
+    useCanvasStore.getState().addPortalNode({ x: 300, y: 0 }, { name: 'B' })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().updatePortalLink(b.id, a.id)
+    useCanvasStore.getState().copyNodes([b.id]) // só o B
+    useCanvasStore.getState().pasteClipboard()
+    const pastedB = useCanvasStore.getState().nodes.find((n) => n.id !== a.id && n.id !== b.id)!
+    expect((pastedB.data as { linkedTo?: string }).linkedTo).toBeUndefined() // link desfeito
+  })
+})
+
+// REN-4 (auditoria 2026-07-14): coalescing de histórico com janela de tempo — edições da mesma
+// tag só se fundem se forem consecutivas (dentro de ~1s); uma pausa maior inicia um novo passo.
+describe('coalescing de histórico com janela (REN-4)', () => {
+  it('mesma tag dentro da janela coalesce; após a pausa vira novo passo de undo', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(0)
+      useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+      useCanvasStore.getState().addNoteNode()
+      const id = useCanvasStore.getState().nodes[0].id
+      const before = useCanvasStore.getState().past.length
+
+      vi.setSystemTime(10_000)
+      useCanvasStore.getState().updateNoteHtml(id, '<p>a</p>') // novo passo
+      vi.setSystemTime(10_200)
+      useCanvasStore.getState().updateNoteHtml(id, '<p>ab</p>') // dentro da janela → coalesce
+      expect(useCanvasStore.getState().past.length).toBe(before + 1)
+
+      vi.setSystemTime(20_000) // ~10s depois → pausa > janela
+      useCanvasStore.getState().updateNoteHtml(id, '<p>abc</p>')
+      expect(useCanvasStore.getState().past.length).toBe(before + 2) // novo passo, não coalesce
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+// REN-2 / REN-6 (auditoria 2026-07-14): coordenadas absolutas em grupos e alinhar/distribuir.
+describe('coordenadas de grupo e arrange (REN-2/REN-6)', () => {
+  beforeEach(() => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+  })
+
+  // helper: agrupa os 2 primeiros nós e devolve {group, child}
+  function makeGroupWithChild(): { groupId: string; childId: string } {
+    useCanvasStore.getState().addNoteNode({ x: 100, y: 100 })
+    useCanvasStore.getState().addNoteNode({ x: 400, y: 100 })
+    useCanvasStore.setState((s) => ({ nodes: s.nodes.map((n) => ({ ...n, selected: true })) }))
+    useCanvasStore.getState().groupSelected()
+    const st = useCanvasStore.getState()
+    const group = st.nodes.find((n) => n.type === 'group')!
+    const child = st.nodes.find((n) => n.parentId === group.id)!
+    return { groupId: group.id, childId: child.id }
+  }
+
+  it('REN-2: agrupar seleção com um filho de grupo preserva a posição absoluta do filho', () => {
+    const { groupId, childId } = makeGroupWithChild()
+    let st = useCanvasStore.getState()
+    const G = st.nodes.find((n) => n.id === groupId)!
+    const child = st.nodes.find((n) => n.id === childId)!
+    const absBefore = { x: child.position.x + G.position.x, y: child.position.y + G.position.y }
+
+    useCanvasStore.getState().addNoteNode({ x: 900, y: 500 }) // nó fora do grupo
+    const outside = useCanvasStore.getState().nodes.find((n) => n.type === 'note' && !n.parentId)!
+    useCanvasStore.setState((s) => ({
+      nodes: s.nodes.map((n) => ({ ...n, selected: n.id === childId || n.id === outside.id }))
+    }))
+    useCanvasStore.getState().groupSelected()
+
+    st = useCanvasStore.getState()
+    const G2 = st.nodes.find((n) => n.type === 'group' && n.id !== groupId)!
+    const childNow = st.nodes.find((n) => n.id === childId)!
+    expect(childNow.parentId).toBe(G2.id) // migrou para o novo grupo
+    const absAfter = { x: childNow.position.x + G2.position.x, y: childNow.position.y + G2.position.y }
+    expect(absAfter).toEqual(absBefore) // não saltou
+  })
+
+  it('REN-2: ungroup restaura o filho à posição absoluta (não relativa ao grupo)', () => {
+    const { groupId, childId } = makeGroupWithChild()
+    const st = useCanvasStore.getState()
+    const G = st.nodes.find((n) => n.id === groupId)!
+    const child = st.nodes.find((n) => n.id === childId)!
+    const abs = { x: child.position.x + G.position.x, y: child.position.y + G.position.y }
+
+    useCanvasStore.getState().ungroupGroupsById([groupId])
+
+    const restored = useCanvasStore.getState().nodes.find((n) => n.id === childId)!
+    expect(restored.parentId).toBeUndefined()
+    expect(restored.position).toEqual(abs)
+  })
+
+  it('REN-6: setNodePositions trata o alvo como absoluto e converte p/ relativo em filho de grupo', () => {
+    const { groupId, childId } = makeGroupWithChild()
+    const G = useCanvasStore.getState().nodes.find((n) => n.id === groupId)!
+    useCanvasStore.getState().setNodePositions({ [childId]: { x: 500, y: 500 } })
+    const childNow = useCanvasStore.getState().nodes.find((n) => n.id === childId)!
+    const absNow = { x: childNow.position.x + G.position.x, y: childNow.position.y + G.position.y }
+    expect(absNow).toEqual({ x: 500, y: 500 })
+  })
+
+  it('REN-6: setNodePositions de nó top-level aplica direto e é desfazível', () => {
+    useCanvasStore.getState().addNoteNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    const before = useCanvasStore.getState().past.length
+    useCanvasStore.getState().setNodePositions({ [id]: { x: 300, y: 300 } })
+    expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 300, y: 300 })
+    expect(useCanvasStore.getState().past.length).toBe(before + 1) // arrange entra no histórico
+    useCanvasStore.getState().undo()
+    expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 0, y: 0 })
+  })
+})
+
+// PTY-2 / REN-11 (auditoria 2026-07-14): undo mata o pty de terminal removido; hydrate descarta edges órfãs.
+describe('undo mata pty e hydrate filtra edges órfãs', () => {
+  beforeEach(() => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+  })
+
+  it('PTY-2: undo de criar um terminal mata o pty do nó removido', () => {
+    const killForNode = vi.fn()
+    ;(window as unknown as { orkestra?: unknown }).orkestra = { pty: { killForNode } }
+    try {
+      useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+      const id = useCanvasStore.getState().nodes[0].id
+      useCanvasStore.getState().undo()
+      expect(useCanvasStore.getState().nodes).toHaveLength(0)
+      expect(killForNode).toHaveBeenCalledWith(id)
+    } finally {
+      delete (window as unknown as { orkestra?: unknown }).orkestra
+    }
+  })
+
+  it('PTY-2: undo que NÃO remove terminal não chama killForNode', () => {
+    const killForNode = vi.fn()
+    ;(window as unknown as { orkestra?: unknown }).orkestra = { pty: { killForNode } }
+    try {
+      useCanvasStore.getState().addNoteNode({ x: 0, y: 0 }) // nota, não terminal
+      useCanvasStore.getState().undo()
+      expect(killForNode).not.toHaveBeenCalled()
+    } finally {
+      delete (window as unknown as { orkestra?: unknown }).orkestra
+    }
+  })
+
+  it('REN-11: hydrate descarta edges cujo source/target não existe', () => {
+    useCanvasStore.getState().hydrate({
+      version: 2,
+      nodes: [
+        { id: 'a', type: 'note', position: { x: 0, y: 0 }, width: 240, height: 180, data: {} },
+        { id: 'b', type: 'note', position: { x: 300, y: 0 }, width: 240, height: 180, data: {} }
+      ],
+      edges: [
+        { id: 'e-ok', source: 'a', target: 'b' },
+        { id: 'e-orfa', source: 'a', target: 'fantasma' }
+      ]
+    })
+    const edges = useCanvasStore.getState().edges
+    expect(edges.map((e) => e.id)).toEqual(['e-ok']) // a órfã foi descartada
   })
 })
