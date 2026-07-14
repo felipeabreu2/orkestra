@@ -79,6 +79,29 @@ describe('registerPtyIpc', () => {
     expect(call[2].env.ORKESTRA_TOKEN).toBe('tok')
   })
 
+  it('pty:spawn resolve "claude" para o caminho absoluto do wrapper (ORKESTRA_BIN)', async () => {
+    // multi-sub: o registerPtyIpc assina o batcher no mesmo pty do auto-início — o fake de slot
+    // único apagaria o handler do auto-início e o write nunca dispararia.
+    const fake = makeMultiSubFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null, () => ({ ORKESTRA_BIN: '/Users/x/.orkestra/bin' }))
+    await ipc.handlers.get('pty:spawn')!({}, { initialCommand: 'claude' })
+    fake.emit('prompt$ ') // 1º output do shell dispara o auto-início
+    // caminho ABSOLUTO do wrapper (o .zshrc não consegue mascarar), não "claude"
+    expect(fake.pty.write).toHaveBeenCalledWith('/Users/x/.orkestra/bin/claude\n')
+  })
+
+  it('pty:spawn sem ORKESTRA_BIN digita o comando cru (sem resolução)', async () => {
+    const fake = makeMultiSubFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+    await ipc.handlers.get('pty:spawn')!({}, { initialCommand: 'claude' })
+    fake.emit('prompt$ ')
+    expect(fake.pty.write).toHaveBeenCalledWith('claude\n')
+  })
+
   it('pty:spawn sem getEnv explícito não quebra (default env vazio)', async () => {
     const fake = makeFakePty()
     const mgr = new PtyManager(() => fake.pty)

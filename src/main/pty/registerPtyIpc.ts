@@ -56,8 +56,25 @@ export function registerPtyIpc(
     }
     // ORKESTRA_NODE_ID: id do nó deste terminal no canvas — deixa o `orq` resolver "as notas
     // ligadas à MINHA saída" sem o agente precisar adivinhar (ex.: orq note write "...").
-    const env = { ...getEnv(), ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}) }
-    const id = ptyManager.spawn({ cols, rows, nodeId, initialCommand, ...sshFields, cwd, env })
+    const baseEnv = getEnv()
+    const env = { ...baseEnv, ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}) }
+    // Auto-início do agente: chama o wrapper do Orkestra pelo CAMINHO ABSOLUTO, não pelo nome. O
+    // wrapper (~/.orkestra/bin/claude) injeta o onboarding, mas o `.zshrc` do usuário costuma
+    // reordenar o PATH e mascará-lo com o binário real (ex.: prepende ~/.local/bin) — então não dá
+    // pra confiar que "claude" resolva pro wrapper. O caminho absoluto ignora o PATH por completo.
+    const resolvedCommand =
+      initialCommand === 'claude' && baseEnv.ORKESTRA_BIN
+        ? `${baseEnv.ORKESTRA_BIN}/claude`
+        : initialCommand
+    const id = ptyManager.spawn({
+      cols,
+      rows,
+      nodeId,
+      initialCommand: resolvedCommand,
+      ...sshFields,
+      cwd,
+      env
+    })
     ptyManager.onData(id, (data) => batcher.push(id, data))
     // No exit, flush imediato do pendente deste pty — não perder o final do output (ex.: o pty
     // morre em menos de um frame após o último chunk).

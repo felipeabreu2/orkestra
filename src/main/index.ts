@@ -242,6 +242,10 @@ app.whenReady().then(async () => {
   try {
     const binDir = installOrq(join(__dirname, '../orq/bin.js'))
     orchestrationEnv = {
+      // Diretório dos wrappers/orq. registerPtyIpc usa para chamar o wrapper `claude` pelo CAMINHO
+      // ABSOLUTO no auto-início — o PATH não é confiável (o .zshrc do usuário o reordena e mascara
+      // o wrapper com o binário real).
+      ORKESTRA_BIN: binDir,
       // PATH original (sem o binDir) — o wrapper `claude` usa para achar o binário real do claude
       // sem chamar a si mesmo (ver installOrq).
       ORKESTRA_REAL_PATH: process.env.PATH ?? '',
