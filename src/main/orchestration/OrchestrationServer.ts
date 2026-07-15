@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'http'
 import { randomBytes, timingSafeEqual } from 'crypto'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../../shared/orchestration'
+import { resolveContextNodes, formatContextBlocks } from '../../shared/contextResolver'
 
 // Fase 14 (Task 3): cap de tamanho do corpo dos POSTs — payloads acima disso respondem 413
 // antes de terminar de acumular (ver readJsonBody). 1 MB é folgado para os payloads reais
@@ -334,22 +335,14 @@ export class OrchestrationServer {
         // em QUALQUER direção. Resolvido aqui no servidor a partir do espelho — não depende do timing
         // do agente estar pronto no prompt (ao contrário da injeção via pty.write no momento da
         // ligação). `from` = ORKESTRA_NODE_ID do terminal que rodou o comando.
+        // Quick win #5: a resolução deixou de ser 1-salto (vizinhos diretos) e passou a atravessar
+        // a cadeia de NOTAS transitivamente (BFS com guarda anti-ciclo e maxDepth). A regra pura
+        // vive em ../../shared/contextResolver (sem HTTP/DOM); aqui só a plugamos ao espelho. O
+        // formato do bloco e o filtro de conteúdo vazio seguem idênticos (formatContextBlocks).
         const from = url.searchParams.get('from') ?? ''
-        const mirror = this.opts.getMirror()
-        const linked = new Set<string>()
-        for (const e of mirror.edges ?? []) {
-          if (e.source === from) linked.add(e.target)
-          if (e.target === from) linked.add(e.source)
-        }
-        const blocks = mirror.nodes
-          .filter((n) => linked.has(n.id) && n.type !== 'terminal' && (n.content ?? '').trim() !== '')
-          .map((n) => {
-            const label =
-              n.type === 'note' ? 'nota' : n.type === 'file' ? 'arquivo' : n.type === 'portal' ? 'site' : n.type
-            return `[contexto — ${label}: ${n.name}]\n${(n.content ?? '').trim()}`
-          })
+        const nodes = resolveContextNodes(this.opts.getMirror(), from)
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ context: blocks.join('\n\n') }))
+        res.end(JSON.stringify({ context: formatContextBlocks(nodes) }))
         return
       }
     }

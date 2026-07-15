@@ -578,4 +578,82 @@ describe('OrchestrationServer', () => {
     expect(res.status).toBe(503)
   })
 
+  // T1+T2 (quick win #5): o /context atravessa a cadeia de NOTAS transitivamente. Antes resolvia
+  // só 1 salto (vizinhos diretos), então uma neta ligada por uma cadeia nota→nota ficava de fora.
+  it('GET /context atravessa a cadeia de notas transitivamente (raiz E filha entram)', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 'T', type: 'terminal', name: 'Agente' },
+        { id: 'A', type: 'note', name: 'Raiz', content: 'conteúdo da raiz' },
+        { id: 'B', type: 'note', name: 'Filha', content: 'conteúdo da filha' }
+      ],
+      edges: [
+        { source: 'T', target: 'A' },
+        { source: 'A', target: 'B' }
+      ]
+    }
+    const s = makeServer(mirror, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    const { context } = (await res.json()) as { context: string }
+    // Raiz primeiro (BFS), depois a filha alcançada pela cadeia note↔note.
+    expect(context).toBe(
+      '[contexto — nota: Raiz]\nconteúdo da raiz\n\n[contexto — nota: Filha]\nconteúdo da filha'
+    )
+  })
+
+  it('GET /context de um terminal sem nada ligado devolve { context: "" }', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [{ id: 'T', type: 'terminal', name: 'Agente' }],
+      edges: []
+    }
+    const s = makeServer(mirror, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ context: '' })
+  })
+
+  it('GET /context atravessa nota-raiz vazia e traz só a filha com conteúdo (filtro de vazio preservado)', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 'T', type: 'terminal', name: 'Agente' },
+        { id: 'A', type: 'note', name: 'Índice', content: '' },
+        { id: 'B', type: 'note', name: 'Filha', content: 'só a filha tem conteúdo' }
+      ],
+      edges: [
+        { source: 'T', target: 'A' },
+        { source: 'A', target: 'B' }
+      ]
+    }
+    const s = makeServer(mirror, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ context: '[contexto — nota: Filha]\nsó a filha tem conteúdo' })
+  })
+
+  it('GET /context com x-orkestra-project divergente do ativo retorna 409 (herda o escopo de projeto)', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 'T', type: 'terminal', name: 'Agente' },
+        { id: 'A', type: 'note', name: 'Raiz', content: 'x' }
+      ],
+      edges: [{ source: 'T', target: 'A' }]
+    }
+    const s = makeServer(mirror, [], { getActiveProjectId: () => 'proj-B' })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token, 'x-orkestra-project': 'proj-A' }
+    })
+    expect(res.status).toBe(409)
+  })
+
 })
