@@ -1,6 +1,6 @@
 {
   "name": "orkestra",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Canvas de orquestração de agentes de código de IA",
   "keywords": [
     "electron",
