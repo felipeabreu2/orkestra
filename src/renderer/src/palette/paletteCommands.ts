@@ -4,6 +4,9 @@ export interface PaletteItem {
   id: string
   label: string
   kind: 'action' | 'node' | 'context' | 'connect' | 'disconnect'
+  // Texto extra indexado pela busca (T2): para notas, o corpo INTEIRO (não truncado), enquanto o
+  // `label` segue curto para exibição. `rankItems` casa nome OU corpo, com bônus para o nome.
+  searchText?: string
   run?: () => void
   input?: { placeholder: string; initial: string; submit: (value: string) => void }
   ask?: { nodeId: string; label: string }
@@ -153,7 +156,12 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
   }
 
   for (const n of nodes) {
-    items.push({ id: `node:${n.id}`, label: nodeLabel(n), kind: 'node', run: () => actions.focusNode(n.id) })
+    const item: PaletteItem = { id: `node:${n.id}`, label: nodeLabel(n), kind: 'node', run: () => actions.focusNode(n.id) }
+    // T2: notas indexam o corpo inteiro em `searchText` (o `label` continua truncado por nodeLabel).
+    if (n.type === 'note') {
+      item.searchText = ((n.data?.content as string) || '').trim()
+    }
+    items.push(item)
   }
   return items
 }

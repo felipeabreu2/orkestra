@@ -165,6 +165,29 @@ describe('buildPaletteItems', () => {
     expect(items.some((i) => i.id.startsWith('ctx:ask:'))).toBe(false)
   })
 
+  // T2: o item de navegação de uma nota carrega o corpo INTEIRO em searchText (para a busca
+  // fuzzy indexar o conteúdo), mantendo o label curto (truncado por nodeLabel).
+  it('item node de nota indexa o corpo inteiro em searchText (label segue truncado)', () => {
+    const content =
+      'reunião sobre kubernetes e deploy contínuo — precisamos revisar o pipeline de CI e os manifests do cluster de produção'
+    const note = { id: 'n1', type: 'note', data: { content } }
+    const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [], actions: noopActions() })
+    const item = items.find((i) => i.id === 'node:n1')
+    expect(item?.label.startsWith('Nota: ')).toBe(true)
+    expect(item?.label.length).toBeLessThanOrEqual('Nota: '.length + 24)
+    expect(item?.searchText).toContain('kubernetes')
+    expect(item?.searchText).toContain('produção')
+    expect(item?.searchText).toBe(content)
+  })
+
+  // T2: tipos que não são nota não recebem searchText (só notas indexam corpo).
+  it('nós não-nota não recebem searchText', () => {
+    const term = { id: 't1', type: 'terminal', data: { name: 'A' } }
+    const items = buildPaletteItems({ nodes: [term], edges: [], selectedNodes: [], actions: noopActions() })
+    const item = items.find((i) => i.id === 'node:t1')
+    expect(item?.searchText).toBeUndefined()
+  })
+
   it('desconectar tem id único quando ambos os endpoints estão selecionados', () => {
     const a = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
     const b = { id: 't2', type: 'terminal', data: { name: 'B' }, selected: true }
