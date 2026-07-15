@@ -14,6 +14,7 @@ import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
 import { loadEdgeStyle, saveEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '../ui/sidebarCollapsed'
 import { basename } from '../ui/paths'
+import { dissolveThinGroups } from '../layout/groups'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -369,6 +370,10 @@ interface CanvasState {
   // updateNoteContent fica para compatibilidade/migração das notas antigas (Markdown → html).
   updateNoteHtml: (id: string, html: string) => void
   updateNoteColor: (id: string, color: string) => void
+  // Notas #10: nome personalizado da nota (data.name). '' = volta à nomeação automática pela 1ª
+  // linha do conteúdo (ver deriveNoteName). Canvas #12: nome do grupo (data.name).
+  updateNoteName: (id: string, name: string) => void
+  updateGroupName: (id: string, name: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
   updatePortalUrl: (id: string, url: string) => void
@@ -649,6 +654,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       ...histPatch(state, 'notecolor:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, color } } : n))
     })),
+  updateNoteName: (id, name): void =>
+    set((state) => ({
+      ...histPatch(state, 'notename:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
+  updateGroupName: (id, name): void =>
+    set((state) => ({
+      ...histPatch(state, 'groupname:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
   updateTerminalName: (id, name): void =>
     set((state) => ({
       ...histPatch(state, 'rename:' + id),
@@ -725,7 +740,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
       return {
         ...histPatch(state),
-        nodes: nodes.filter((n) => n.id !== id),
+        // Canvas #12 (T3): após remover o nó, auto-dissolve qualquer grupo que tenha ficado com
+        // <2 membros (ex.: sobrou 1 filho). Idempotente — no-op se nenhum grupo ficou magro.
+        nodes: dissolveThinGroups(nodes.filter((n) => n.id !== id)),
         edges: state.edges.filter((e) => e.source !== id && e.target !== id),
         attention,
         generating

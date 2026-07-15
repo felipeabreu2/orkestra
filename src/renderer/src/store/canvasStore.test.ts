@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useCanvasStore } from './canvasStore'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
+import type { Node } from '@xyflow/react'
 
 beforeEach(() => {
   useCanvasStore.setState({ nodes: [], edges: [], attention: new Set(), generating: new Set() })
@@ -1468,5 +1469,40 @@ describe('undo mata pty e hydrate filtra edges órfãs', () => {
     })
     const edges = useCanvasStore.getState().edges
     expect(edges.map((e) => e.id)).toEqual(['e-ok']) // a órfã foi descartada
+  })
+})
+
+describe('nome de nota/grupo e auto-dissolver (Notas #10 / Canvas #12)', () => {
+  it('updateNoteName grava data.name; string vazia volta ao automático', () => {
+    useCanvasStore.getState().addNoteNode()
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().updateNoteName(id, 'Roadmap')
+    expect(useCanvasStore.getState().nodes[0].data.name).toBe('Roadmap')
+    useCanvasStore.getState().updateNoteName(id, '')
+    expect(useCanvasStore.getState().nodes[0].data.name).toBe('')
+  })
+
+  it('updateGroupName grava data.name no grupo', () => {
+    useCanvasStore.setState({
+      nodes: [{ id: 'g', type: 'group', position: { x: 0, y: 0 }, data: {} }] as Node[]
+    })
+    useCanvasStore.getState().updateGroupName('g', 'Backend')
+    expect(useCanvasStore.getState().nodes[0].data.name).toBe('Backend')
+  })
+
+  it('removeNode auto-dissolve o grupo que ficou com 1 filho (Canvas #12 T3)', () => {
+    useCanvasStore.setState({
+      nodes: [
+        { id: 'g', type: 'group', position: { x: 100, y: 100 }, data: {} },
+        { id: 'a', type: 'note', position: { x: 10, y: 20 }, parentId: 'g', extent: 'parent', data: {} },
+        { id: 'b', type: 'note', position: { x: 30, y: 40 }, parentId: 'g', extent: 'parent', data: {} }
+      ] as Node[]
+    })
+    useCanvasStore.getState().removeNode('a')
+    const nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeUndefined()
+    const b = nodes.find((n) => n.id === 'b')!
+    expect(b.parentId).toBeUndefined()
+    expect(b.position).toEqual({ x: 130, y: 140 })
   })
 })

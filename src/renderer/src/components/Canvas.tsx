@@ -380,6 +380,22 @@ export function Canvas(): JSX.Element {
         if (changes.length) onNodesChange(changes)
         return
       }
+      // Canvas #12 (T1): ⇧T arranja em grade os nós selecionados (ou todos, se nada selecionado).
+      // Lê o estado VIVO (getState), como o Shift+A acima, para não depender do closure do efeito.
+      if (e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault()
+        const st = useCanvasStore.getState()
+        const selected = st.nodes.filter((n) => n.selected)
+        const src = selected.length ? selected : st.nodes
+        const pos = src.map((n) => ({
+          id: n.id,
+          position: absolutePositionOf(n, st.nodes),
+          width: n.width,
+          height: n.height
+        }))
+        if (pos.length) st.setNodePositions(gridArrange(pos))
+        return
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
