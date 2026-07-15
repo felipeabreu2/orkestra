@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, Notification, shell, session } from 'electron'
+import { randomUUID } from 'crypto'
 import { join } from 'path'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -10,6 +11,7 @@ import { FileTreeService } from './filetree/FileTreeService'
 import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
 import { registerIdeIpc } from './ide/registerIdeIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
+import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { installOrq } from './orchestration/installOrq'
 import { buildEnvPath } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
@@ -77,6 +79,11 @@ let resolveActiveProjectId: () => string | undefined = () => undefined
 // Estado reportado por cada portal (nome -> {url,title,text}), atualizado via IPC 'portal:state'
 // a cada did-finish-load do <webview> correspondente (PortalNode); servido em GET /portal.
 const portalStates = new Map<string, PortalState>()
+// T1 (round-trip do booleano de portal click/fill): pendências de ação por requestId. A ponte
+// main->renderer é unidirecional (webContents.send), então o resultado da ação volta pelo canal
+// separado 'portal:result' (ipcMain.on lá embaixo) e resolve a promise correspondente. Timeout
+// interno do registry evita pendurar o agente se o webview morrer entre o send e o reply.
+const portalActions = new PortalActionRegistry()
 // Env extra injetado em todo pty spawnado; populado após orchestration.start() (porta+token).
 let orchestrationEnv: Record<string, string> = {}
 
@@ -127,7 +134,25 @@ const orchestration = new OrchestrationServer({
     const p = resolvePtyByName(name)
     return p ? { output: agentBus.read(p) } : null
   },
-  getPortalState: (name) => portalStates.get(name) ?? null
+  getPortalState: (name) => portalStates.get(name) ?? null,
+  // T1: variante ASSÍNCRONA do relay para as ações que confirmam sucesso (click/fill). Gera um
+  // requestId, registra a pendência e carimba o comando com ele no MESMO canal unidirecional
+  // 'orchestration:command' (sem abrir canal novo por ação — minimiza a superfície); o renderer
+  // roda o script, lê o booleano (clickScript/fillScript já o retornam) e devolve por
+  // 'portal:result'. Sem renderer vivo → null (o servidor traduz em 503, orientação BLD-6). O
+  // projectId vai carimbado igual ao onCommand: se o renderer descartar pelo guard de projeto
+  // (janela de ms numa troca), o timeout do registry cobre — nunca pendura o agente.
+  runPortalAction: async (cmd) => {
+    if (!mainWindow || mainWindow.webContents.isDestroyed()) return null
+    const requestId = randomUUID()
+    const pending = portalActions.register(requestId)
+    mainWindow.webContents.send(
+      'orchestration:command',
+      { ...cmd, requestId },
+      resolveActiveProjectId() ?? null
+    )
+    return pending
+  }
 })
 
 function createWindow(): void {
@@ -309,6 +334,13 @@ app.whenReady().then(async () => {
   })
   ipcMain.on('portal:state', (_e, s: { name: string } & PortalState) => {
     portalStates.set(s.name, { url: s.url, title: s.title, text: s.text })
+  })
+  // T1: canal de volta do round-trip de portal click/fill. O renderer devolve aqui o booleano de
+  // sucesso da ação (via window.orkestra.portalResult), correlacionado pelo requestId que o main
+  // carimbou no relay; o registry resolve a promise que o OrchestrationServer está aguardando.
+  // requestId desconhecido (reply duplicado / já expirado pelo timeout) é no-op no registry.
+  ipcMain.on('portal:result', (_e, requestId: string, ok: boolean) => {
+    portalActions.resolve(requestId, { ok: ok === true })
   })
   // Fase 20 (Task 1): o renderer manda isto quando o usuário foca o terminal daquele nó — limpa
   // o watcher de atenção (ver AgentBus.clearAttention) para exigir NOVO output antes de disparar

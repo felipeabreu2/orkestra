@@ -208,7 +208,13 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, selector })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+        // T1: click deixou de ser cego. HTTP 200 = transporte ok (code 0); o corpo {ok:boolean}
+        // diz se a ação achou o elemento e agiu — imprime `ok: true`/`ok: false` (elimina o
+        // `orq portal snapshot` extra só para descobrir "cliquei em nada"). Não-ok de transporte
+        // (503 sem janela, 409 projeto) segue a orientação padrão do errOut, com code 1.
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { ok?: boolean }
+        return { code: 0, out: `ok: ${data.ok === true}` }
       }
       if (sub === 'fill') {
         const [selector, ...textWords] = args
@@ -218,7 +224,11 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, selector, text })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+        // T1: idem click — fill confirma se o campo existia e foi preenchido (fillScript retorna
+        // false quando o seletor não casa) via o mesmo corpo {ok:boolean}.
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { ok?: boolean }
+        return { code: 0, out: `ok: ${data.ok === true}` }
       }
       if (sub === 'eval') {
         const js = args.join(' ')
@@ -244,7 +254,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval seguem fire-and-forget. Use "orq portal snapshot" para inspecionar o conteúdo da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

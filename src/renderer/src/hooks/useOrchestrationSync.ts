@@ -20,6 +20,40 @@ function resolvePortalWebview(
   return node ? getPortal(node.id) : undefined
 }
 
+// T1 (round-trip do booleano): executa um script de ação (clickScript/fillScript) no <webview> do
+// portal e, quando o comando trouxe requestId, encaminha o booleano de sucesso de volta ao main
+// (window.orkestra.portalResult) — fechando o round-trip que o OrchestrationServer aguarda. Sem
+// requestId (comando legado/externo), mantém o fire-and-forget silencioso de antes (.catch(()=>{})).
+//
+// Determinismo p/ não travar o servidor no timeout: se o portal não resolve (nome errado / webview
+// ainda não montado) ou o executeJavaScript rejeita/lança, respondemos `false` na hora em vez de
+// deixar o servidor esperar o teto do registry. O booleano vem coerido (=== true): o clickScript já
+// retorna true/false, mas isto blinda contra um retorno inesperado do webview.
+function runPortalAction(
+  nodes: ReturnType<typeof useCanvasStore.getState>['nodes'],
+  target: string,
+  script: string,
+  requestId?: string
+): void {
+  const reply = (ok: boolean): void => {
+    if (requestId) window.orkestra.portalResult(requestId, ok)
+  }
+  try {
+    const pending = resolvePortalWebview(nodes, target)?.executeJavaScript(script)
+    if (!pending) {
+      reply(false)
+      return
+    }
+    if (requestId) {
+      pending.then((ok) => reply(ok === true)).catch(() => reply(false))
+    } else {
+      pending.catch(() => {})
+    }
+  } catch {
+    reply(false)
+  }
+}
+
 // Mantém o main sincronizado com um espelho leve do canvas (id/tipo/nome/conteúdo dos nós)
 // e aplica de volta no store os comandos vindos do orq (via main), ex.: updateNote.
 export function useOrchestrationSync(): void {
@@ -129,21 +163,9 @@ export function useOrchestrationSync(): void {
           // quebrar por causa disso. `orq portal snapshot` é o feedback, não este comando.
         }
       } else if (cmd.type === 'portalClick') {
-        try {
-          resolvePortalWebview(store.nodes, cmd.target)
-            ?.executeJavaScript(clickScript(cmd.selector))
-            ?.catch(() => {})
-        } catch {
-          // idem
-        }
+        runPortalAction(store.nodes, cmd.target, clickScript(cmd.selector), cmd.requestId)
       } else if (cmd.type === 'portalFill') {
-        try {
-          resolvePortalWebview(store.nodes, cmd.target)
-            ?.executeJavaScript(fillScript(cmd.selector, cmd.text))
-            ?.catch(() => {})
-        } catch {
-          // idem
-        }
+        runPortalAction(store.nodes, cmd.target, fillScript(cmd.selector, cmd.text), cmd.requestId)
       } else if (cmd.type === 'portalEval') {
         try {
           resolvePortalWebview(store.nodes, cmd.target)?.executeJavaScript(cmd.js)?.catch(() => {})

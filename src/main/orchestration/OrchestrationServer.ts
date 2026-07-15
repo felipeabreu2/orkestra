@@ -1,6 +1,11 @@
 import { createServer, type Server } from 'http'
 import { randomBytes, timingSafeEqual } from 'crypto'
-import type { CanvasMirror, OrchestrationCommand, PortalState } from '../../shared/orchestration'
+import type {
+  CanvasMirror,
+  OrchestrationCommand,
+  PortalActionResult,
+  PortalState
+} from '../../shared/orchestration'
 import { resolveContextNodes, formatContextBlocks } from '../../shared/contextResolver'
 
 // Fase 14 (Task 3): cap de tamanho do corpo dos POSTs — payloads acima disso respondem 413
@@ -34,6 +39,13 @@ interface Opts {
   askRaw?: (name: string, data: string) => { ok: boolean; error?: string }
   check?: (name: string) => { output: string } | null
   getPortalState?: (name: string) => PortalState | null
+  // T1 (round-trip do booleano de portal click/fill): variante ASSÍNCRONA de emit para as ações
+  // que confirmam sucesso. A ponte main->renderer é unidirecional, então o main relaya o comando
+  // com um requestId e só resolve esta promise quando o renderer devolve o booleano (IPC
+  // portal:result); um timeout interno garante que ela sempre resolve. `null` = não havia renderer
+  // vivo para receber (mesma semântica BLD-6 do onCommand → 503). Ausente (fakes de teste antigos,
+  // orq legado) → o servidor cai no emit síncrono de sempre (fallback retrocompatível).
+  runPortalAction?: (cmd: OrchestrationCommand) => Promise<PortalActionResult | null>
 }
 
 export class OrchestrationServer {
@@ -130,6 +142,38 @@ export class OrchestrationServer {
   private emit(cmd: OrchestrationCommand, res: import('http').ServerResponse): void {
     if (this.opts.onCommand(cmd)) res.writeHead(200).end('ok')
     else res.writeHead(503).end('app unavailable')
+  }
+
+  // T1: emite uma ação de portal (click/fill) que CONFIRMA sucesso e responde `{ok}` JSON. Com
+  // runPortalAction presente (produção), aguarda o round-trip do renderer: `null` = sem renderer
+  // vivo → 503 (mesma orientação BLD-6); senão 200 com o booleano da ação (o webview morto entre
+  // send e reply cai no timeout do registry → {ok:false}, resposta determinística, nunca pendura o
+  // agente). Sem runPortalAction (fakes antigos / orq legado), cai no onCommand síncrono mas
+  // responde no MESMO formato JSON — assim o orq lê o corpo de uma única forma. O `void async` aqui
+  // espelha o ramo askWait; o try/catch cobre uma runPortalAction que rejeite (transporte quebrado).
+  private emitPortalAction(cmd: OrchestrationCommand, res: import('http').ServerResponse): void {
+    if (!this.opts.runPortalAction) {
+      if (this.opts.onCommand(cmd)) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      } else {
+        res.writeHead(503).end('app unavailable')
+      }
+      return
+    }
+    void (async () => {
+      try {
+        const result = await this.opts.runPortalAction!(cmd)
+        if (result === null) {
+          res.writeHead(503).end('app unavailable')
+          return
+        }
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: result.ok }))
+      } catch {
+        res.writeHead(503).end('app unavailable')
+      }
+    })()
   }
 
   private handle(req: import('http').IncomingMessage, res: import('http').ServerResponse): void {
@@ -231,7 +275,10 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.emit({ type: 'portalClick', target: parsed.target, selector: parsed.selector }, res)
+        this.emitPortalAction(
+          { type: 'portalClick', target: parsed.target, selector: parsed.selector },
+          res
+        )
       })
       return
     }
@@ -246,7 +293,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.emit(
+        this.emitPortalAction(
           { type: 'portalFill', target: parsed.target, selector: parsed.selector, text: parsed.text },
           res
         )

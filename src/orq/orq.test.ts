@@ -18,6 +18,7 @@ async function startServer(
     getPortalState?: (name: string) => { url: string; title: string; text: string } | null
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
+    runPortalAction?: (cmd: OrchestrationCommand) => Promise<{ ok: boolean } | null>
   } = {}
 ) {
   server = new OrchestrationServer({
@@ -338,6 +339,41 @@ describe('runOrq', () => {
     const { code } = await runOrq(['portal', 'eval', 'P', 'document.title'], env)
     expect(code).toBe(0)
     expect(commands).toEqual([{ type: 'portalEval', target: 'P', js: 'document.title' }])
+  })
+
+  // T1 (round-trip do booleano): quando o servidor tem runPortalAction (produção: aguarda o
+  // resultado da ação no renderer), click/fill leem o corpo JSON {ok} e imprimem `ok: <bool>` —
+  // sem precisar de um `orq portal snapshot` extra para saber se a ação pegou.
+  it('portal click imprime ok: true quando a ação teve sucesso (runPortalAction)', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue({ ok: true })
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code, out } = await runOrq(['portal', 'click', 'P', '#existe'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('ok: true')
+  })
+
+  it('portal click imprime ok: false quando o elemento não existe (ação falhou, transporte ok)', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue({ ok: false })
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code, out } = await runOrq(['portal', 'click', 'P', '.naoexiste'], env)
+    expect(code).toBe(0) // HTTP 200 = transporte ok; o booleano é o resultado da ação
+    expect(out).toContain('ok: false')
+  })
+
+  it('portal fill imprime ok: <bool> conforme o resultado da ação (runPortalAction)', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue({ ok: true })
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code, out } = await runOrq(['portal', 'fill', 'P', '#in', 'olá'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('ok: true')
+  })
+
+  it('portal click sem renderer vivo (runPortalAction -> null) responde 503 e código != 0', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue(null)
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code, out } = await runOrq(['portal', 'click', 'P', '.x'], env)
+    expect(code).not.toBe(0)
+    expect(out).toContain('sem janela ativa')
   })
 
   it('portal snapshot chama GET /portal?name=<nome> e imprime o estado retornado', async () => {

@@ -114,6 +114,12 @@ const api = {
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
   // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.
   portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state),
+  // T1 (round-trip do booleano): canal de VOLTA (renderer -> main) para o resultado de uma ação de
+  // portal click/fill. Quando o comando chega com requestId (ver orchestration.onCommand), o
+  // renderer roda o script no <webview>, lê o booleano de sucesso e o devolve aqui, correlacionado
+  // pelo mesmo requestId — o main resolve a pendência que o servidor aguarda. Send unidirecional
+  // (a correlação vive no requestId), espelhando o portalState acima.
+  portalResult: (requestId: string, ok: boolean): void => ipcRenderer.send('portal:result', requestId, ok),
   // Fase 20 (Task 1): watcher de atenção (ver AgentBus no main) — avisa o renderer quando um
   // terminal-agente produziu saída e depois ficou ocioso. onAgentAttention segue o mesmo padrão
   // de assinatura com unsubscribe de orchestration.onCommand acima; clearAgentAttention é
