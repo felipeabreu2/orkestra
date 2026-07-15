@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { type CSSProperties } from 'react'
 import { NodeResizer, useReactFlow, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useNodeVisibility } from '../nodeVisibility'
@@ -6,14 +6,13 @@ import { TerminalNode } from './TerminalNode'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
-import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
+import { roleMeta } from '../../../shared/roles'
 import { nodeStateClass, type NodeState } from './nodeState'
 import './nodes.css'
 
 export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
   const removeNode = useCanvasStore((s) => s.removeNode)
   const updateTerminalName = useCanvasStore((s) => s.updateTerminalName)
-  const updateTerminalRole = useCanvasStore((s) => s.updateTerminalRole)
   // Fase 20 (Task 2): indicador de "atenção do agente" — true enquanto este nodeId está no Set
   // `attention` do store (o agente deste terminal produziu output e depois ficou ocioso; ver
   // AgentBus.onAttention no main + o useEffect que assina window.orkestra.onAgentAttention em
@@ -37,21 +36,11 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // (addTerminalNode({sshHost}), ver canvasStore). Puro prop-read de data, igual preset
   // acima — NÃO é um seletor do store, então não corre risco do loop de render do zustand v5.
   const sshHost = (data as { sshHost?: string })?.sshHost
-  // Fase 26 (Task 2): papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o
-  // preset (por id OU label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre;
-  // `isPresetRole` reaproveita essa cor (neutra == não é preset) em vez de comparar `role` contra
-  // os labels de novo — assim um preset gravado com casing não-canônico (ex.: "dev" via orq)
-  // ainda é reconhecido. `showCustom`/`selectValue` são DERIVADOS de `role` a cada render — não
-  // um estado travado no mount — porque o papel pode mudar por FORA do seletor (Command Palette
-  // "Definir papel de X" chama updateTerminalRole no node já montado; um estado latched uma vez
-  // deixaria o <select> em branco quando o novo valor não bate com nenhuma <option>).
-  // `customToggle` só cobre o caso "Personalizado…" com role ainda vazio, onde não há valor
-  // algum para derivar o modo custom.
+  // Papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o preset (por id OU
+  // label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre. O SELETOR inline de
+  // papel foi REMOVIDO do header (2026-07-15, a pedido) — o papel agora é definido pela Command
+  // Palette ("Definir papel de X") e só aparece como badge quando está setado (ver JSX abaixo).
   const resolved = roleMeta(role)
-  const isPresetRole = resolved.color !== 'var(--text-2)'
-  const [customToggle, setCustomToggle] = useState(false)
-  const showCustom = customToggle || (role.trim() !== '' && !isPresetRole)
-  const selectValue = showCustom ? '__custom__' : isPresetRole ? resolved.label : role
 
   // Reformulação 2026-07-14 (Lote C, §5 estados do nó): 'needsInput' reaproveita o sinal REAL que
   // já existe (hasAttention, acima) — o AgentBus (main) detecta "produziu saída e depois ficou
@@ -126,46 +115,6 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           {role.trim() !== '' && (
             <span className="ork-role-badge" title={resolved.hint || undefined}>
               {resolved.label}
-            </span>
-          )}
-          <select
-            className="nodrag ork-role-select"
-            value={selectValue}
-            onChange={(e) => {
-              const v = e.target.value
-              if (v === '__custom__') {
-                setCustomToggle(true)
-                return
-              }
-              setCustomToggle(false)
-              updateTerminalRole(id, v)
-            }}
-            aria-label="Papel do terminal"
-            title="Papel do agente"
-          >
-            <option value="">Sem papel</option>
-            {PRESET_ROLES.map((r) => (
-              <option key={r.id} value={r.label}>
-                {r.label}
-              </option>
-            ))}
-            <option value="__custom__">Personalizado…</option>
-          </select>
-          {showCustom && (
-            <input
-              className="nodrag ork-role-input"
-              value={role}
-              placeholder="Papel personalizado"
-              onChange={(e) => updateTerminalRole(id, e.target.value)}
-              aria-label="Papel personalizado"
-            />
-          )}
-          {nodeState === 'generating' && (
-            <span className="ork-pill-generating" role="status" aria-label="Agente gerando resposta">
-              <i className="dot" aria-hidden="true" />
-              <i className="dot" aria-hidden="true" />
-              <i className="dot" aria-hidden="true" />
-              gerando
             </span>
           )}
           <button
