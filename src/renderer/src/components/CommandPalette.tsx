@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { rankItems } from '../search'
@@ -6,6 +6,7 @@ import { buildPaletteItems, type PaletteItem } from '../palette/paletteCommands'
 import { nextEdgeStyle } from '../edges/edgeStyle'
 import { isValidSshHost } from '../../../shared/ssh'
 import { AskAgentPanel } from './AskAgentPanel'
+import { Icon } from './Icon'
 import './CommandPalette.css'
 
 // Command palette (Cmd/Ctrl+K, Fase 12): busca unificada sobre ações de criação (terminal/
@@ -33,6 +34,18 @@ const KIND_LABELS: Record<PaletteItem['kind'], string> = {
   context: 'contexto',
   connect: 'conectar',
   disconnect: 'desconectar'
+}
+
+// Rótulo de GRUPO (overlays §4.6 do spec): cabeçalho de seção acima da primeira ocorrência de
+// cada `kind` na lista já ordenada/filtrada — reaproveita o mesmo campo `kind` do badge acima
+// (sem precisar de metadado novo em paletteCommands.ts) para render dos grupos "Ações"/"Ir para"
+// do mockup (docs/design-system/mockups/orkestra-overlays.html) sobre os kinds reais do app.
+const KIND_GROUP_LABELS: Record<PaletteItem['kind'], string> = {
+  action: 'Ações',
+  node: 'Ir para',
+  context: 'Contexto',
+  connect: 'Conectar',
+  disconnect: 'Desconectar'
 }
 
 export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
@@ -203,51 +216,77 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           <AskAgentPanel nodeId={askTarget.nodeId} label={askTarget.label} onClose={onClose} />
         ) : (
           <>
-            <input
-              ref={inputRef}
-              className="ork-palette-input"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setSelectedIndex(0)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault()
-                  setSelectedIndex((i) => (filtered.length === 0 ? 0 : (i + 1) % filtered.length))
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  setSelectedIndex((i) => (filtered.length === 0 ? 0 : (i - 1 + filtered.length) % filtered.length))
-                } else if (e.key === 'Enter') {
-                  e.preventDefault()
-                  runItem(filtered[activeIndex])
-                } else if (e.key === 'Escape') {
-                  e.preventDefault()
-                  onClose()
-                } else if (e.key === 'Tab') {
-                  // Focus-trap simples (Fase 13): o input é o único elemento focável do palette (a
-                  // lista é navegada por seta, não por Tab), então basta bloquear o Tab pra ele não
-                  // vazar foco pro canvas por trás do overlay.
-                  e.preventDefault()
-                }
-              }}
-              placeholder="Buscar nós ou ações..."
-              aria-label="Busca do command palette"
-            />
+            <div className="ork-palette-search">
+              <Icon name="Search" size={17} animation="none" />
+              <input
+                ref={inputRef}
+                className="ork-palette-input"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setSelectedIndex(0)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setSelectedIndex((i) => (filtered.length === 0 ? 0 : (i + 1) % filtered.length))
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setSelectedIndex((i) => (filtered.length === 0 ? 0 : (i - 1 + filtered.length) % filtered.length))
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    runItem(filtered[activeIndex])
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    onClose()
+                  } else if (e.key === 'Tab') {
+                    // Focus-trap simples (Fase 13): o input é o único elemento focável do palette (a
+                    // lista é navegada por seta, não por Tab), então basta bloquear o Tab pra ele não
+                    // vazar foco pro canvas por trás do overlay.
+                    e.preventDefault()
+                  }
+                }}
+                placeholder="Buscar nós ou ações..."
+                aria-label="Busca do command palette"
+              />
+              <span className="ork-palette-kbd">esc</span>
+            </div>
             <div className="ork-palette-list">
               {filtered.length === 0 && <div className="ork-palette-empty">Nenhum resultado</div>}
-              {filtered.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`ork-palette-item${index === activeIndex ? ' ork-palette-item--active' : ''}`}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                  onClick={() => runItem(item)}
-                >
-                  <span className="ork-palette-item-label">{item.label}</span>
-                  <span className="ork-palette-item-kind">{KIND_LABELS[item.kind]}</span>
-                </div>
-              ))}
+              {(() => {
+                let lastKind: PaletteItem['kind'] | null = null
+                return filtered.map((item, index) => {
+                  const showGroup = item.kind !== lastKind
+                  lastKind = item.kind
+                  return (
+                    <Fragment key={item.id}>
+                      {showGroup && <div className="ork-palette-group">{KIND_GROUP_LABELS[item.kind]}</div>}
+                      <div
+                        className={`ork-palette-item${index === activeIndex ? ' ork-palette-item--active' : ''}`}
+                        onMouseEnter={() => setSelectedIndex(index)}
+                        onClick={() => runItem(item)}
+                      >
+                        <span className="ork-palette-item-label">{item.label}</span>
+                        <span className="ork-palette-item-kind">{KIND_LABELS[item.kind]}</span>
+                      </div>
+                    </Fragment>
+                  )
+                })
+              })()}
             </div>
+            {filtered.length > 0 && (
+              <div className="ork-palette-foot">
+                <span>
+                  <b>↑↓</b> navegar
+                </span>
+                <span>
+                  <b>↵</b> abrir
+                </span>
+                <span>
+                  <b>esc</b> fechar
+                </span>
+              </div>
+            )}
           </>
         )}
       </div>

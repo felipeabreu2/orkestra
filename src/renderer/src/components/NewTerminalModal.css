@@ -8,68 +8,134 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.5);
+  padding: var(--space-6);
+  background: var(--scrim);
 }
 
+/* Card = superfície-modal (cromo): vidro espesso quase opaco (--glass-3 + --material-thick),
+   hairline de luz no topo e sombra de modal. isolation contém o custo do backdrop-filter na GPU.
+   Texto direto sobre o vidro usa a família --label* (vibrancy), não --text-* sólido. */
 .ork-modal-card {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
+  background: var(--glass-3);
+  backdrop-filter: var(--material-thick);
+  -webkit-backdrop-filter: var(--material-thick);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2);
-  color: var(--text-1);
+  box-shadow: var(--shadow-3), var(--hairline-glass);
+  color: var(--label);
+  isolation: isolate;
   animation: ork-scale-in var(--dur-2) var(--ease);
 }
 
+/* Largura 420px (overlays §4.6, mesma medida do .modal do mockup) — dá folga pro segmented de
+   5 posições ("Sem papel" + os 4 papéis) não apertar demais na aba Aparência (ver .ork-newterm-seg
+   abaixo). O padding do card foi pro header/conteúdo/rodapé (cada um com o seu), não mais num
+   bloco único — é o que permite o header e o rodapé ficarem encostados na borda do vidro,
+   com hairline própria, como no mockup (.mod-h/.mod-b/.mod-f). */
 .ork-newterm {
-  width: 400px;
+  width: 420px;
   max-width: 100%;
-  padding: 20px 22px;
+  padding: 0;
   display: flex;
   flex-direction: column;
 }
 
-.ork-newterm-title {
-  margin: 0 0 14px;
-  text-align: center;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-1);
+/* Header (overlays §4.6): ícone-marca (--gradient-brand) + título + fechar. */
+.ork-newterm-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: var(--space-3-5) var(--space-4);
+  border-bottom: 1px solid var(--glass-border);
+}
+.ork-newterm-head-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-brand);
+  color: var(--accent-text);
+  box-shadow: 0 3px 8px var(--accent-weak);
+}
+.ork-newterm-head-title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--label);
+}
+.ork-newterm-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--label-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-newterm-close:hover {
+  background: var(--bg-2-weak);
+  color: var(--label);
+}
+
+/* Conteúdo abaixo do header: presets, tabs e o corpo da aba ativa — todo o padding do card que
+   antes vivia direto em .ork-newterm agora mora aqui. */
+.ork-newterm-content {
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
 }
 
 .ork-newterm-quickstart-label {
   text-align: center;
-  font-size: 11px;
-  color: var(--text-3);
-  margin-bottom: 8px;
+  font-size: var(--fs-xs);
+  color: var(--label-2);
+  margin-bottom: var(--space-2);
 }
 
 .ork-newterm-presets {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: center;
 }
 
+/* Presets = chips (§4.8): pílula com tile opaco sobre o vidro; ativo → accent/accent-weak. */
 .ork-newterm-preset {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 12px 6px;
-  background: var(--bg-1);
+  gap: var(--space-1-5);
+  padding: var(--space-3) var(--space-1-5);
+  background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   color: var(--text-2);
   cursor: pointer;
   transition:
     border-color var(--dur-1) var(--ease),
     background var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease);
+    color var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
 .ork-newterm-preset:hover {
   border-color: var(--border-strong);
   color: var(--text-1);
+}
+.ork-newterm-preset:active {
+  transform: scale(var(--press-scale));
 }
 .ork-newterm-preset--active {
   border-color: var(--accent);
@@ -77,37 +143,40 @@
   color: var(--accent);
 }
 .ork-newterm-preset-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   text-align: center;
-  line-height: 1.2;
+  line-height: var(--lh-tight);
 }
 
 .ork-newterm-divider {
   height: 1px;
-  background: var(--border);
-  margin: 16px 0;
+  background: var(--glass-border);
+  margin: var(--space-4) 0;
 }
 
 .ork-newterm-tabs {
   display: inline-flex;
   align-self: center;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   background: var(--bg-2);
-  border-radius: 999px;
-  margin-bottom: 14px;
+  border-radius: var(--radius-pill);
+  margin-bottom: var(--space-3-5);
 }
 .ork-newterm-tab {
-  padding: 4px 16px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--fs-sm);
   color: var(--text-2);
   background: transparent;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition:
     background var(--dur-1) var(--ease),
     color var(--dur-1) var(--ease);
+}
+.ork-newterm-tab:hover {
+  color: var(--text-1);
 }
 .ork-newterm-tab--active {
   background: var(--accent);
@@ -117,23 +186,31 @@
 .ork-newterm-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2-5);
   min-height: 96px;
 }
 
+/* Anel de foco (overlays §4.6/§6 "anel de foco"): borda vira --accent e ganha o halo
+   --ring-focus; o box-shadow anima em --spring (o "assentar com leve overshoot" do mockup),
+   a borda troca num --ease normal e mais rápido — mesma dupla de curvas do .fld do mockup
+   (border-color .18s / box-shadow .26s cubic-bezier(.34,1.56,.64,1)). */
 .ork-newterm-name {
   width: 100%;
-  padding: 8px 10px;
-  font-size: 13px;
+  padding: var(--space-2) var(--space-2-5);
+  font-size: var(--fs-base);
   color: var(--text-1);
-  background: var(--bg-1);
+  background: var(--bg-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   outline: none;
-  transition: border-color var(--dur-1) var(--ease);
+  box-shadow: 0 0 0 0 transparent;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-2) var(--spring);
 }
 .ork-newterm-name:focus {
   border-color: var(--accent);
+  box-shadow: var(--ring-focus);
 }
 .ork-newterm-name::placeholder {
   color: var(--text-3);
@@ -142,24 +219,24 @@
 .ork-newterm-field {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 12px;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
 }
 .ork-newterm-field-label {
-  color: var(--text-2);
-  font-size: 12px;
+  color: var(--label-2);
+  font-size: var(--fs-sm);
 }
 .ork-newterm-field-value {
-  color: var(--text-1);
+  color: var(--label);
   font-family: var(--font-mono);
 }
 
 .ork-newterm-check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-1);
+  gap: var(--space-2);
+  font-size: var(--fs-base);
+  color: var(--label);
   cursor: pointer;
 }
 .ork-newterm-check input {
@@ -168,63 +245,157 @@
   height: 15px;
 }
 .ork-newterm-info {
-  color: var(--text-3);
+  color: var(--label-3);
   cursor: help;
 }
 
-.ork-newterm-roles {
+/* Papel = segmented deslizante (overlays §4.6/§6 "indicador deslizante"): pista --bg-2 com um
+   thumb --bg-1 absoluto por trás do item ativo, medido/posicionado via ref no .tsx (mesma receita
+   do .ork-topbar-thumb da Topbar — transform+width em vez de left/right pra ficar em GPU).
+   `flex-wrap: nowrap` + `overflow-x: auto` é a rede de segurança: o thumb rastreia o offset REAL
+   do botão ativo, então mesmo com o conteúdo raspando a largura do card (5 posições) ele nunca
+   desalinha — só evita que os itens quebrem linha, o que quebraria a leitura do thumb como uma
+   trilha única. */
+.ork-newterm-seg {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-2);
+  border-radius: var(--radius-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.ork-newterm-role {
-  padding: 3px 10px;
-  font-size: 12px;
-  color: var(--text-2);
+.ork-newterm-seg::-webkit-scrollbar {
+  display: none;
+}
+.ork-newterm-seg-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  left: 0;
+  height: 28px;
   background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  cursor: pointer;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-1);
+  transition:
+    transform var(--dur-3) var(--spring),
+    width var(--dur-3) var(--spring);
+  pointer-events: none;
 }
-.ork-newterm-role:hover {
-  border-color: var(--border-strong);
+.ork-newterm-seg-item {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 28px;
+  padding: 0 var(--space-2-5);
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease);
+}
+.ork-newterm-seg-item:hover {
   color: var(--text-1);
 }
-.ork-newterm-role--active {
-  border-color: var(--accent);
+.ork-newterm-seg-item--active {
   color: var(--accent);
 }
+.ork-newterm-seg-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+}
 
+/* Rodapé de ações: seção própria (fora de .ork-newterm-content) com hairline superior e padding
+   independentes, encostada na borda do vidro — mesma partição do header (.ork-newterm-head) e
+   do .mod-f do mockup. Substitui o `margin-top: var(--space-4-5)` antigo (token removido do
+   design system) por padding em tokens válidos. */
 .ork-newterm-actions {
   display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 18px;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3-5) var(--space-5) var(--space-5);
+  border-top: 1px solid var(--glass-border);
 }
 
 .ork-btn {
-  padding: 6px 18px;
-  font-size: 13px;
-  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-4);
+  font-size: var(--fs-base);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-pill);
   border: 1px solid transparent;
   cursor: pointer;
   transition:
     filter var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease);
+    background var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
 }
+.ork-btn:active {
+  transform: scale(var(--press-scale));
+}
+/* Secundário/ghost (§4.9): controle opaco --bg-2 + hairline; hover reforça a borda. */
 .ork-btn--ghost {
   color: var(--text-1);
   background: var(--bg-2);
   border-color: var(--border);
 }
 .ork-btn--ghost:hover {
-  background: var(--bg-1);
   border-color: var(--border-strong);
 }
+/* Primário (1 por tela, território de Marca §4.9): pílula com --gradient-accent, gloss
+   (--hairline-glass — mesma receita da CTA "Novo terminal" da Topbar, Topbar.css) + glow azul
+   (--accent-weak) e uma faixa de luz varrendo via ::before + @keyframes ork-shimmer (motion.css,
+   já usado pela Topbar). `overflow:hidden` contém a faixa dentro da pílula. */
 .ork-btn--primary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  overflow: hidden;
   color: var(--accent-text);
-  background: var(--accent);
+  background: var(--gradient-accent);
+  box-shadow:
+    0 6px 16px var(--accent-weak),
+    var(--hairline-glass);
 }
 .ork-btn--primary:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.08);
+  box-shadow:
+    0 10px 24px var(--accent-weak),
+    var(--hairline-glass);
+}
+.ork-btn--primary:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+.ork-btn--primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 20%,
+    color-mix(in srgb, var(--accent-text) 55%, transparent) 42%,
+    transparent 60%
+  );
+  transform: translateX(-130%) skewX(-18deg);
+  animation: ork-shimmer 3.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ork-btn--primary::before {
+    animation: none;
+  }
 }

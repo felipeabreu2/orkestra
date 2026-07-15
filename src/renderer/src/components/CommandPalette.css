@@ -1,9 +1,9 @@
-/* Command palette styling (Fase 13 Task 2). The backdrop stays a plain dim overlay (no token
-   covers "modal scrim" specifically); the card itself, input, list and items move to the design
-   tokens, plus a light scale+fade entrance on the card. Since the palette is conditionally
-   mounted (Canvas.tsx only renders it while open), a CSS `animation` on mount is all that's
-   needed — no extra React state — and it already collapses under prefers-reduced-motion via the
-   --dur-2 token going to 0ms. */
+/* Command palette styling (Fase 13 Task 2 · reskin Apple+Maestri §4.6). O backdrop é o scrim
+   tokenizado (--scrim, tema-aware); o card é a superfície-overlay de vidro regular (--glass-2 +
+   --material-regular), como o Spotlight — texto direto sobre o vidro usa a família --label*
+   (vibrancy), nunca --text-* sólido. Como o palette é montado condicionalmente (Canvas.tsx só o
+   renderiza enquanto aberto), a `animation` de entrada no mount basta — sem estado React extra — e
+   já colapsa sob prefers-reduced-motion via o token --dur-2 indo a 0ms. */
 
 .ork-palette-backdrop {
   position: fixed;
@@ -13,46 +13,94 @@
   align-items: flex-start;
   justify-content: center;
   padding-top: 15vh;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
 }
 
+/* Card = superfície-overlay (§3.1): vidro regular --glass-2 + --material-regular, hairline de luz
+   no topo e sombra de overlay. isolation contém o custo do backdrop-filter na GPU. */
 .ork-palette-card {
   width: 480px;
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
+  background: var(--glass-2);
+  backdrop-filter: var(--material-regular);
+  -webkit-backdrop-filter: var(--material-regular);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2);
-  color: var(--text-1);
-  font-size: 13px;
+  box-shadow: var(--shadow-2), var(--hairline-glass);
+  color: var(--label);
+  font-size: var(--fs-base);
   overflow: hidden;
+  isolation: isolate;
   animation: ork-scale-in var(--dur-2) var(--ease);
 }
 
+/* Linha de busca (overlays §4.6): ícone + input + kbd "esc", todos dentro do mesmo hairline
+   inferior — o input em si (.ork-palette-input) fica sem borda/padding próprios aqui; o modo
+   input (renomear/definir papel) reaproveita a mesma classe fora desta linha e define sua
+   própria borda completa (ver .ork-palette-input-screen abaixo). */
+.ork-palette-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: var(--space-3) var(--space-3-5);
+  border-bottom: 1px solid var(--glass-border);
+  color: var(--label-3);
+}
+
 .ork-palette-input {
+  flex: 1;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-1);
-  font-size: 15px;
-  padding: 12px 14px;
+  color: var(--label);
+  font-size: var(--fs-lg);
+  letter-spacing: var(--tracking-tight);
+  padding: 0;
   outline: none;
 }
 .ork-palette-input::placeholder {
-  color: var(--text-3);
+  color: var(--label-3);
+}
+
+/* Atalho de teclado (overlays §4.6): mono, chip discreto. Reaproveitado tanto na linha de busca
+   quanto no rodapé de dicas abaixo. */
+.ork-palette-kbd {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--label-2);
+  background: var(--bg-2-weak);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  padding: 2px var(--space-1-5);
+  line-height: 1;
 }
 
 .ork-palette-list {
   overflow-y: auto;
-  padding: 4px;
+  padding: var(--space-1);
 }
 
 .ork-palette-empty {
-  padding: 24px 12px;
-  color: var(--text-3);
+  padding: var(--space-6) var(--space-3);
+  color: var(--label-2);
   text-align: center;
+}
+
+/* Rótulo de grupo (overlays §4.6): cabeçalho de seção acima da primeira ocorrência de cada
+   `kind` na lista já filtrada/ordenada (ver CommandPalette.tsx). */
+.ork-palette-group {
+  padding: var(--space-2) var(--space-2-5) var(--space-1);
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.ork-palette-group:first-child {
+  padding-top: var(--space-1);
 }
 
 .ork-palette-item {
@@ -60,20 +108,30 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px 7px 14px;
+  padding: var(--space-1-5) var(--space-2-5) var(--space-1-5) var(--space-3-5);
   border-radius: var(--radius-sm);
+  color: var(--label);
   cursor: pointer;
   transition: background var(--dur-1) var(--ease);
 }
+/* Hover puro (mouse sobre um item que ainda não é o selecionado por teclado) — na prática o
+   onMouseEnter do TSX já promove o item hovered a `--active`, então este estado só é visível por
+   um frame antes do re-render; mantido mesmo assim para bater com o token exato do spec (§4.6:
+   "item hover = --bg-2-weak") e como rede de segurança caso a sincronia mude no futuro. */
+.ork-palette-item:hover {
+  background: var(--bg-2-weak);
+}
+/* Item ativo (§4.6): halo --accent-weak + barra accent de 3px via ::before — o padrão de "item
+   selecionado" replicado na sidebar/menus. */
 .ork-palette-item--active {
   background: var(--accent-weak);
 }
 .ork-palette-item--active::before {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 6px;
-  bottom: 6px;
+  left: var(--space-1);
+  top: var(--space-1-5);
+  bottom: var(--space-1-5);
   width: 3px;
   border-radius: 2px;
   background: var(--accent);
@@ -87,12 +145,28 @@
 
 .ork-palette-item-kind {
   flex: 0 0 auto;
-  margin-left: 8px;
-  color: var(--text-3);
-  font-size: 11px;
-  border: 1px solid var(--border);
+  margin-left: var(--space-2);
+  color: var(--label-2);
+  font-size: var(--fs-xs);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
+}
+
+/* Rodapé de dicas (overlays §4.6): só a tela de lista principal o mostra (ver CommandPalette.tsx
+   — some no modo input e no painel "perguntar ao agente"). */
+.ork-palette-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2-5) var(--space-3-5);
+  border-top: 1px solid var(--glass-border);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.ork-palette-foot b {
+  color: var(--text-2);
+  font-weight: var(--weight-semibold);
 }
 
 /* Modo input (Fase 23 Task 2): segunda tela do palette para itens com `item.input` (renomear,
@@ -101,69 +175,71 @@
 .ork-palette-input-screen {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
+  gap: var(--space-2);
+  padding: var(--space-3-5);
 }
 
 .ork-palette-input-label {
-  font-size: 13px;
-  color: var(--text-2);
+  font-size: var(--fs-base);
+  color: var(--label-2);
 }
 
 /* O campo de texto do modo input reaproveita a classe .ork-palette-input (mesma fonte/cor da
    busca), só que dentro da tela de input ela também precisa parecer um campo de fato — a busca
    confia no scope do card pra isso (borda só embaixo); aqui, isolado, ganha borda própria. */
 .ork-palette-input-screen .ork-palette-input {
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2-5);
 }
 
 .ork-palette-input-hint {
-  font-size: 11px;
-  color: var(--text-3);
+  font-size: var(--fs-xs);
+  color: var(--label-3);
 }
 
 /* Painel "Perguntar ao agente" (Fase 24 Task 2): mesma posição do modo input acima, mas com
    duas fases próprias — digitar o prompt (reaproveita .ork-palette-input) e o preview do stream
-   (.ork-ask-output), ver AskAgentPanel.tsx. */
+   (.ork-ask-output). O output e os botões são superfícies OPACAS sobre o vidro (--bg-0/--bg-2),
+   então usam --text-* sólido, não --label*. Ver AskAgentPanel.tsx. */
 .ork-ask {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
 }
 .ork-ask-title {
-  font-size: 12px;
-  color: var(--text-2);
+  font-size: var(--fs-sm);
+  color: var(--label-2);
 }
 .ork-ask-output {
   margin: 0;
   max-height: 300px;
   overflow: auto;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2-5);
   background: var(--bg-0);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-word;
 }
 .ork-ask-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: flex-end;
 }
 .ork-ask-btn {
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
   color: var(--text-1);
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease);
 }
 .ork-ask-btn:hover {
   border-color: var(--border-strong);
