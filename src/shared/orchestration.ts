@@ -6,6 +6,10 @@ export interface MirrorNode {
   role?: string
   preset?: string
   monitor?: boolean
+  // T5 (Modo Maestro como toggle): true quando este terminal é um Maestro (data.maestro no nó).
+  // Carregado no espelho para o gating server-side de T6 (isMaestro) decidir se o `from` de um
+  // recruit/connect/dismiss pode gerenciar. Ausente/undefined = terminal comum (retrocompat).
+  maestro?: boolean
 }
 
 // Ligações do canvas no espelho — o suficiente para o servidor resolver "o que está conectado a
@@ -41,7 +45,9 @@ export interface PortalActionResult {
 
 export type OrchestrationCommand =
   | { type: 'updateNote'; target: string; content: string; from?: string }
-  | { type: 'recruit'; name: string; preset: string; role?: string; from?: string }
+  // T4: preset opcional — quando omitido, o renderer herda o preset do Maestro (nó `from`); o
+  // default seguro é 'shell' (ver resolveRecruitPreset em useOrchestrationSync).
+  | { type: 'recruit'; name: string; preset?: string; role?: string; from?: string }
   | { type: 'dismiss'; target: string }
   | { type: 'connect'; source: string; target: string }
   | { type: 'portalOpen'; target: string; url: string }

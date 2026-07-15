@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useCanvasStore } from './canvasStore'
+import { buildMirror, resolveRecruitPreset } from '../hooks/useOrchestrationSync'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 import type { Node } from '@xyflow/react'
 
@@ -325,6 +326,22 @@ describe('canvasStore', () => {
     expect(recruit).toBeTruthy()
     expect(state.edges).toHaveLength(0)
     expect((recruit.data as { name?: string }).name).toBe('Solto')
+  })
+
+  // T5: Modo Maestro como toggle por terminal (data.maestro) — espelha o precedente data.monitor
+  // (mesmo caminho modal→store→serialize→mirror), por isso é de baixo risco.
+  it('addTerminalNode com maestro:true grava data.maestro e serialize preserva (round-trip)', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { maestro: true })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { maestro?: boolean }).maestro).toBe(true)
+    const snap = useCanvasStore.getState().serialize()
+    expect((snap.nodes.at(-1)!.data as { maestro?: boolean }).maestro).toBe(true)
+  })
+
+  it('addTerminalNode sem maestro nasce comum (data.maestro false, como monitor default)', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { preset: 'claude' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { maestro?: boolean }).maestro).toBe(false)
   })
 
   it('addPortalNode cria um nó tipo portal com data.url e data.name "Portal N"', () => {
@@ -927,6 +944,41 @@ describe('canvasStore', () => {
     expect(useCanvasStore.getState().edgeStyle).toBe('circuito')
     useCanvasStore.getState().setEdgeStyle('curva')
     expect(useCanvasStore.getState().edgeStyle).toBe('curva')
+  })
+})
+
+// T5: o espelho enviado ao main precisa carregar data.maestro (para o gating server-side de T6
+// saber quem é Maestro). buildMirror é o builder puro extraído do useEffect do useOrchestrationSync.
+describe('buildMirror (espelho do canvas p/ o main)', () => {
+  it('inclui data.maestro no MirrorNode do terminal', () => {
+    const nodes = [
+      { id: 't1', type: 'terminal', position: { x: 0, y: 0 }, data: { name: 'M', preset: 'claude', maestro: true } }
+    ] as unknown as Node[]
+    const mirror = buildMirror(nodes, [])
+    expect(mirror.nodes[0].maestro).toBe(true)
+    expect(mirror.nodes[0].preset).toBe('claude')
+  })
+  it('terminal sem maestro → MirrorNode.maestro undefined (comum)', () => {
+    const nodes = [{ id: 't1', type: 'terminal', position: { x: 0, y: 0 }, data: { name: 'M' } }] as unknown as Node[]
+    const mirror = buildMirror(nodes, [])
+    expect(mirror.nodes[0].maestro).toBeUndefined()
+  })
+})
+
+// T4: recruit herda o preset do Maestro quando omitido ("cópia de si mesmo"); preset explícito
+// vence; from desconhecido cai no default seguro. Helper puro (sem servidor/DOM).
+describe('resolveRecruitPreset (herança de preset do Maestro — T4)', () => {
+  const mirror = { nodes: [{ id: 't1', type: 'terminal', name: 'M', preset: 'claude' }], edges: [] }
+  it('preset omitido herda o preset do Maestro (from)', () => {
+    expect(resolveRecruitPreset(mirror, 't1', '')).toBe('claude')
+    expect(resolveRecruitPreset(mirror, 't1', undefined)).toBe('claude')
+  })
+  it('preset explícito vence a herança', () => {
+    expect(resolveRecruitPreset(mirror, 't1', 'codex')).toBe('codex')
+  })
+  it('from desconhecido/ausente → default seguro shell', () => {
+    expect(resolveRecruitPreset(mirror, 'nao-existe', '')).toBe('shell')
+    expect(resolveRecruitPreset(mirror, undefined, undefined)).toBe('shell')
   })
 })
 

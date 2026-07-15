@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { OrchestrationServer } from './OrchestrationServer'
+import { OrchestrationServer, isMaestro } from './OrchestrationServer'
 import type { CanvasMirror, OrchestrationCommand } from '../../shared/orchestration'
 
 let server: OrchestrationServer | undefined
@@ -296,6 +296,114 @@ describe('OrchestrationServer', () => {
       body: JSON.stringify({})
     })
     expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // --- T6: gating server-side (só Maestro recruta/conecta/dispensa) ---
+
+  it('POST /recruit de nó NÃO-Maestro (from com maestro:false) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', preset: 'claude', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /recruit de Maestro (from com maestro:true) emite normalmente (200)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', preset: 'claude', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toHaveLength(1)
+  })
+
+  it('POST /recruit sem from (legado) emite mesmo com Maestros no espelho (fail-open 200)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', preset: 'claude' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toHaveLength(1)
+  })
+
+  it('POST /connect de NÃO-Maestro (from=c1) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/connect`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'A', target: 'B', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /connect de Maestro (from=m1) emite {source,target} sem vazar from', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/connect`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'A', target: 'B', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'connect', source: 'A', target: 'B' }])
+  })
+
+  it('POST /dismiss de NÃO-Maestro (from=c1) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'X', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /dismiss de Maestro (from=m1) emite {target} sem vazar from', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'X', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'dismiss', target: 'X' }])
+  })
+
+  it('escopo de projeto (409) vem ANTES do gating de Maestro (403)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands, {
+      getActiveProjectId: () => 'proj-B'
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json', 'x-orkestra-project': 'proj-A' },
+      body: JSON.stringify({ name: 'X', preset: 'claude', from: 'c1' })
+    })
+    expect(res.status).toBe(409) // projeto não-ativo é 409 (global), nunca chega ao 403 da rota
     expect(commands).toEqual([])
   })
 

@@ -34,6 +34,7 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
   const [nameEdited, setNameEdited] = useState(false)
   const [tab, setTab] = useState<'details' | 'appearance'>('details')
   const [monitor, setMonitor] = useState(true)
+  const [maestro, setMaestro] = useState(false)
   const [role, setRole] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
 
@@ -54,6 +55,7 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
       preset,
       name: name.trim() || (presetById(preset)?.label ?? 'Terminal'),
       monitor,
+      maestro,
       role: role || undefined
     })
     onClose()
@@ -162,6 +164,17 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
                 <span
                   className="ork-newterm-info"
                   title="Mostra um indicador quando o agente fica ocioso e envia uma notificação do sistema se a janela não estiver em foco."
+                  aria-hidden="true"
+                >
+                  <Icon name="Info" size={13} animation="none" />
+                </span>
+              </label>
+              <label className="ork-newterm-check">
+                <input type="checkbox" checked={maestro} onChange={(e) => setMaestro(e.target.checked)} />
+                <span>Maestro</span>
+                <span
+                  className="ork-newterm-info"
+                  title="Concede a este agente os verbos de gerência: recrutar, conectar, reatribuir e dispensar outros terminais. Sem o Modo Maestro, o Orkestra recusa esses comandos."
                   aria-hidden="true"
                 >
                   <Icon name="Info" size={13} animation="none" />

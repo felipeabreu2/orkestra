@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { WebviewTag } from 'electron'
+import type { Node, Edge } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchestration'
 import { clickScript, fillScript } from '../../../shared/portalScripts'
@@ -54,6 +55,55 @@ function runPortalAction(
   }
 }
 
+// Builder PURO do espelho leve do canvas enviado ao main (id/tipo/nome/conteúdo/preset/monitor/
+// maestro dos nós + as ligações). Extraído do useEffect abaixo para (a) permitir teste unitário
+// (T5: garantir que data.maestro entra no MirrorNode, alimentando o gating server-side de T6) e
+// (b) ser reusado por resolveRecruitPreset ao herdar o preset do Maestro. Posição NÃO entra no
+// mirror (arrastar não deve reenviar via IPC) — o posicionamento do recruta vive no store.
+export function buildMirror(nodes: Node[], edges: Edge[]): CanvasMirror {
+  return {
+    nodes: nodes.map((n) => ({
+      id: n.id,
+      type: n.type ?? 'terminal',
+      name: (n.type === 'note'
+        ? // Notas #10: nome personalizado (data.name) vence; sem ele, a 1ª linha do conteúdo.
+          (n.data?.name as string)?.trim() || htmlToText((n.data?.html as string) ?? '') || 'Nota'
+        : (n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó'
+      ).slice(0, 40),
+      // content = conteúdo LEGÍVEL do bloco, para `orq context` entregar ao agente: texto da nota
+      // (htmlToText do TipTap), caminho do arquivo (o agente lê com sua própria ferramenta), ou a
+      // URL do site. Terminais não têm content de contexto.
+      content:
+        n.type === 'note'
+          ? htmlToText((n.data?.html as string) ?? '')
+          : n.type === 'file'
+            ? (n.data?.path as string) ?? ''
+            : n.type === 'portal'
+              ? (n.data?.url as string) ?? ''
+              : (n.data?.content as string | undefined),
+      role: (n.data?.role as string) ?? '',
+      preset: (n.data?.preset as string) ?? 'shell',
+      monitor: n.data?.monitor as boolean | undefined,
+      maestro: n.data?.maestro as boolean | undefined
+    })),
+    // Ligações (source/target) — o servidor usa para resolver os blocos conectados a um terminal.
+    edges: edges.map((e) => ({ source: e.source, target: e.target }))
+  }
+}
+
+// T4: resolve o preset de um recruta. Preset pedido explícito SEMPRE vence; omitido, herda o preset
+// do Maestro (nó `from` no espelho) — alinhado ao Maestri ("recruta cópias de si mesmo"); from
+// desconhecido/ausente cai no default seguro 'shell'. Puro (sem servidor/DOM) — testável isolado.
+export function resolveRecruitPreset(
+  mirror: CanvasMirror,
+  fromId: string | undefined,
+  requested: string | undefined
+): string {
+  if (requested && requested.trim()) return requested
+  const from = fromId ? mirror.nodes.find((n) => n.id === fromId) : undefined
+  return from?.preset || 'shell'
+}
+
 // Mantém o main sincronizado com um espelho leve do canvas (id/tipo/nome/conteúdo dos nós)
 // e aplica de volta no store os comandos vindos do orq (via main), ex.: updateNote.
 export function useOrchestrationSync(): void {
@@ -67,33 +117,7 @@ export function useOrchestrationSync(): void {
 
   // Envia um espelho leve do canvas ao main quando o mirror muda de fato (ver diff abaixo).
   useEffect(() => {
-    const mirror: CanvasMirror = {
-      nodes: nodes.map((n) => ({
-        id: n.id,
-        type: n.type ?? 'terminal',
-        name: (n.type === 'note'
-          ? // Notas #10: nome personalizado (data.name) vence; sem ele, a 1ª linha do conteúdo.
-            (n.data?.name as string)?.trim() || htmlToText((n.data?.html as string) ?? '') || 'Nota'
-          : (n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó'
-        ).slice(0, 40),
-        // content = conteúdo LEGÍVEL do bloco, para `orq context` entregar ao agente: texto da nota
-        // (htmlToText do TipTap), caminho do arquivo (o agente lê com sua própria ferramenta), ou a
-        // URL do site. Terminais não têm content de contexto.
-        content:
-          n.type === 'note'
-            ? htmlToText((n.data?.html as string) ?? '')
-            : n.type === 'file'
-              ? (n.data?.path as string) ?? ''
-              : n.type === 'portal'
-                ? (n.data?.url as string) ?? ''
-                : (n.data?.content as string | undefined),
-        role: (n.data?.role as string) ?? '',
-        preset: (n.data?.preset as string) ?? 'shell',
-        monitor: n.data?.monitor as boolean | undefined
-      })),
-      // Ligações (source/target) — o servidor usa para resolver os blocos conectados a um terminal.
-      edges: edges.map((e) => ({ source: e.source, target: e.target }))
-    }
+    const mirror = buildMirror(nodes, edges)
     const serialized = JSON.stringify(mirror)
     if (serialized === lastMirrorRef.current) return // nada relevante mudou (ex.: só posição) → não reenvia
     lastMirrorRef.current = serialized
@@ -131,13 +155,15 @@ export function useOrchestrationSync(): void {
         // T3 (#6): quando o `from` (ORKESTRA_NODE_ID do Maestro) resolve a um terminal do canvas,
         // posiciona o recruta ABAIXO dele e auto-conecta (recruitBelow). Sem `from` resolvível
         // (orq legado/externo, ou id sem correspondência) → fallback de cascata (addTerminalNode).
+        // T4: preset omitido herda o do Maestro (resolveRecruitPreset sobre o espelho local).
+        const preset = resolveRecruitPreset(buildMirror(store.nodes, store.edges), cmd.from, cmd.preset)
         const maestro = cmd.from
           ? store.nodes.find((n) => n.id === cmd.from && n.type === 'terminal')
           : undefined
         if (maestro) {
-          store.recruitBelow(maestro.id, { name: cmd.name, preset: cmd.preset, role: cmd.role })
+          store.recruitBelow(maestro.id, { name: cmd.name, preset, role: cmd.role })
         } else {
-          store.addTerminalNode(undefined, { name: cmd.name, preset: cmd.preset, role: cmd.role })
+          store.addTerminalNode(undefined, { name: cmd.name, preset, role: cmd.role })
         }
       } else if (cmd.type === 'dismiss') {
         const terminals = store.nodes.filter((n) => n.type === 'terminal')

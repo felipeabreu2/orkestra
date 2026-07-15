@@ -439,6 +439,22 @@ describe('runOrq', () => {
     expect(code).toBe(0)
     expect(out).toContain('Spec')
   })
+
+  it('squad monta 4 recrutas + 4 conexões à nota-spec (de um Maestro), em sequência', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer(
+      { nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] },
+      commands
+    )
+    const { code } = await runOrq(['squad', 'claude', 'Spec'], { ...env, ORKESTRA_NODE_ID: 'm1' })
+    expect(code).toBe(0)
+    const recruits = commands.filter((c) => c.type === 'recruit')
+    const connects = commands.filter((c) => c.type === 'connect')
+    expect(recruits).toHaveLength(4)
+    expect(connects).toHaveLength(4)
+    expect(recruits.map((c) => (c as { name: string }).name)).toEqual(['Dev', 'Revisor', 'Testador', 'Docs'])
+    expect(connects.every((c) => (c as { target: string }).target === 'Spec')).toBe(true)
+  })
 })
 
 // BLD-6 (auditoria 2026-07-14): quando o app está sem janela ativa (onCommand devolve false), o

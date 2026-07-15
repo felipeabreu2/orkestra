@@ -48,6 +48,16 @@ interface Opts {
   runPortalAction?: (cmd: OrchestrationCommand) => Promise<PortalActionResult | null>
 }
 
+// T6 (gating do Modo Maestro): um nó só pode recrutar/conectar/dispensar se for um Maestro. Fail-open
+// deliberado (mesma filosofia do escopo de projeto): sem `from` (orq legado/externo) ou nó desconhecido
+// no espelho → permite; só BLOQUEIA quando o nó existe e está EXPLICITAMENTE marcado maestro:false
+// (terminal comum criado pelo modal com o toggle desligado). data.maestro undefined (legado) = permitido.
+export function isMaestro(mirror: CanvasMirror, fromId: string | undefined): boolean {
+  if (!fromId) return true
+  const node = mirror.nodes.find((n) => n.id === fromId)
+  return !node || node.maestro !== false
+}
+
 export class OrchestrationServer {
   private server?: Server
   private token = ''
@@ -222,6 +232,10 @@ export class OrchestrationServer {
         // posicionar o recruta ABAIXO do Maestro e auto-conectar. Mesmo padrão retrocompatível
         // de `/note`: ausente (orq legado) → undefined → o renderer cai na cascata.
         const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
+          return
+        }
         this.emit(
           {
             type: 'recruit',
@@ -237,9 +251,15 @@ export class OrchestrationServer {
     }
     if (req.method === 'POST' && req.url === '/dismiss') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { target?: unknown }
+        const parsed = raw as { target?: unknown; from?: unknown }
         if (typeof parsed.target !== 'string') {
           res.writeHead(400).end('bad request')
+          return
+        }
+        // T6: `from` só serve ao gating — nunca vaza no comando emitido.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
           return
         }
         this.emit({ type: 'dismiss', target: parsed.target }, res)
@@ -248,9 +268,15 @@ export class OrchestrationServer {
     }
     if (req.method === 'POST' && req.url === '/connect') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { source?: unknown; target?: unknown }
+        const parsed = raw as { source?: unknown; target?: unknown; from?: unknown }
         if (typeof parsed.source !== 'string' || typeof parsed.target !== 'string') {
           res.writeHead(400).end('bad request')
+          return
+        }
+        // T6: `from` só serve ao gating — nunca vaza no comando emitido.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
           return
         }
         this.emit({ type: 'connect', source: parsed.source, target: parsed.target }, res)

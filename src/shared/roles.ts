@@ -45,6 +45,14 @@ export const PRESET_ROLES: readonly Role[] = [
     hint: 'Escreve e executa os testes.',
     prompt:
       'Você escreve e executa testes cobrindo os casos de borda e os caminhos de erro. Garanta que a suíte passa, relate as falhas encontradas e priorize cobertura e prevenção de regressões.'
+  },
+  {
+    id: 'docs',
+    label: 'Docs',
+    color: 'var(--paper-purple)',
+    hint: 'Atualiza changelog e documentação.',
+    prompt:
+      'Você mantém a documentação e o changelog em dia com o que o time entrega. Escreva de forma clara e concisa, cobrindo o que mudou e como usar; não altere o código-fonte além dos arquivos de documentação.'
   }
 ]
 

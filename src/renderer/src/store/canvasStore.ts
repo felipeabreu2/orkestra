@@ -73,7 +73,7 @@ function persistNode(n: Node): PersistedNode {
 // caller decide onde posicioná-lo e como inseri-lo no state.
 function makeTerminalNode(
   pos: { x: number; y: number },
-  opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
+  opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean; maestro?: boolean }
 ): Node {
   return {
     id: `terminal-${crypto.randomUUID()}`,
@@ -90,6 +90,10 @@ function makeTerminalNode(
       // Monitorar atividade (Fase 29): quando false, o indicador de atenção e a notificação do SO
       // NÃO disparam para este terminal. Persiste (default true).
       monitor: opts?.monitor ?? true,
+      // T5 (Modo Maestro como toggle): concede a este agente os verbos de gerência (recrutar,
+      // conectar, dispensar) — o enforcement real é server-side (T6, isMaestro sobre o espelho).
+      // Precedente idêntico ao monitor (persiste, entra no mirror). Default false (terminal comum).
+      maestro: opts?.maestro ?? false,
       // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou de ser
       // criado nesta sessão, para o TerminalNode auto-rodar o comando do preset apenas na criação,
       // nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
@@ -335,7 +339,7 @@ interface CanvasState {
     // Fase 27 (Task 3): sshHost opcional — quando presente, o nó nasce em modo SSH (ver
     // TerminalNode.tsx). String livre aqui (a validação de formato via isValidSshHost já
     // acontece no main, no spawn — Task 2); a UI de criação (Task 4) valida antes por UX.
-    opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
+    opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean; maestro?: boolean }
   ) => void
   // T3 (#6): cria um recruta ABAIXO do nó `fromId` (Maestro), auto-conectado por uma edge agent, e
   // devolve o id do novo terminal. fromId inexistente → cascata legada (sem edge). Usado por

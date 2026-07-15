@@ -1,5 +1,6 @@
 import { interpretEscapes } from './escapes'
 import { describeSelf } from './whoami'
+import { planSquad } from './squad'
 import type { CanvasMirror } from '../shared/orchestration'
 
 export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
@@ -31,7 +32,9 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       ? 'orq: este terminal pertence a um projeto que NÃO está ativo no Orkestra — os comandos orq atuam sobre o projeto aberto na tela. Avise o usuário e aguarde ele voltar para o projeto deste terminal.'
       : res.status === 503
         ? 'orq: o Orkestra está sem janela ativa no momento — o comando NÃO foi aplicado. Abra/reative a janela e tente de novo.'
-        : `orq: erro ${res.status}`
+        : res.status === 403
+          ? 'orq: este terminal não é um Maestro — os verbos de gerência (recruit/connect/dismiss) só têm efeito num Maestro. Peça ao usuário para ativar o Modo Maestro neste terminal.'
+          : `orq: erro ${res.status}`
 
   const [cmd, sub, ...rest] = argv
   try {
@@ -175,7 +178,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       const res = await fetch(`${base}/dismiss`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ target: sub })
+        body: JSON.stringify({ target: sub, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
@@ -184,9 +187,36 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       const res = await fetch(`${base}/connect`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ source: sub, target })
+        body: JSON.stringify({ source: sub, target, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+    }
+    if (cmd === 'squad') {
+      // orq squad "<preset>" "<nota-spec>" — monta Dev+Revisor+Testador+Docs conectados à nota-spec,
+      // em SEQUÊNCIA (recrutar antes de conectar), cada op sujeita ao gating de Maestro (403). Resumo
+      // k/N como o `ask --batch`; aborta cedo num 403 (não é Maestro), com a orientação do errOut.
+      const spec = rest[0]
+      if (!sub || !spec) return { code: 1, out: 'uso: orq squad "<preset>" "<nota-spec>"' }
+      const from = env.ORKESTRA_NODE_ID ?? ''
+      const ops = planSquad({ preset: sub, spec })
+      let ok = 0
+      for (const op of ops) {
+        const res =
+          op.op === 'recruit'
+            ? await fetch(`${base}/recruit`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ name: op.name, preset: op.preset, role: op.role, from })
+              })
+            : await fetch(`${base}/connect`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ source: op.source, target: op.target, from })
+              })
+        if (res.ok) ok++
+        else if (res.status === 403) return { code: 1, out: errOut(res) }
+      }
+      return { code: ok === ops.length ? 0 : 1, out: `esquadrão montado: ${ok}/${ops.length} operações` }
     }
     if (cmd === 'portal') {
       // sub aqui é a ação (open/navigate/click/fill/eval/snapshot); rest[0] é o nome do portal
