@@ -19,6 +19,7 @@ Verbos de gerência (Modo Maestro) — só têm efeito se este terminal for um M
 - orq connect "<A>" "<B>" — liga dois blocos: dois terminais, ou um recruta a uma nota já conectada a você.
 - orq dismiss "<nome>" — fecha o terminal de um recruta quando o trabalho dele termina (mantém o canvas limpo).
 - orq note write [--to "<nome/id>"] "<texto>" — escreve numa nota conectada (sem --to, na nota ligada à sua saída).
+- orq whoami — mostra seu próprio nome, papel e os blocos/agentes conectados a você (útil para um recruta saber quem é e a quem responde).
 
 Sua PRIMEIRA ação deve ser rodar \`orq context\` para carregar o que está conectado a você.
 `

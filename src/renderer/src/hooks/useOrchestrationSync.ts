@@ -93,7 +93,17 @@ export function useOrchestrationSync(): void {
         if (!target && !cmd.target && !cmd.from) target = notes[0]
         if (target) updateNoteHtml(target.id, markdownToHtml(cmd.content))
       } else if (cmd.type === 'recruit') {
-        store.addTerminalNode(undefined, { name: cmd.name, preset: cmd.preset, role: cmd.role })
+        // T3 (#6): quando o `from` (ORKESTRA_NODE_ID do Maestro) resolve a um terminal do canvas,
+        // posiciona o recruta ABAIXO dele e auto-conecta (recruitBelow). Sem `from` resolvível
+        // (orq legado/externo, ou id sem correspondência) → fallback de cascata (addTerminalNode).
+        const maestro = cmd.from
+          ? store.nodes.find((n) => n.id === cmd.from && n.type === 'terminal')
+          : undefined
+        if (maestro) {
+          store.recruitBelow(maestro.id, { name: cmd.name, preset: cmd.preset, role: cmd.role })
+        } else {
+          store.addTerminalNode(undefined, { name: cmd.name, preset: cmd.preset, role: cmd.role })
+        }
       } else if (cmd.type === 'dismiss') {
         const terminals = store.nodes.filter((n) => n.type === 'terminal')
         const target = terminals.find((n) => (n.data?.name as string) === cmd.target)

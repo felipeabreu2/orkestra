@@ -281,6 +281,51 @@ describe('canvasStore', () => {
     expect(nodes[1].position).toEqual({ x: 80 + 40, y: 80 + 40 })
   })
 
+  // T3 (#6): recruit posiciona ABAIXO do Maestro e auto-conecta. recruitBelow cria o terminal,
+  // posiciona abaixo (offset horizontal por nº de filhos já ligados), cria a edge agent
+  // Maestro→recruta e devolve o id do novo nó.
+  it('recruitBelow posiciona o recruta ABAIXO do Maestro, cria edge agent e devolve o id', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 100 }, { name: 'Maestro' })
+    const maestro = useCanvasStore.getState().nodes[0]
+    const id = useCanvasStore.getState().recruitBelow(maestro.id, { name: 'Dev', preset: 'claude' })
+    const state = useCanvasStore.getState()
+    const recruit = state.nodes.find((n) => n.id === id)!
+    expect(recruit).toBeTruthy()
+    // (a) abaixo (y maior) e x alinhado ao Maestro
+    expect(recruit.position.y).toBeGreaterThan(maestro.position.y)
+    expect(recruit.position.x).toBe(maestro.position.x)
+    // (b) edge Maestro → recruta com kind agent
+    const edge = state.edges.find((e) => e.source === maestro.id && e.target === id)!
+    expect(edge).toBeTruthy()
+    expect(edge.data).toMatchObject({ kind: 'agent' })
+    // (c) devolve o id, e o recruta herda name/preset e nasce com autostart (auto-inicia o agente)
+    expect(typeof id).toBe('string')
+    expect((recruit.data as { name?: string }).name).toBe('Dev')
+    expect((recruit.data as { preset?: string }).preset).toBe('claude')
+    expect((recruit.data as { autostart?: boolean }).autostart).toBe(true)
+  })
+
+  it('recrutas sucessivos do mesmo Maestro não empilham (espaçados horizontalmente)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 100 }, { name: 'Maestro' })
+    const maestro = useCanvasStore.getState().nodes[0]
+    const id1 = useCanvasStore.getState().recruitBelow(maestro.id, { name: 'Dev' })
+    const id2 = useCanvasStore.getState().recruitBelow(maestro.id, { name: 'Rev' })
+    const state = useCanvasStore.getState()
+    const r1 = state.nodes.find((n) => n.id === id1)!
+    const r2 = state.nodes.find((n) => n.id === id2)!
+    expect(r2.position.x).toBeGreaterThan(r1.position.x) // segundo recruta desloca para o lado
+    expect(state.edges.filter((e) => e.source === maestro.id)).toHaveLength(2)
+  })
+
+  it('recruitBelow com fromId inexistente cai na cascata (sem edge, sem quebrar) e devolve id', () => {
+    const id = useCanvasStore.getState().recruitBelow('nao-existe', { name: 'Solto' })
+    const state = useCanvasStore.getState()
+    const recruit = state.nodes.find((n) => n.id === id)!
+    expect(recruit).toBeTruthy()
+    expect(state.edges).toHaveLength(0)
+    expect((recruit.data as { name?: string }).name).toBe('Solto')
+  })
+
   it('addPortalNode cria um nó tipo portal com data.url e data.name "Portal N"', () => {
     useCanvasStore.getState().addPortalNode(undefined, { url: 'https://x' })
     const n = useCanvasStore.getState().nodes.at(-1)!

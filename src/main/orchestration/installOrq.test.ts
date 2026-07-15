@@ -73,5 +73,6 @@ describe('installOrq', () => {
     expect(onboard).toContain('orq connect')
     expect(onboard).toContain('orq dismiss')
     expect(onboard).toContain('orq note write')
+    expect(onboard).toContain('orq whoami')
   })
 })

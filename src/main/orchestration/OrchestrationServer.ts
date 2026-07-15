@@ -165,7 +165,7 @@ export class OrchestrationServer {
     }
     if (req.method === 'POST' && req.url === '/recruit') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { name?: unknown; preset?: unknown; role?: unknown }
+        const parsed = raw as { name?: unknown; preset?: unknown; role?: unknown; from?: unknown }
         if (
           typeof parsed.name !== 'string' ||
           typeof parsed.preset !== 'string' ||
@@ -174,8 +174,18 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
+        // `from` (opcional, T3): id do nó do Maestro (ORKESTRA_NODE_ID) — o renderer usa para
+        // posicionar o recruta ABAIXO do Maestro e auto-conectar. Mesmo padrão retrocompatível
+        // de `/note`: ausente (orq legado) → undefined → o renderer cai na cascata.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
         this.emit(
-          { type: 'recruit', name: parsed.name, preset: parsed.preset, role: parsed.role as string | undefined },
+          {
+            type: 'recruit',
+            name: parsed.name,
+            preset: parsed.preset,
+            role: parsed.role as string | undefined,
+            from
+          },
           res
         )
       })

@@ -65,6 +65,40 @@ function persistNode(n: Node): PersistedNode {
   return persisted
 }
 
+// Fábrica compartilhada de nó-terminal: gera o id interno e o objeto `data` completo (incluindo o
+// flag efêmero autostart, que faz o TerminalNode auto-rodar o comando do preset só na criação).
+// Extraída para T3 (#6) — addTerminalNode e recruitBelow criam o MESMO shape de nó; recruitBelow
+// precisa do id de volta para auto-conectar, então a criação vive aqui (retorna o Node) e cada
+// caller decide onde posicioná-lo e como inseri-lo no state.
+function makeTerminalNode(
+  pos: { x: number; y: number },
+  opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
+): Node {
+  return {
+    id: `terminal-${crypto.randomUUID()}`,
+    type: 'terminal',
+    position: pos,
+    data: {
+      name: opts?.name ?? `Terminal ${terminalSeq++}`,
+      preset: opts?.preset ?? 'shell',
+      role: opts?.role ?? '',
+      // Fase 27 (Task 3): host remoto (ex.: "user@host") quando o nó nasce em modo SSH;
+      // undefined nos terminais locais. Deliberadamente NÃO está na lista de `delete rest.*` do
+      // serialize — precisa persistir e sobreviver ao round-trip serialize→hydrate.
+      sshHost: opts?.sshHost,
+      // Monitorar atividade (Fase 29): quando false, o indicador de atenção e a notificação do SO
+      // NÃO disparam para este terminal. Persiste (default true).
+      monitor: opts?.monitor ?? true,
+      // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou de ser
+      // criado nesta sessão, para o TerminalNode auto-rodar o comando do preset apenas na criação,
+      // nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
+      autostart: true
+    },
+    width: 480,
+    height: 320
+  }
+}
+
 // Captura os nós de `ids` (grupos levam os filhos junto) + as edges cujas DUAS pontas foram
 // capturadas. Filho copiado SEM seu grupo vira top-level: posição absolutizada (a position de um
 // filho é relativa ao topo-esquerda do grupo) e parentId/extent removidos — colar um nó avulso
@@ -302,6 +336,10 @@ interface CanvasState {
     // acontece no main, no spawn — Task 2); a UI de criação (Task 4) valida antes por UX.
     opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
   ) => void
+  // T3 (#6): cria um recruta ABAIXO do nó `fromId` (Maestro), auto-conectado por uma edge agent, e
+  // devolve o id do novo terminal. fromId inexistente → cascata legada (sem edge). Usado por
+  // useOrchestrationSync ao aplicar o comando recruit quando o `from` resolve a um terminal.
+  recruitBelow: (fromId: string, opts?: { preset?: string; role?: string; name?: string }) => string
   addNoteNode: (position?: { x: number; y: number }, opts?: { width?: number; height?: number }) => void
   addPortalNode: (
     position?: { x: number; y: number } | undefined,
@@ -465,35 +503,38 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
       return {
         ...histPatch(state),
-        nodes: [
-          ...state.nodes,
-          {
-            id: `terminal-${crypto.randomUUID()}`,
-            type: 'terminal',
-            position: pos,
-            data: {
-              name: opts?.name ?? `Terminal ${terminalSeq++}`,
-              preset: opts?.preset ?? 'shell',
-              role: opts?.role ?? '',
-              // Fase 27 (Task 3): host remoto (ex.: "user@host") quando o nó nasce em modo SSH;
-              // undefined nos terminais locais. Deliberadamente NÃO está na lista de `delete
-              // rest.*` do serialize — precisa persistir e sobreviver ao round-trip
-              // serialize→hydrate (ao contrário de `autostart`, que é efêmero).
-              sshHost: opts?.sshHost,
-              // Monitorar atividade (Fase 29): quando false, o indicador de atenção e a
-              // notificação do SO NÃO disparam para este terminal. Persiste (default true).
-              monitor: opts?.monitor ?? true,
-              // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
-              // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
-              // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
-              autostart: true
-            },
-            width: 480,
-            height: 320
-          }
-        ]
+        nodes: [...state.nodes, makeTerminalNode(pos, opts)]
       }
     }),
+  // T3 (#6): recruit posiciona ABAIXO do Maestro e auto-conecta. Cria o terminal com a MESMA
+  // fábrica de addTerminalNode (herda autostart:true → o agente auto-inicia), posicionado abaixo
+  // do Maestro (offset horizontal por nº de recrutas já ligados abaixo, para não empilhar), cria a
+  // edge agent Maestro→recruta (via onConnect, igual ao arraste manual) e devolve o id. Fallback:
+  // fromId inexistente → cascata atual, sem edge (não quebra o orq legado/externo).
+  recruitBelow: (fromId, opts): string => {
+    const state0 = get()
+    const from = state0.nodes.find((n) => n.id === fromId)
+    const pos = from
+      ? {
+          // count = recrutas-terminais já ligados ABAIXO deste Maestro (edges source===fromId para
+          // um terminal); cada um empurra o próximo +1 largura para a direita, evitando empilhar.
+          x:
+            from.position.x +
+            state0.edges.filter(
+              (e) => e.source === fromId && state0.nodes.find((n) => n.id === e.target)?.type === 'terminal'
+            ).length *
+              ((from.width ?? 480) + 40),
+          y: from.position.y + (from.height ?? 320) + 80
+        }
+      : { x: 80 + (state0.nodes.length % 8) * 40, y: 80 + (state0.nodes.length % 8) * 40 }
+    const node = makeTerminalNode(pos, opts)
+    set((state) => ({ ...histPatch(state), nodes: [...state.nodes, node] }))
+    // Auto-conecta só quando o Maestro existe (o kind sai como 'agent': terminal↔terminal).
+    if (from) {
+      get().onConnect({ source: fromId, target: node.id, sourceHandle: null, targetHandle: null })
+    }
+    return node.id
+  },
   addNoteNode: (position = { x: 120, y: 120 }, opts): void =>
     set((state) => ({
       ...histPatch(state),

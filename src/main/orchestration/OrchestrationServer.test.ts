@@ -244,6 +244,35 @@ describe('OrchestrationServer', () => {
     expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
   })
 
+  // T3 (#6): /recruit lê o `from` opcional (id do nó do Maestro) e o inclui no comando emitido —
+  // o renderer usa esse id para posicionar o recruta abaixo do Maestro e auto-conectar. Espelha
+  // o padrão de `/note` (from opcional, retrocompatível).
+  it('POST /recruit com from inclui o campo no comando emitido', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', preset: 'claude', role: 'Reviewer', from: 't1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer', from: 't1' }])
+  })
+
+  it('POST /recruit sem from (legado) continua emitindo sem o campo (retrocompat, como /note)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', preset: 'claude', role: 'Reviewer' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
+  })
+
   it('POST /recruit sem role (opcional) ainda emite o comando', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [] }, commands)

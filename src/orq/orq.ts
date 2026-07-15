@@ -1,4 +1,6 @@
 import { interpretEscapes } from './escapes'
+import { describeSelf } from './whoami'
+import type { CanvasMirror } from '../shared/orchestration'
 
 export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
   // orq depende do fetch global (Node >= 18). Sem ele, cada comando abaixo lançaria um
@@ -33,7 +35,22 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
 
   const [cmd, sub, ...rest] = argv
   try {
+    // T2 (quick win #7): "recrutas sabem quem são". Reusa GET /list (nenhum endpoint novo — herda o
+    // escopo de projeto/409 de graça), resolve o próprio nó por ORKESTRA_NODE_ID e delega ao helper
+    // puro describeSelf. Código != 0 quando o nó não pôde ser identificado (orq externo/legado sem
+    // NODE_ID, ou id sem correspondência no espelho).
+    const whoami = async (): Promise<{ code: number; out: string }> => {
+      const res = await fetch(`${base}/list`, { headers })
+      if (!res.ok) return { code: 1, out: errOut(res) }
+      const mirror = (await res.json()) as CanvasMirror
+      const nodeId = env.ORKESTRA_NODE_ID ?? ''
+      const found = nodeId !== '' && mirror.nodes.some((n) => n.id === nodeId)
+      return { code: found ? 0 : 1, out: describeSelf(mirror, nodeId) }
+    }
+    if (cmd === 'whoami') return await whoami()
     if (cmd === 'list') {
+      // `list --me` é um alias de whoami (conveniência); whoami é o comando principal (mais legível).
+      if (argv.includes('--me')) return await whoami()
       const res = await fetch(`${base}/list`, { headers })
       // Sem o check, um 409 (projeto não-ativo) viraria erro de parse de JSON mascarado como
       // "falha de conexão" — o agente precisa da mensagem real do errOut.
@@ -144,10 +161,13 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     }
     if (cmd === 'recruit') {
       const [preset, role] = rest
+      // from = o nó deste terminal (ORKESTRA_NODE_ID), igual a `note write`: o renderer usa esse id
+      // para posicionar o recruta ABAIXO do Maestro e auto-conectá-lo (T3). Ausente/vazio → o
+      // renderer cai no fallback de cascata (comportamento legado).
       const res = await fetch(`${base}/recruit`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: sub, preset, role })
+        body: JSON.stringify({ name: sub, preset, role, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
@@ -224,7 +244,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

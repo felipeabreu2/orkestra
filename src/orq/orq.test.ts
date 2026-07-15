@@ -57,6 +57,38 @@ describe('runOrq', () => {
     expect(out).toContain('Spec')
   })
 
+  // T2 (quick win #7): "recrutas sabem quem são". orq whoami busca /list, resolve o próprio nó por
+  // ORKESTRA_NODE_ID e descreve nome/papel/conexões (via describeSelf).
+  it('whoami imprime o próprio nome/papel e as conexões, com código 0', async () => {
+    const mirror = {
+      nodes: [
+        { id: 't1', type: 'terminal', name: 'Líder', role: 'Líder' },
+        { id: 'n1', type: 'note', name: 'Spec' }
+      ],
+      edges: [{ source: 'n1', target: 't1' }]
+    }
+    const env = await startServer(mirror, [])
+    const { code, out } = await runOrq(['whoami'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(0)
+    expect(out).toContain('Líder')
+    expect(out).toContain('Spec')
+  })
+
+  it('list --me é um alias de whoami', async () => {
+    const mirror = { nodes: [{ id: 't1', type: 'terminal', name: 'Líder', role: 'Líder' }], edges: [] }
+    const env = await startServer(mirror, [])
+    const { code, out } = await runOrq(['list', '--me'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(0)
+    expect(out).toContain('Líder')
+  })
+
+  it('whoami sem ORKESTRA_NODE_ID degrada com mensagem clara e código != 0', async () => {
+    const env = await startServer({ nodes: [{ id: 't1', type: 'terminal', name: 'Líder' }] }, [])
+    const { code, out } = await runOrq(['whoami'], env)
+    expect(code).not.toBe(0)
+    expect(out).toContain('não foi possível identificar')
+  })
+
   it('context reúne o conteúdo dos blocos ligados a ESTE terminal (por ORKESTRA_NODE_ID)', async () => {
     const mirror = {
       nodes: [
@@ -234,20 +266,22 @@ describe('runOrq', () => {
     expect(code).not.toBe(0)
   })
 
-  it('recruit chama POST /recruit com {name, preset, role} e retorna código 0', async () => {
+  // T3 (#6): recruit passa o ORKESTRA_NODE_ID do Maestro como `from` (igual a `note write`), para o
+  // renderer posicionar o recruta ABAIXO do Maestro e auto-conectar.
+  it('recruit chama POST /recruit com {name, preset, role, from} e retorna código 0', async () => {
     const commands: OrchestrationCommand[] = []
     const env = await startServer({ nodes: [] }, commands)
-    const { code } = await runOrq(['recruit', 'Rev', 'claude', 'Reviewer'], env)
+    const { code } = await runOrq(['recruit', 'Rev', 'claude', 'Reviewer'], { ...env, ORKESTRA_NODE_ID: 't1' })
     expect(code).toBe(0)
-    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer', from: 't1' }])
   })
 
-  it('recruit sem role (opcional) ainda funciona', async () => {
+  it('recruit sem role (opcional) ainda funciona e inclui o from', async () => {
     const commands: OrchestrationCommand[] = []
     const env = await startServer({ nodes: [] }, commands)
-    const { code } = await runOrq(['recruit', 'Rev', 'shell'], env)
+    const { code } = await runOrq(['recruit', 'Rev', 'shell'], { ...env, ORKESTRA_NODE_ID: 't1' })
     expect(code).toBe(0)
-    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'shell' }])
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'shell', from: 't1' }])
   })
 
   it('dismiss chama POST /dismiss com {target} e retorna código 0', async () => {
