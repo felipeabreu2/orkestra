@@ -7,9 +7,9 @@
       already collapse to 0ms under prefers-reduced-motion via tokens.css — no extra rule needed
       for those two specifically.
    2) Every CONTINUOUS/infinite-loop animation below (ork-attention-pulse, ork-beam, ork-shimmer,
-      ork-think, ork-edge-flow) uses a fixed duration, NOT --dur-*, so it does NOT collapse on its
-      own — each is explicitly stopped in the @media (prefers-reduced-motion: reduce) block at the
-      bottom of this file. */
+      ork-edge-flow) uses a fixed duration, NOT --dur-*, so it does NOT collapse on its own — each
+      is explicitly stopped in the @media (prefers-reduced-motion: reduce) block at the bottom of
+      this file. */
 
 @keyframes ork-fade-in {
   from {
@@ -35,8 +35,8 @@
 
 /* Pulso de atenção do nó (centralizado aqui na reformulação 2026-07-14, antes vivia inline em
    nodes.css com rgba hardcoded). O anel usa o token --attention-ring (systemRed translúcido), que
-   troca por tema. Uma das VÁRIAS animações em loop do app (ver ork-beam/ork-shimmer/ork-think/
-   ork-edge-flow abaixo) — todas totalmente desligadas sob prefers-reduced-motion no mesmo bloco
+   troca por tema. Uma das VÁRIAS animações em loop do app (ver ork-beam/ork-shimmer/ork-edge-flow
+   abaixo) — todas totalmente desligadas sob prefers-reduced-motion no mesmo bloco
    centralizado no fim deste arquivo (o loop `animation` não é controlado pelos --dur-*, então
    zeramos explicitamente via media query). */
 @keyframes ork-attention-pulse {
@@ -75,21 +75,6 @@
   }
 }
 
-/* Pill "gerando…" (nó .is-generating, DesignCode UI §5/§6): os três pontinhos do indicador de
-   header (nodes.css .ork-pill-generating .dot) sobem/descem defasados via animation-delay
-   escalonado por pontinho. Loop contínuo (~1.15s) — colapsa sob prefers-reduced-motion abaixo. */
-@keyframes ork-think {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
-}
-
 /* Edge "agente" em fluxo (DesignCode UI §5/§6, Lote C): stroke-dashoffset marchando ao longo do
    traçado — sinaliza uma conexão ATIVA entre dois terminais-agente (Canvas.css
    .ork-edge--agent .react-flow__edge-path). Só essa combinação de cor+tipo recebe o fluxo; as
@@ -101,7 +86,7 @@
 }
 
 /* Reformulação 2026-07-14 (Lote C): as animações em loop contínuo ligadas a ESTADO DE NÓ/EDGE
-   (attention-pulse, beam, think, edge-flow + o ponto viajante SMIL) são desligadas aqui sob
+   (attention-pulse, beam, edge-flow + o ponto viajante SMIL) são desligadas aqui sob
    prefers-reduced-motion — centralizadas num único bloco, mesmo padrão do --beam (que fica
    parado em 0deg, um destaque estático em vez de animado). As demais animações em loop do app
    (não as de entrada/saída pontuais como ork-fade-in/ork-scale-in, que já colapsam via --dur-*
@@ -112,7 +97,6 @@
   .ork-node-attention,
   .ork-node.is-generating::after,
   .ork-node.needs-attention::before,
-  .ork-pill-generating .dot,
   .react-flow__edge.ork-edge--agent .react-flow__edge-path {
     animation: none;
   }

@@ -125,36 +125,6 @@
     transform var(--dur-2) var(--spring);
 }
 
-/* Pill "gerando…" (header do nó, só quando .is-generating — ver TerminalFlowNode.tsx): três
-   pontinhos subindo/descendo defasados (ork-think, motion.css). Mesma receita de cor de qualquer
-   badge accent do app (fundo --accent-weak, texto/dot --accent) — nunca uma cor solta. */
-.ork-pill-generating {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--fs-2xs);
-  font-weight: var(--weight-semibold);
-  color: var(--accent);
-  padding: 3px 9px 3px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-weak);
-  white-space: nowrap;
-}
-.ork-pill-generating .dot {
-  width: 4px;
-  height: 4px;
-  border-radius: var(--radius-circle);
-  background: var(--accent);
-  animation: ork-think 1.15s ease-in-out infinite;
-}
-.ork-pill-generating .dot:nth-child(2) {
-  animation-delay: 0.16s;
-}
-.ork-pill-generating .dot:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
 .ork-node-header {
   flex: 0 0 auto;
   height: 28px;
@@ -203,7 +173,7 @@
    Reformulação 2026-07-14: o @keyframes ork-attention-pulse (agora tokenizado com --attention-ring)
    E o desligamento sob prefers-reduced-motion foram CENTRALIZADOS em styles/motion.css — esta
    classe apenas consome a animação. NÃO é a única animação em loop do app (ork-beam/ork-shimmer/
-   ork-think/ork-edge-flow também são, ver motion.css) — todas desligam sob prefers-reduced-motion
+   ork-edge-flow também são, ver motion.css) — todas desligam sob prefers-reduced-motion
    pelo mesmo bloco centralizado em styles/motion.css. */
 .ork-node-attention {
   flex: 0 0 auto;
@@ -248,12 +218,6 @@
 .ork-node-input::placeholder {
   color: var(--text-3);
 }
-.ork-node-input--select {
-  flex: 0 0 auto;
-  max-width: 74px;
-  font-size: var(--fs-xs);
-  color: var(--text-2);
-}
 
 /* Badge "SSH" (Fase 27 Task 3): mostrado no header quando data.sshHost está presente (terminal
    remoto, ver TerminalFlowNode/canvasStore.addTerminalNode). Preenchimento sólido --accent (ao
@@ -271,8 +235,8 @@
 }
 
 /* Papel do agente (Fase 26 Task 2): badge colorido (cor do preset resolvida por roleMeta, ou
-   neutro --text-2 p/ texto livre) + seletor de papéis prontos/personalizado, no header do
-   terminal. Puramente visual/metadado — ver TerminalFlowNode.tsx. */
+   neutro --text-2 p/ texto livre), no header do terminal. Puramente visual/metadado — ver
+   TerminalFlowNode.tsx. */
 .ork-role-badge {
   font-size: var(--fs-2xs);
   line-height: 1.4;
@@ -293,27 +257,6 @@
    escurece no claro via color-mix 62% #000 (o #000 aqui é sancionado pela receita da espec). */
 :root[data-theme='light'] .ork-role-badge {
   color: color-mix(in srgb, var(--role-color, var(--text-2)) 62%, #000);
-}
-.ork-role-select {
-  font-size: var(--fs-xs);
-  color: var(--text-2);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 1px 4px;
-  max-width: 130px;
-}
-.ork-role-select:hover {
-  border-color: var(--border-strong);
-}
-.ork-role-input {
-  font-size: var(--fs-xs);
-  color: var(--text-1);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 1px 6px;
-  max-width: 130px;
 }
 
 .ork-node-iconbtn {

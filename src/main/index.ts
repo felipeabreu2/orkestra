@@ -51,20 +51,6 @@ const agentBus = new AgentBus(ptyManager, {
         // Notificações nativas podem faltar/ser negadas dependendo do SO — nunca travar o app.
       }
     }
-  },
-  // Fix border-beam preso (2026-07-15): sinal REAL de "generating" — busy=true no primeiro chunk
-  // de uma rajada de output, busy=false só depois de idleMs de silêncio (mesma detecção já tunada
-  // do watcher de atenção acima, timer próprio — ver AgentBus.busyTimers). Substitui a heurística
-  // antiga de 500ms fixos que vivia em TerminalNode.tsx (presa ligada por repaints ociosos da TUI
-  // do Claude Code/Ink). Deliberadamente NÃO checa `monitor === false` como onAttention acima: o
-  // border-beam é feedback puramente visual/local deste nó (não gera notificação nem cruza
-  // projeto), mesmo comportamento que a heurística que ele substitui sempre teve.
-  onBusyChange: (ptyId, busy) => {
-    const nodeId = ptyManager.nodeForPty(ptyId)
-    if (!nodeId) return
-    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('agent:busy', nodeId, busy)
-    }
   }
 })
 

@@ -179,18 +179,14 @@ export function Canvas(): JSX.Element {
     return off
   }, [setAttention])
 
-  // Fix border-beam preso — tentativa 3 (2026-07-15): a assinatura de window.orkestra.onAgentBusy
-  // que vivia aqui foi REMOVIDA. O driver de ociosidade do AgentBus (busy=true no 1º chunk de uma
-  // rajada, busy=false só após idleMs de silêncio) ainda ficava preso ligado — a TUI do Claude
-  // Code/Ink emite saída mesmo ociosa (repaints da barra de status) em intervalos menores que
-  // idleMs, então "silêncio real" no stream do pty praticamente nunca acontece. `generating` agora
-  // é 100% derivado por CONTEÚDO da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) —
-  // ver src/renderer/src/terminal/generatingSignal.ts e a varredura em TerminalNode.tsx (dentro do
-  // callback de term.write, throttled a 150ms). Manter os dois drivers ativos causaria conflito: o
-  // onAgentBusy religaria o beam a cada repaint ocioso, brigando com a varredura de conteúdo. O
-  // plumbing onAgentBusy (AgentBus.onBusyChange, main/index.ts, preload) fica DORMENTE — sem
-  // assinante no renderer — em vez de removido, para não arriscar a bateria de testes do main
-  // nesta correção; pode ser desmontado num follow-up se confirmado que não há mais uso.
+  // Fix border-beam preso — tentativa 3 (2026-07-15): `generating` é 100% derivado por CONTEÚDO
+  // da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) — ver
+  // src/renderer/src/terminal/generatingSignal.ts e a varredura em TerminalNode.tsx (dentro do
+  // callback de term.write, throttled a 150ms). A tentativa anterior (estado "busy" no AgentBus,
+  // ligado no 1º chunk de uma rajada e desligado após idleMs de silêncio) ficava presa ligada — a
+  // TUI do Claude Code/Ink emite saída mesmo ociosa (repaints da barra de status) em intervalos
+  // menores que idleMs, então "silêncio real" no stream do pty praticamente nunca acontece. Esse
+  // plumbing (AgentBus.onBusyChange, main/index.ts, preload) foi removido nesta limpeza.
 
   // Rederiva a cor da máscara do MiniMap quando o tema vira (data-theme no <html> muda). Observa
   // só esse atributo — barato e desacoplado do ThemeToggle (Lote E), que não precisa saber do

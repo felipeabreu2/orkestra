@@ -121,16 +121,6 @@ const api = {
     return () => ipcRenderer.removeListener('agent:attention', listener)
   },
   clearAgentAttention: (nodeId: string): void => ipcRenderer.send('agent:attention:clear', nodeId),
-  // Fix border-beam preso (2026-07-15): sinal REAL de "generating" (ver AgentBus.onBusyChange no
-  // main) — busy=true logo no primeiro chunk de uma rajada de output do pty, busy=false só depois
-  // de idleMs de silêncio real (mesma detecção de ociosidade já tunada do onAgentAttention acima,
-  // mas com timer PRÓPRIO — sobrevive a clearAgentAttention, ver AgentBus.ts). Mesmo padrão de
-  // assinatura com unsubscribe dos demais listeners deste arquivo.
-  onAgentBusy: (cb: (nodeId: string, busy: boolean) => void): (() => void) => {
-    const listener = (_e: unknown, nodeId: string, busy: boolean): void => cb(nodeId, busy)
-    ipcRenderer.on('agent:busy', listener)
-    return () => ipcRenderer.removeListener('agent:busy', listener)
-  },
   // Caminho absoluto de um File solto no terminal (drag-drop do Finder). No Electron 33 o
   // File.path foi removido — webUtils.getPathForFile é a forma suportada (resolve no preload,
   // sem o renderer tocar em `fs`). Só resolve Files reais que o usuário arrastou.
