@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { NodeResizer, useReactFlow, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useNodeVisibility } from '../nodeVisibility'
@@ -7,6 +7,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
 import { PRESET_ROLES, roleMeta } from '../../../shared/roles'
+import { nodeStateClass, type NodeState } from './nodeState'
 import './nodes.css'
 
 export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
@@ -52,6 +53,23 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   const showCustom = customToggle || (role.trim() !== '' && !isPresetRole)
   const selectValue = showCustom ? '__custom__' : isPresetRole ? resolved.label : role
 
+  // Reformulação 2026-07-14 (Lote C, §5 estados do nó): 'needsInput' reaproveita o sinal REAL que
+  // já existe (hasAttention, acima) — o AgentBus (main) detecta "produziu saída e depois ficou
+  // `idleMs` sem nada novo", exatamente a semântica de "agente terminou e espera você" da spec.
+  //
+  // 'generating' NÃO tem hoje um sinal real equivalente: o AgentBus só expõe onAttention
+  // (idle-APÓS-output), nunca um evento positivo de "está produzindo saída agora" — não há como
+  // distinguir com segurança "o Claude está pensando/gerando" de "o shell está só parado" sem
+  // inspecionar o CONTEÚDO do output (parsear o spinner do wrapper claude, ex. "✳ Gerando
+  // resposta…") ou expor via IPC uma janela de "pty emitiu dado nos últimos N ms" — nenhuma das
+  // duas existe ainda, e inventar uma heurística agora (ex.: "achou "✳"") seria frágil e acoplaria
+  // este componente ao texto exato do CLI do agente. TODO(design/generating-signal): ligar
+  // `generating` a um sinal real quando existir (heurística de "pty busy" no AgentBus expondo
+  // via window.orkestra, OU parse do wrapper claude) — até lá, fica só leitura de data.generating
+  // (nunca setado por ninguém hoje; default false ⇒ 'idle'), o ponto de wiring já pronto.
+  const generating = Boolean((data as { generating?: boolean })?.generating)
+  const nodeState: NodeState = generating ? 'generating' : hasAttention ? 'needsInput' : 'idle'
+
   // Limpa a atenção QUANDO o usuário de fato volta a usar este terminal — dispara ao focar
   // qualquer coisa dentro do wrapper (o mais comum: a <textarea> escondida que o xterm.js usa
   // internamente para capturar teclado, focada automaticamente por ele em clique OU via Tab;
@@ -70,7 +88,16 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
     <>
       <NodeResizer minWidth={240} minHeight={140} isVisible={selected ?? false} />
       <NodeHandles />
-      <div className="ork-node" ref={ref} onFocusCapture={handleFocusCapture}>
+      <div
+        className={['ork-node', nodeStateClass(nodeState, selected ?? false)].filter(Boolean).join(' ')}
+        ref={ref}
+        onFocusCapture={handleFocusCapture}
+        // §4.3: alimenta --role-color SÓ quando há papel, para a barra de accent do header e a
+        // receita "papel a 7%" do badge (ambas em nodes.css) pegarem a cor do papel — inclusive o
+        // caveat de tema claro (o CSS escurece o texto no [data-theme='light']). Sem papel, a var
+        // fica indefinida e o fallback `transparent`/--text-2 do CSS mantém tudo neutro/inerte.
+        style={role.trim() !== '' ? ({ ['--role-color']: resolved.color } as CSSProperties) : undefined}
+      >
         <div className="ork-node-header">
           <span className="ork-node-dot" aria-hidden="true" />
           {hasAttention && (
@@ -93,11 +120,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             </span>
           )}
           {role.trim() !== '' && (
-            <span
-              className="ork-role-badge"
-              style={{ color: resolved.color, borderColor: resolved.color }}
-              title={resolved.hint || undefined}
-            >
+            <span className="ork-role-badge" title={resolved.hint || undefined}>
               {resolved.label}
             </span>
           )}
@@ -132,6 +155,14 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
               onChange={(e) => updateTerminalRole(id, e.target.value)}
               aria-label="Papel personalizado"
             />
+          )}
+          {nodeState === 'generating' && (
+            <span className="ork-pill-generating" role="status" aria-label="Agente gerando resposta">
+              <i className="dot" aria-hidden="true" />
+              <i className="dot" aria-hidden="true" />
+              <i className="dot" aria-hidden="true" />
+              gerando
+            </span>
           )}
           <button
             className="nodrag ork-node-iconbtn"

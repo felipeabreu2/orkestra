@@ -301,8 +301,16 @@
    desenhado por TypedEdge (BaseEdge), então o seletor abaixo mira o path dentro dele. Cores por
    tipo revisadas na reformulação (§4.10): agent→accent, chain→ok, note→warn, portal/link→
    border-strong (portal tracejado) — todas já em token, mantidas. */
+/* Edge "agente" em fluxo (DesignCode UI §5/§6, Lote C): dash marchando (stroke-dasharray +
+   @keyframes ork-edge-flow em motion.css, stroke-dashoffset) — sinaliza uma conexão ATIVA entre
+   dois terminais-agente. Só o tipo agent recebe o fluxo (chain/note/portal/link seguem estáticas,
+   sem dasharray/animation). Especificidade (.react-flow__edge.ork-edge--agent
+   .react-flow__edge-path = 3 classes) já vence tanto a regra genérica quanto .ork-rope (2 classes,
+   Onda 2) — uma edge agente com estilo "corda" mostra o fluxo, não o traço pontilhado da corda. */
 .react-flow__edge.ork-edge--agent .react-flow__edge-path {
   stroke: var(--accent);
+  stroke-dasharray: 7 9;
+  animation: ork-edge-flow 1.1s linear infinite;
 }
 .react-flow__edge.ork-edge--chain .react-flow__edge-path {
   stroke: var(--ok);
@@ -337,3 +345,17 @@
 .react-flow__edge.selected .react-flow__edge-path.ork-rope {
   stroke-width: 3.5;
 }
+
+/* Ponto viajante da edge "agente" (DesignCode UI §6, Lote C): <circle> com <animateMotion>/<mpath>
+   (TypedEdge.tsx) percorrendo o MESMO path do traçado via offset — SMIL, não CSS, então não é
+   pausável por `animation-play-state`; sob prefers-reduced-motion (motion.css) o elemento é
+   escondido (display:none) em vez de ter a animação "pausada". drop-shadow (não box-shadow — SVG
+   não posiciona sombra de caixa) dá o halo suave, mesmo espírito do --ring-focus mas em filter. */
+.ork-edge-dot {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 3px var(--accent-weak));
+  pointer-events: none;
+}
+
+/* Reduced-motion do fluxo/ponto viajante fica centralizado em motion.css (mesmo bloco que desliga
+   beam/pulso/pill-gerando) — nada tokenizado adicional a fazer aqui. */

@@ -38,6 +38,19 @@ export function TypedEdge({
   return (
     <>
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} className={edgeStyle === 'corda' ? 'ork-rope' : undefined} />
+      {/* Ponto viajante (DesignCode UI §6): só na conexão AGENTE — reusa o MESMO path (via
+          <mpath href="#<edge-id>">, o id que BaseEdge acabou de gravar no <path> acima) em vez de
+          recalcular geometria própria, então acompanha qualquer edgeStyle (curva/circuito/corda)
+          sem lógica extra aqui. SMIL <animateMotion>, não CSS — @xyflow/react já entrega este
+          componente dentro de um <svg><g> por edge (EdgeWrapper), então um <circle> é um filho SVG
+          válido igual ao <path> do BaseEdge. */}
+      {kind === 'agent' && (
+        <circle r={4.5} className="ork-edge-dot">
+          <animateMotion dur="2.2s" repeatCount="indefinite" rotate="auto">
+            <mpath href={`#${id}`} />
+          </animateMotion>
+        </circle>
+      )}
       <EdgeLabelRenderer>
         <div
           className={`nodrag nopan ork-edge-badge ork-edge-badge--${kind}`}

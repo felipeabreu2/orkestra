@@ -66,8 +66,46 @@
   }
 }
 
+/* Pill "gerando…" (nó .is-generating, DesignCode UI §5/§6): os três pontinhos do indicador de
+   header (nodes.css .ork-pill-generating .dot) sobem/descem defasados via animation-delay
+   escalonado por pontinho. Loop contínuo (~1.15s) — colapsa sob prefers-reduced-motion abaixo. */
+@keyframes ork-think {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Edge "agente" em fluxo (DesignCode UI §5/§6, Lote C): stroke-dashoffset marchando ao longo do
+   traçado — sinaliza uma conexão ATIVA entre dois terminais-agente (Canvas.css
+   .ork-edge--agent .react-flow__edge-path). Só essa combinação de cor+tipo recebe o fluxo; as
+   demais edges (chain/note/portal/link) seguem estáticas. Loop contínuo — colapsa abaixo. */
+@keyframes ork-edge-flow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+/* Reformulação 2026-07-14 (Lote C): TODAS as animações em loop contínuo do app (não as de
+   entrada/saída pontuais como ork-fade-in/ork-scale-in, que já colapsam via --dur-* zerado em
+   tokens.css) são desligadas aqui sob prefers-reduced-motion — centralizado num único bloco,
+   mesmo padrão do --beam (que fica parado em 0deg, um destaque estático em vez de animado). */
 @media (prefers-reduced-motion: reduce) {
-  .ork-node-attention {
+  .ork-node-attention,
+  .ork-node.is-generating::after,
+  .ork-node.needs-attention::before,
+  .ork-pill-generating .dot,
+  .react-flow__edge.ork-edge--agent .react-flow__edge-path {
     animation: none;
+  }
+  /* .ork-edge-dot (ponto viajante) usa SMIL <animateMotion>, não CSS animation — `animation: none`
+     não o pararia. display:none esconde o elemento (equivalente visual a parar o movimento). */
+  .ork-edge-dot {
+    display: none;
   }
 }
