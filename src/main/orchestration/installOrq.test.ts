@@ -65,4 +65,13 @@ describe('installOrq', () => {
     expect(onboard).toContain('orq ask')
     expect(onboard).toContain('orq portal')
   })
+
+  it('o onboarding descreve os verbos de gerência do Maestro (recruit/connect/dismiss/note write)', () => {
+    run()
+    const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')
+    expect(onboard).toContain('orq recruit')
+    expect(onboard).toContain('orq connect')
+    expect(onboard).toContain('orq dismiss')
+    expect(onboard).toContain('orq note write')
+  })
 })

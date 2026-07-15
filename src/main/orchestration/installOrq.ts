@@ -14,6 +14,12 @@ Ferramentas do Orkestra — rode-as pela sua ferramenta de shell/Bash:
 - orq check "<nome>" — lê o output recente de outro agente.
 - orq portal navigate "<nome>" "<url>" | click "<nome>" "<seletor>" | fill "<nome>" "<seletor>" "<texto>" | snapshot "<nome>" — navega e controla um site (portal) conectado, como você faria num navegador.
 
+Verbos de gerência (Modo Maestro) — só têm efeito se este terminal for um Maestro; caso contrário o Orkestra recusa o comando:
+- orq recruit "<nome>" "<preset>" ["<papel>"] — cria um novo terminal-agente abaixo de você, já conectado a você (presets: shell/claude/codex/gemini; papéis: Dev/Revisor/Testador/Docs).
+- orq connect "<A>" "<B>" — liga dois blocos: dois terminais, ou um recruta a uma nota já conectada a você.
+- orq dismiss "<nome>" — fecha o terminal de um recruta quando o trabalho dele termina (mantém o canvas limpo).
+- orq note write [--to "<nome/id>"] "<texto>" — escreve numa nota conectada (sem --to, na nota ligada à sua saída).
+
 Sua PRIMEIRA ação deve ser rodar \`orq context\` para carregar o que está conectado a você.
 `
 
