@@ -143,6 +143,14 @@
   white-space: nowrap;
 }
 
+/* Realce dos caracteres combinados pela busca (T3): os trechos casados vêm em <b> (ver
+   renderLabel em CommandPalette.tsx). Destaque no accent + peso semibold pra saltar sobre o resto
+   do label sem virar um bloco pesado — mesma parcimônia de accent do resto da paleta. */
+.ork-palette-item-label b {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
 .ork-palette-item-kind {
   flex: 0 0 auto;
   margin-left: var(--space-2);

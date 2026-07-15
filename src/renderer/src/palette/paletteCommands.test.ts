@@ -15,7 +15,9 @@ function noopActions(): PaletteActions {
     removeEdge: vi.fn(),
     addSshTerminal: vi.fn(),
     toggleEdgeStyle: vi.fn(),
-    removeEdgesForNode: vi.fn()
+    removeEdgesForNode: vi.fn(),
+    openInEditor: vi.fn(),
+    newProject: vi.fn()
   }
 }
 
@@ -34,6 +36,28 @@ describe('buildPaletteItems', () => {
     expect(labels).toContain('Criar Nota')
     expect(labels).toContain('Criar Portal')
     expect(labels).toContain('Criar Árvore de Arquivos')
+  })
+
+  // T4 — ações globais já existentes no app expostas na paleta (reusam callbacks reais do Topbar):
+  // "Abrir no editor de código" e "Novo projeto", ambas kind 'action' (nenhum kind novo).
+  it('expõe "Abrir no editor de código" como ação global e run aciona openInEditor', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions })
+    const editor = items.find((i) => i.id === 'action:editor')
+    expect(editor?.label).toBe('Abrir no editor de código')
+    expect(editor?.kind).toBe('action')
+    editor?.run?.()
+    expect(actions.openInEditor).toHaveBeenCalled()
+  })
+
+  it('expõe "Novo projeto" como ação global e run aciona newProject', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions })
+    const project = items.find((i) => i.id === 'action:project')
+    expect(project?.label).toBe('Novo projeto')
+    expect(project?.kind).toBe('action')
+    project?.run?.()
+    expect(actions.newProject).toHaveBeenCalled()
   })
 
   it('item global "Criar terminal SSH remoto" tem input e input.submit aciona addSshTerminal', () => {

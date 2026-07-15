@@ -77,3 +77,58 @@ export function rankItems<T extends { label: string; searchText?: string }>(
   scored.sort((a, b) => b.score - a.score || a.item.label.length - b.item.label.length)
   return scored.map((s) => s.item)
 }
+
+// T3 — realce dos caracteres combinados na paleta. Helper PURO e SEPARADO de `rankItems`
+// (mudar o retorno do ranqueamento arriscaria seus testes; aqui o contrato é isolado). Devolve os
+// intervalos `[início, fim)` — no LABEL ORIGINAL, com acentos — dos caracteres casados pela mesma
+// subsequência/normalização de `rankItems`. Query vazia ou sem match → `[]`. Cada termo (AND
+// multi-palavra) contribui os índices que casar; um termo que NÃO é subsequência do label não
+// contribui trecho algum (ex.: termo que só existiria no corpo `searchText`, que não é destacável).
+export function matchRanges(query: string, label: string): Array<[number, number]> {
+  const termos = normalizar(query).split(/\s+/).filter(Boolean)
+  if (termos.length === 0) return []
+
+  // Mapeia cada "unidade" normalizada de volta ao índice do caractere ORIGINAL. Normalizamos char a
+  // char (mesma `normalizar` de T1): NFD só remove combinantes, então cada caractere-base vira 1
+  // unidade e um combinante isolado vira 0 — preservando o alinhamento com o label original.
+  const units: string[] = []
+  const origOf: number[] = []
+  for (let i = 0; i < label.length; i++) {
+    for (const c of normalizar(label[i])) {
+      units.push(c)
+      origOf.push(i)
+    }
+  }
+
+  const matched = new Set<number>()
+  for (const termo of termos) {
+    let ti = 0
+    const local: number[] = []
+    for (let ui = 0; ui < units.length && ti < termo.length; ui++) {
+      if (units[ui] === termo[ti]) {
+        local.push(origOf[ui])
+        ti++
+      }
+    }
+    // Só destaca se o termo casou por inteiro (subsequência completa) no label.
+    if (ti === termo.length) for (const idx of local) matched.add(idx)
+  }
+  if (matched.size === 0) return []
+
+  // Índices casados → intervalos, mesclando posições consecutivas em um único `[início, fim)`.
+  const sorted = [...matched].sort((a, b) => a - b)
+  const ranges: Array<[number, number]> = []
+  let start = sorted[0]
+  let prev = sorted[0]
+  for (let k = 1; k < sorted.length; k++) {
+    if (sorted[k] === prev + 1) {
+      prev = sorted[k]
+    } else {
+      ranges.push([start, prev + 1])
+      start = sorted[k]
+      prev = sorted[k]
+    }
+  }
+  ranges.push([start, prev + 1])
+  return ranges
+}

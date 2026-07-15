@@ -38,6 +38,12 @@ export interface PaletteActions {
   toggleEdgeStyle: () => void
   // R6: remove todas as conexões de um nó de uma vez.
   removeEdgesForNode: (nodeId: string) => void
+  // T4: ações globais já existentes no app (hoje só na Topbar), expostas também na paleta. O
+  // cabeamento real vive no CommandPalette.tsx (abre a pasta ativa no editor externo; dispara a
+  // criação de projeto). `openInEditor` é no-op silencioso sem pasta vinculada (mesmo padrão do SSH
+  // inválido), então não precisa de contexto extra aqui.
+  openInEditor: () => void
+  newProject: () => void
 }
 export interface PaletteContext {
   nodes: PaletteNode[]
@@ -72,7 +78,10 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
     { id: 'action:terminal', label: 'Criar Terminal', kind: 'action', run: actions.addTerminalNode },
     { id: 'action:note', label: 'Criar Nota', kind: 'action', run: actions.addNoteNode },
     { id: 'action:portal', label: 'Criar Portal', kind: 'action', run: actions.addPortalNode },
-    { id: 'action:filetree', label: 'Criar Árvore de Arquivos', kind: 'action', run: actions.addFileTreeNode }
+    { id: 'action:filetree', label: 'Criar Árvore de Arquivos', kind: 'action', run: actions.addFileTreeNode },
+    // T4: ações globais já existentes no app (reusam os handlers da Topbar via CommandPalette.tsx).
+    { id: 'action:editor', label: 'Abrir no editor de código', kind: 'action', run: actions.openInEditor },
+    { id: 'action:project', label: 'Novo projeto', kind: 'action', run: actions.newProject }
   ]
 
   // R5: alterna o estilo de conexão. O rótulo mostra a direção da troca (estado atual -> próximo).
