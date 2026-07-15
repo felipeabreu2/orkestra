@@ -1,0 +1,186 @@
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  .dc-head{ margin:4px 0 6px; font-family:'Inter',-apple-system,sans-serif; font-weight:700; font-size:28px; letter-spacing:-.02em; color:var(--fg,#0b0b0f); line-height:1.08; }
+  .dc-head .bl{ color:#007AFF; }
+  .dc-sub{ font-family:'Inter',sans-serif; font-size:13.5px; color:#6b7280; margin:0 0 14px; max-width:780px; line-height:1.5; }
+  .dc-pal{ display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap; }
+  .dc-sw{ display:flex; align-items:center; gap:7px; font-family:'Inter',sans-serif; font-size:11px; color:#6b7280; background:#fff; border:1px solid #e6e8ec; padding:4px 10px 4px 5px; border-radius:999px; }
+  .dc-sw i{ width:16px; height:16px; border-radius:5px; display:block; border:1px solid rgba(11,11,15,.06); }
+
+  /* ---------- app window — LIGHT, DesignCode UI language ---------- */
+  .dc{ --canvas:#EEF1F6; --panel:#FFFFFF; --glass:rgba(255,255,255,.72);
+    --t1:#0B0B0F; --t2:rgba(11,11,15,.60); --t3:rgba(11,11,15,.40);
+    --bd:rgba(11,11,15,.08); --bds:rgba(11,11,15,.13);
+    --blue:#007AFF; --blueh:#0057B5; --bluew:rgba(0,122,255,.10);
+    --green:#34C759; --orange:#FF9500; --red:#FF3B30;
+    --sh-card:0 10px 28px rgba(11,11,15,.09), 0 1px 2px rgba(11,11,15,.05);
+    --sh-chrome:0 6px 20px rgba(11,11,15,.08), 0 1px 2px rgba(11,11,15,.04);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+    height:590px; border-radius:16px; overflow:hidden; display:grid; grid-template-columns:248px 1fr;
+    background:var(--canvas); border:1px solid var(--bd); box-shadow:0 30px 70px rgba(11,11,15,.22); }
+  .dc *{ box-sizing:border-box; }
+  .dc svg{ display:block; }
+  .icn{ width:17px; height:17px; stroke:currentColor; stroke-width:1.7; fill:none; stroke-linecap:round; stroke-linejoin:round; flex:0 0 auto; }
+
+  /* sidebar — glass chrome */
+  .dc .sb{ background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-right:1px solid var(--bd); display:flex; flex-direction:column; }
+  .dc .sbh{ height:54px; display:flex; align-items:center; gap:9px; padding:0 16px; }
+  .dc .star{ width:24px; height:24px; border-radius:7px; background:linear-gradient(135deg,#3395FF,#007AFF); display:flex; align-items:center; justify-content:center; color:#fff; flex:0 0 auto; box-shadow:0 3px 8px rgba(0,122,255,.35); }
+  .dc .wm{ font-weight:600; font-size:15px; color:var(--t1); letter-spacing:-.01em; }
+  .dc .search{ margin:2px 14px 14px; height:34px; border-radius:9px; background:rgba(11,11,15,.04); border:1px solid var(--bd);
+    display:flex; align-items:center; gap:8px; padding:0 11px; font-size:12.5px; color:var(--t3); }
+  .dc .glbl{ font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--t3); padding:2px 18px 7px; }
+  .dc .prj{ margin:3px 12px; height:36px; border-radius:9px; display:flex; align-items:center; gap:10px; padding:0 11px;
+    font-size:13px; color:var(--t2); cursor:pointer; }
+  .dc .prj:hover{ background:rgba(11,11,15,.04); }
+  .dc .prj .pd{ width:7px; height:7px; border-radius:50%; background:rgba(11,11,15,.25); flex:0 0 auto; }
+  .dc .prj .pn{ flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-weight:500; }
+  .dc .prj .cnt{ font-size:11px; color:var(--t3); font-variant-numeric:tabular-nums; }
+  .dc .prj.act{ background:var(--blue); color:#fff; box-shadow:0 6px 16px rgba(0,122,255,.32); }
+  .dc .prj.act .pd{ background:#fff; } .dc .prj.act .cnt{ color:rgba(255,255,255,.8); } .dc .prj.act .pn{ font-weight:600; }
+  .dc .sbf{ margin-top:auto; height:56px; border-top:1px solid var(--bd); display:flex; align-items:center; gap:10px; padding:0 16px; }
+  .dc .ib{ width:30px; height:30px; border-radius:8px; background:rgba(11,11,15,.04); border:1px solid var(--bd); color:var(--t2); display:flex; align-items:center; justify-content:center; }
+  .dc .sbf .ava{ margin-left:auto; width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#3395FF,#5856D6); border:1px solid rgba(255,255,255,.5); display:flex; align-items:center; justify-content:center; color:#fff; font-size:10.5px; font-weight:600; }
+
+  /* main / canvas */
+  .dc .main{ position:relative; overflow:hidden; }
+  .dc .canvas{ position:absolute; inset:0; background:var(--canvas);
+    background-image:radial-gradient(circle, rgba(11,11,15,.07) 1px, transparent 1px); background-size:22px 22px; }
+  .dc .stage{ position:absolute; inset:0; }
+
+  /* topbar — floating glass pills */
+  .dc .top{ position:absolute; top:14px; left:16px; right:16px; display:flex; align-items:center; justify-content:space-between; gap:10px; z-index:5; }
+  .dc .pill{ height:40px; display:flex; align-items:center; gap:3px; padding:0 7px; border-radius:999px;
+    background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid var(--bd); box-shadow:var(--sh-chrome); }
+  .dc .pill.ws{ padding:0 8px; gap:9px; }
+  .dc .wsn{ font-size:13px; color:var(--t1); font-weight:600; letter-spacing:-.01em; }
+  .dc .tb{ height:30px; min-width:30px; padding:0 8px; border-radius:999px; display:flex; align-items:center; gap:6px; justify-content:center; color:var(--t2); font-size:12.5px; }
+  .dc .tb:hover{ color:var(--t1); background:rgba(11,11,15,.05); }
+  .dc .tb.on{ color:#fff; background:var(--blue); }
+  .dc .sep{ width:1px; height:18px; background:var(--bd); margin:0 4px; }
+  .dc .cta{ height:40px; padding:0 15px; border-radius:999px; background:var(--blue); color:#fff; font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:7px; box-shadow:0 6px 16px rgba(0,122,255,.32); }
+
+  /* terminal nodes — solid white cards (content = flat) */
+  .dc .node{ position:absolute; border-radius:14px; overflow:hidden; background:var(--panel); border:1px solid var(--bd); box-shadow:var(--sh-card); }
+  .dc .node.sel{ border-color:transparent; box-shadow:var(--sh-card), 0 0 0 3px var(--bluew), 0 0 0 1px var(--blue); }
+  .dc .nh{ height:40px; display:flex; align-items:center; gap:9px; padding:0 13px; border-bottom:1px solid var(--bd); font-size:12.5px; }
+  .dc .nh .nic{ color:var(--t2); }
+  .dc .nh .att{ width:8px; height:8px; border-radius:50%; background:var(--red); box-shadow:0 0 0 0 rgba(255,59,48,.5); animation:dcp 1.7s ease-in-out infinite; flex:0 0 auto; }
+  .dc .nh .nm{ font-weight:600; color:var(--t1); flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; letter-spacing:-.01em; }
+  .dc .tag{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; flex:0 0 auto; display:flex; align-items:center; gap:5px; }
+  .dc .tag .dt{ width:6px; height:6px; border-radius:50%; }
+  .dc .tag.dev{ color:#1a7a43; background:rgba(52,199,89,.14); } .dc .tag.dev .dt{ background:var(--green); }
+  .dc .tag.rev{ color:#b45a09; background:rgba(255,149,0,.15); } .dc .tag.rev .dt{ background:var(--orange); }
+  .dc .nh .hb{ color:var(--t3); }
+  .dc .term{ background:#F7F8FA; padding:11px 13px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:11.5px; line-height:1.66; color:#1d2230; }
+  .dc .term .m{ color:var(--t3); } .dc .term .b{ color:var(--blue); } .dc .term .g{ color:#1a7a43; }
+  .dc .term .cur{ display:inline-block; width:6px; height:13px; background:var(--blue); vertical-align:-2px; border-radius:1px; }
+  .dc .foot{ height:28px; display:flex; align-items:center; gap:7px; padding:0 13px; background:var(--panel); border-top:1px solid var(--bd); font-family:ui-monospace,Menlo,monospace; font-size:10.5px; color:var(--t3); }
+
+  /* note — warm yellow paper */
+  .dc .stick{ position:absolute; border-radius:12px; background:#FFF6D9; color:#5a4a1a; padding:12px 14px; box-shadow:0 12px 26px rgba(11,11,15,.12); font-size:12.5px; line-height:1.4; border:1px solid rgba(180,150,40,.18); }
+  .dc .stick .grip{ height:5px; width:30px; border-radius:999px; background:rgba(90,74,26,.22); margin:0 auto 9px; }
+  .dc .stick .h{ font-weight:700; margin-bottom:3px; }
+
+  .dc .ebadge{ position:absolute; font-size:11px; font-weight:600; padding:2px 10px; border-radius:999px; background:#fff; border:1px solid var(--bd); color:var(--blue); box-shadow:var(--sh-chrome); }
+
+  @keyframes dcp{ 0%{ box-shadow:0 0 0 0 rgba(255,59,48,.5);} 70%{ box-shadow:0 0 0 7px rgba(255,59,48,0);} 100%{ box-shadow:0 0 0 0 rgba(255,59,48,0);} }
+
+  @media (prefers-color-scheme: dark){ .dc-head{ color:#f4f6fa;} .dc-sub{ color:#9aa4b6;} .dc-sw{ background:#161b26; border-color:#262d3b; color:#9aa4b6;} }
+  :root[data-theme='dark'] .dc-head{ color:#f4f6fa; } :root[data-theme='dark'] .dc-sub{ color:#9aa4b6; }
+  :root[data-theme='dark'] .dc-sw{ background:#161b26; border-color:#262d3b; color:#9aa4b6; }
+</style>
+
+<div class="dc-head">Orkestra no <span class="bl">DesignCode UI</span> — tema claro, contido</div>
+<p class="dc-sub">Traduzi o sistema do seu Figma para o canvas do Orkestra: accent azul <b>#007AFF</b>, superfícies branco+alpha, <b>Inter</b>, radius 8/10. <b>Vidro só no cromo</b> (topbar + sidebar); os nós de terminal são <b>brancos e flat</b> (o terminal é a estrela). Clique se curtir, ou me diga o que ajustar.</p>
+
+<div class="dc-pal">
+  <span class="dc-sw"><i style="background:#007AFF"></i>Azul · accent</span>
+  <span class="dc-sw"><i style="background:#34C759"></i>Verde · ok</span>
+  <span class="dc-sw"><i style="background:#FF9500"></i>Laranja · aviso</span>
+  <span class="dc-sw"><i style="background:#FF3B30"></i>Vermelho · atenção</span>
+  <span class="dc-sw"><i style="background:#FFFFFF"></i>Branco · superfície</span>
+</div>
+
+<div class="dc" data-choice="light" onclick="toggleSelect(this)">
+  <div class="sb">
+    <div class="sbh">
+      <div class="star"><svg class="icn" viewBox="0 0 24 24" style="width:14px;height:14px;stroke-width:2.2"><path d="M12 3l2.2 5.6L20 10l-5 3.4L16.5 20 12 16.4 7.5 20 9 13.4 4 10l5.8-1.4z"/></svg></div>
+      <div class="wm">Orkestra</div>
+    </div>
+    <div class="search"><svg class="icn" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>Filtrar projetos…</div>
+    <div class="glbl">Projetos</div>
+    <div class="prj act"><span class="pd"></span><span class="pn">orkestra</span><span class="cnt">3</span></div>
+    <div class="prj"><span class="pd"></span><span class="pn">landing-page</span><span class="cnt">1</span></div>
+    <div class="prj"><span class="pd"></span><span class="pn">api-gateway</span></div>
+    <div class="sbf">
+      <div class="ib"><svg class="icn" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg></div>
+      <div class="ib"><svg class="icn" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></div>
+      <div class="ava">FA</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="canvas"></div>
+    <div class="stage">
+      <svg width="100%" height="100%" viewBox="0 0 1100 560" preserveAspectRatio="none" style="position:absolute;inset:0">
+        <path d="M392 172 C 470 172, 430 326, 500 326" fill="none" stroke="#007AFF" stroke-width="2.2" opacity=".85"/>
+        <path d="M190 236 C 190 300, 225 305, 232 348" fill="none" stroke="rgba(11,11,15,.28)" stroke-width="2" stroke-dasharray="6 5" opacity=".8"/>
+      </svg>
+
+      <div class="node sel" style="left:78px; top:78px; width:314px">
+        <div class="nh">
+          <svg class="icn nic" viewBox="0 0 24 24"><path d="M5 8l3.5 3.5L5 15"/><path d="M12 16h6"/></svg>
+          <span class="att"></span><span class="nm">api · server</span>
+          <span class="tag dev"><span class="dt"></span>Dev</span>
+          <svg class="icn hb" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 12h12"/><path d="M12 6v12"/></svg>
+        </div>
+        <div class="term"><div><span class="m">~/orkestra</span> <span class="b">❯</span> npm run dev</div><div class="m">VITE v5.4  ready in 312 ms</div><div><span class="b">➜</span>  Local:   <span class="b">http://localhost:5173</span></div><div><span class="b">➜</span>  press <span class="b">h</span> + enter to show help</div><div><span class="cur"></span></div></div>
+        <div class="foot"><svg class="icn" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>~/Apps/orkestra</div>
+      </div>
+
+      <div class="node" style="left:500px; top:282px; width:300px">
+        <div class="nh">
+          <svg class="icn nic" viewBox="0 0 24 24"><path d="M5 8l3.5 3.5L5 15"/><path d="M12 16h6"/></svg>
+          <span class="nm">web · ui</span>
+          <span class="tag rev"><span class="dt"></span>Revisor</span>
+          <svg class="icn hb" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 12h12"/><path d="M12 6v12"/></svg>
+        </div>
+        <div class="term"><div><span class="m">~/orkestra/web</span> <span class="b">❯</span> git status</div><div class="m">On branch main</div><div><span class="g">✔</span> nothing to commit, working tree clean</div><div><span class="cur"></span></div></div>
+        <div class="foot"><svg class="icn" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>~/Apps/orkestra/web</div>
+      </div>
+
+      <div class="stick" style="left:150px; top:348px; width:162px">
+        <div class="grip"></div>
+        <div class="h">Revisar auth flow</div>
+        <div>antes do deploy de sexta ✱</div>
+      </div>
+
+      <div class="ebadge" style="left:420px; top:236px">agente</div>
+    </div>
+
+    <div class="top">
+      <div class="pill ws">
+        <div class="star" style="width:26px;height:26px;border-radius:8px"><svg class="icn" viewBox="0 0 24 24" style="width:15px;height:15px;stroke-width:2.2"><path d="M12 3l2.2 5.6L20 10l-5 3.4L16.5 20 12 16.4 7.5 20 9 13.4 4 10l5.8-1.4z"/></svg></div>
+        <span class="wsn">orkestra</span>
+        <svg class="icn" viewBox="0 0 24 24" style="width:14px;height:14px;color:rgba(11,11,15,.4)"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="pill">
+        <div class="tb on"><svg class="icn" viewBox="0 0 24 24"><path d="M5 8l3.5 3.5L5 15"/><path d="M12 16h6"/></svg></div>
+        <div class="tb"><svg class="icn" viewBox="0 0 24 24"><path d="M4 20l4-1 10.5-10.5a2.1 2.1 0 00-3-3L5 16z"/></svg></div>
+        <div class="tb"><svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 010 16M12 4a12 12 0 000 16"/></svg></div>
+        <div class="tb"><svg class="icn" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg></div>
+        <div class="sep"></div>
+        <div class="cta" style="height:30px;padding:0 13px;box-shadow:none"><svg class="icn" viewBox="0 0 24 24" style="width:15px;height:15px;stroke:#fff"><path d="M12 5v14M5 12h14"/></svg>Novo</div>
+      </div>
+      <div class="pill">
+        <div class="tb"><svg class="icn" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></div>
+        <div class="tb"><svg class="icn" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="dc-sub" style="margin-top:16px">Detalhes pra afinar: <b>o terminal</b> (aqui claro — fundo <code>#F7F8FA</code>, texto escuro; posso deixar escuro se preferir contraste), <b>quanto de azul</b> (projeto ativo + "Novo" + nó selecionado), <b>as tags de papel</b> (Dev verde, Revisor laranja), <b>a nota</b> (papel amarelo). Aprova a direção? Aí faço o <b>tema escuro</b> + a paleta de comandos e o modal no mesmo idioma.</p>
