@@ -43,10 +43,24 @@ const agentBus = new AgentBus(ptyManager, {
     }
     if (mainWindow && !mainWindow.isFocused()) {
       try {
-        new Notification({
+        const notification = new Notification({
           title: 'Agente ocioso',
           body: 'Um agente parou e pode precisar de você.'
-        }).show()
+        })
+        // Ombro T2 — fecha o ciclo alerta→ação: clicar na notificação traz a janela à frente
+        // (mesmo minimizada) e pede ao renderer para enquadrar o nó do agente ocioso. `nodeId` já
+        // está resolvido acima. Se o nó não existir mais no canvas atual (agente de outro projeto),
+        // o renderer trata como no-op seguro.
+        notification.on('click', () => {
+          if (!mainWindow) return
+          if (mainWindow.isMinimized()) mainWindow.restore()
+          mainWindow.show()
+          mainWindow.focus()
+          if (!mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('agent:frame', nodeId)
+          }
+        })
+        notification.show()
       } catch {
         // Notificações nativas podem faltar/ser negadas dependendo do SO — nunca travar o app.
       }

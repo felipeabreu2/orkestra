@@ -121,6 +121,13 @@ const api = {
     return () => ipcRenderer.removeListener('agent:attention', listener)
   },
   clearAgentAttention: (nodeId: string): void => ipcRenderer.send('agent:attention:clear', nodeId),
+  // Ombro T2: clicar na notificação nativa de "agente ocioso" pede para enquadrar o nó culpado.
+  // Mesmo padrão de assinatura-com-unsubscribe de onAgentAttention.
+  onAgentFrame: (cb: (nodeId: string) => void): (() => void) => {
+    const listener = (_e: unknown, nodeId: string): void => cb(nodeId)
+    ipcRenderer.on('agent:frame', listener)
+    return () => ipcRenderer.removeListener('agent:frame', listener)
+  },
   // Caminho absoluto de um File solto no terminal (drag-drop do Finder). No Electron 33 o
   // File.path foi removido — webUtils.getPathForFile é a forma suportada (resolve no preload,
   // sem o renderer tocar em `fs`). Só resolve Files reais que o usuário arrastou.

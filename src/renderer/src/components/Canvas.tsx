@@ -6,13 +6,13 @@ import {
   Controls,
   MiniMap,
   useReactFlow,
-  type NodeChange,
   type NodeProps,
   type Connection
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
 import { useCanvasStore, hasWidgetClipboard, absolutePositionOf } from '../store/canvasStore'
+import { selectionChangesToFocus } from '../canvas/frameNode'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
@@ -178,6 +178,19 @@ export function Canvas(): JSX.Element {
     })
     return off
   }, [setAttention])
+
+  // Ombro T2: quando o usuário clica na notificação nativa de "agente ocioso", o main envia
+  // agent:frame com o nodeId. Enquadra (fitView) e seleciona esse nó, reusando o helper puro do
+  // Shift+A. Nó ausente (agente de outro projeto/removido) = no-op seguro: fitView num id
+  // inexistente e selectionChangesToFocus devolvendo [] não quebram nada.
+  useEffect(() => {
+    const off = window.orkestra.onAgentFrame((nodeId) => {
+      fitView({ nodes: [{ id: nodeId }], duration: 300 })
+      const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, nodeId)
+      if (changes.length) onNodesChange(changes)
+    })
+    return off
+  }, [fitView, onNodesChange])
 
   // Fix border-beam preso — tentativa 3 (2026-07-15): `generating` é 100% derivado por CONTEÚDO
   // da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) — ver
@@ -363,14 +376,7 @@ export function Canvas(): JSX.Element {
         attentionCycleRef.current = idx + 1
         const targetId = ids[idx]
         fitView({ nodes: [{ id: targetId }], duration: 300 })
-        const changes: NodeChange[] = []
-        for (const n of useCanvasStore.getState().nodes) {
-          if (n.id === targetId) {
-            if (!n.selected) changes.push({ id: n.id, type: 'select', selected: true })
-          } else if (n.selected) {
-            changes.push({ id: n.id, type: 'select', selected: false })
-          }
-        }
+        const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, targetId)
         if (changes.length) onNodesChange(changes)
         return
       }
