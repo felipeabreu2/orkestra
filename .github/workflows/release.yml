@@ -35,6 +35,26 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      # HOTFIX v1.2.1 — regressão de arquitetura: o runner `macos-latest` migrou para Apple Silicon
+      # (macos-26-arm64), então `npm ci` roda com node arm64 e o install do node-pty (scripts/
+      # prebuild.js) copia o prebuild do arch do HOST → build/Release fica ARM64. Mas o app é
+      # empacotado x64 (electron-builder.yml → mac.target.arch: x64) e npmRebuild:false não recompila.
+      # Resultado: spawn-helper arm64 dentro de um app x64 → "posix_spawnp failed" no terminal em
+      # produção (Intel nativamente, e Apple Silicon via Rosetta). node-pty JÁ traz prebuilds/
+      # darwin-x64 — então forçamos build/Release para x64 (o 1º dir que node-pty tenta em
+      # lib/utils.js). Só macOS; casado com mac.target.arch: x64 no electron-builder.yml.
+      - name: Casar node-pty (nativo) com o alvo x64 do app
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          NP=node_modules/node-pty/build/Release
+          cp -f node_modules/node-pty/prebuilds/darwin-x64/pty.node "$NP/pty.node"
+          cp -f node_modules/node-pty/prebuilds/darwin-x64/spawn-helper "$NP/spawn-helper"
+          chmod +x "$NP/spawn-helper"
+          echo "verificação (deve ser x86_64):"
+          file "$NP/spawn-helper" "$NP/pty.node"
+          file "$NP/spawn-helper" | grep -q x86_64 || { echo "ERRO: spawn-helper não é x86_64"; exit 1; }
+
       - name: Empacotar e publicar
         run: npm run release
         env:
