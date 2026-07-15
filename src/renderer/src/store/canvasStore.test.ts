@@ -4,7 +4,7 @@ import { useCanvasStore } from './canvasStore'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 
 beforeEach(() => {
-  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set() })
+  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set(), generating: new Set() })
 })
 
 describe('canvasStore', () => {
@@ -776,6 +776,84 @@ describe('canvasStore', () => {
     expect(useCanvasStore.getState().attention).toBe(before)
   })
 
+  // --- Reformulação DesignCode UI (Lote D): sinal "generating" (border-beam) — generating Set no
+  // store, mesmo padrão do attention Set acima (ver TerminalNode.tsx pela heurística que chama) ---
+
+  it('generating começa como um Set vazio', () => {
+    const { generating } = useCanvasStore.getState()
+    expect(generating).toBeInstanceOf(Set)
+    expect(generating.size).toBe(0)
+  })
+
+  it('setGenerating(id, true) adiciona o nodeId ao Set generating', () => {
+    useCanvasStore.getState().setGenerating('n1', true)
+    expect(useCanvasStore.getState().generating.has('n1')).toBe(true)
+  })
+
+  it('setGenerating(id, false) remove o nodeId do Set generating', () => {
+    useCanvasStore.getState().setGenerating('n1', true)
+    useCanvasStore.getState().setGenerating('n1', false)
+    expect(useCanvasStore.getState().generating.has('n1')).toBe(false)
+  })
+
+  it('setGenerating não afeta outros ids já presentes no Set', () => {
+    useCanvasStore.getState().setGenerating('n1', true)
+    useCanvasStore.getState().setGenerating('n2', true)
+    useCanvasStore.getState().setGenerating('n1', false)
+    const { generating } = useCanvasStore.getState()
+    expect(generating.has('n1')).toBe(false)
+    expect(generating.has('n2')).toBe(true)
+  })
+
+  it('setGenerating(id, false) num id ausente é no-op seguro (não lança, Set continua sem o id)', () => {
+    expect(() => useCanvasStore.getState().setGenerating('ausente', false)).not.toThrow()
+    expect(useCanvasStore.getState().generating.has('ausente')).toBe(false)
+  })
+
+  it('setGenerating repetindo o MESMO valor (on já true, ou off já ausente) preserva a MESMA referência de Set (evita re-render à toa a cada chunk do pty)', () => {
+    useCanvasStore.getState().setGenerating('n1', true)
+    const afterFirstOn = useCanvasStore.getState().generating
+    useCanvasStore.getState().setGenerating('n1', true) // já true — chunk seguinte do mesmo burst
+    expect(useCanvasStore.getState().generating).toBe(afterFirstOn)
+    useCanvasStore.getState().setGenerating('n2', false) // já ausente
+    expect(useCanvasStore.getState().generating).toBe(afterFirstOn)
+  })
+
+  it('setGenerating sempre atribui uma NOVA referência de Set quando o conteúdo de fato muda', () => {
+    const before = useCanvasStore.getState().generating
+    useCanvasStore.getState().setGenerating('n1', true)
+    const afterAdd = useCanvasStore.getState().generating
+    expect(afterAdd).not.toBe(before)
+    useCanvasStore.getState().setGenerating('n1', false)
+    const afterRemove = useCanvasStore.getState().generating
+    expect(afterRemove).not.toBe(afterAdd)
+  })
+
+  it('removeNode também limpa o id do Set generating (fechar um terminal com o beam aceso não deixa órfão)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().setGenerating(id, true)
+    expect(useCanvasStore.getState().generating.has(id)).toBe(true)
+    useCanvasStore.getState().removeNode(id)
+    expect(useCanvasStore.getState().generating.has(id)).toBe(false)
+  })
+
+  it('removeNode de outro nó não descarta um id não relacionado presente em generating', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().setGenerating(a.id, true)
+    useCanvasStore.getState().removeNode(b.id)
+    expect(useCanvasStore.getState().generating.has(a.id)).toBe(true)
+  })
+
+  it('hydrate limpa generating — nenhum pty do projeto anterior fica com o beam órfão aceso', () => {
+    useCanvasStore.getState().setGenerating('n1', true)
+    expect(useCanvasStore.getState().generating.size).toBe(1)
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().generating.size).toBe(0)
+  })
+
   // R6: remove de uma vez todas as edges que tocam um nó (source OU target), preservando as demais.
   it('removeEdgesForNode remove todas as conexões que tocam o nó e mantém as outras', () => {
     useCanvasStore.setState({
@@ -1091,7 +1169,14 @@ describe('copiar/colar/duplicar widgets', () => {
 // filhos; remoção por tecla precisa limpar attention.
 describe('exclusão de grupo e attention (auditoria)', () => {
   beforeEach(() => {
-    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null, attention: new Set() })
+    useCanvasStore.setState({
+      nodes: [],
+      edges: [],
+      past: [],
+      lastCommitTag: null,
+      attention: new Set(),
+      generating: new Set()
+    })
   })
 
   it('removeNode de um grupo desagrupa os filhos (sem parentId órfão) e os mantém vivos', () => {
@@ -1121,6 +1206,16 @@ describe('exclusão de grupo e attention (auditoria)', () => {
     expect(useCanvasStore.getState().attention.has(id)).toBe(true)
     useCanvasStore.getState().onNodesChange([{ id, type: 'remove' }])
     expect(useCanvasStore.getState().attention.has(id)).toBe(false)
+    expect(useCanvasStore.getState().nodes).toHaveLength(0)
+  })
+
+  it('onNodesChange remove limpa o id de generating (Lote D — mesmo caminho do attention)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().setGenerating(id, true)
+    expect(useCanvasStore.getState().generating.has(id)).toBe(true)
+    useCanvasStore.getState().onNodesChange([{ id, type: 'remove' }])
+    expect(useCanvasStore.getState().generating.has(id)).toBe(false)
     expect(useCanvasStore.getState().nodes).toHaveLength(0)
   })
 })

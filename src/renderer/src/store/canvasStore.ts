@@ -280,6 +280,16 @@ interface CanvasState {
   // mutar um Set no lugar não dispararia re-render em nenhum componente que o selecione.
   attention: Set<string>
   setAttention: (nodeId: string, on: boolean) => void
+  // Reformulação DesignCode UI (Lote D): sinal "generating" (dispara o border-beam do nó, ver
+  // nodeState.ts/nodes.css) — ids de terminal cujo pty emitiu saída "recentemente" (heurística
+  // DEBOUNCED em TerminalNode.tsx: cada chunk marca on=true e reagenda um timeout de 500ms que
+  // marca off; documentada como heurística — não distingue "agente respondendo" de "processo
+  // qualquer imprimindo"). Mesmo padrão de `attention` acima: puramente efêmero/UI (nunca
+  // serializado, nunca entra no histórico de undo — por isso NÃO vive em `data.generating` do nó,
+  // que passaria por serialize()/histPatch); setGenerating SEMPRE atribui uma NOVA instância de
+  // Set (o zustand compara referência).
+  generating: Set<string>
+  setGenerating: (nodeId: string, on: boolean) => void
   addTerminalNode: (
     position?: { x: number; y: number } | undefined,
     // Fase 27 (Task 3): sshHost opcional — quando presente, o nó nasce em modo SSH (ver
@@ -435,6 +445,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (on) next.add(nodeId)
       else next.delete(nodeId)
       return { attention: next }
+    }),
+  generating: new Set(),
+  setGenerating: (nodeId, on): void =>
+    set((state) => {
+      if (on ? state.generating.has(nodeId) : !state.generating.has(nodeId)) return state // no-op: mesma referência
+      const next = new Set(state.generating)
+      if (on) next.add(nodeId)
+      else next.delete(nodeId)
+      return { generating: next }
     }),
   addTerminalNode: (position, opts): void =>
     set((state) => {
@@ -651,11 +670,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         attention = new Set(attention)
         attention.delete(id)
       }
+      // Mesmo cuidado para `generating` (Lote D) — um terminal fechado com o beam aceso não pode
+      // deixar um id órfão no Set.
+      let generating = state.generating
+      if (generating.has(id)) {
+        generating = new Set(generating)
+        generating.delete(id)
+      }
       return {
         ...histPatch(state),
         nodes: nodes.filter((n) => n.id !== id),
         edges: state.edges.filter((e) => e.source !== id && e.target !== id),
-        attention
+        attention,
+        generating
       }
     })
   },
@@ -819,7 +846,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         attention = new Set(attention)
         for (const rid of removed) attention.delete(rid)
       }
-      return { ...hist, nodes: applyNodeChanges(changes, state.nodes), attention }
+      let generating = state.generating
+      if (removed.some((rid) => generating.has(rid))) {
+        generating = new Set(generating)
+        for (const rid of removed) generating.delete(rid)
+      }
+      return { ...hist, nodes: applyNodeChanges(changes, state.nodes), attention, generating }
     })
   },
   onEdgesChange: (changes): void =>
@@ -984,6 +1016,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       // Ids de atenção do projeto anterior seriam órfãos aqui (Shift+A panaria para nó morto) —
       // hidratar começa sempre sem atenção pendente.
       attention: new Set<string>(),
+      // Mesmo raciocínio para `generating` (Lote D): nenhum pty do projeto anterior está vivo
+      // nesta hidratação (troca de projeto passa por TerminalNode desmontando, que já zera seu
+      // próprio id) — começa sempre limpo, nunca com um beam órfão aceso.
+      generating: new Set<string>(),
       // Dono do snapshot: atualizado no MESMO set() que troca o conteúdo (ver comentário na
       // interface) — nunca existe janela conteúdo-de-A/id-de-B para um flush pegar no meio.
       activeProjectId: projectId === undefined ? state.activeProjectId : projectId

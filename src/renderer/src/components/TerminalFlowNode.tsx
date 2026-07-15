@@ -57,17 +57,17 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // já existe (hasAttention, acima) — o AgentBus (main) detecta "produziu saída e depois ficou
   // `idleMs` sem nada novo", exatamente a semântica de "agente terminou e espera você" da spec.
   //
-  // 'generating' NÃO tem hoje um sinal real equivalente: o AgentBus só expõe onAttention
-  // (idle-APÓS-output), nunca um evento positivo de "está produzindo saída agora" — não há como
-  // distinguir com segurança "o Claude está pensando/gerando" de "o shell está só parado" sem
-  // inspecionar o CONTEÚDO do output (parsear o spinner do wrapper claude, ex. "✳ Gerando
-  // resposta…") ou expor via IPC uma janela de "pty emitiu dado nos últimos N ms" — nenhuma das
-  // duas existe ainda, e inventar uma heurística agora (ex.: "achou "✳"") seria frágil e acoplaria
-  // este componente ao texto exato do CLI do agente. TODO(design/generating-signal): ligar
-  // `generating` a um sinal real quando existir (heurística de "pty busy" no AgentBus expondo
-  // via window.orkestra, OU parse do wrapper claude) — até lá, fica só leitura de data.generating
-  // (nunca setado por ninguém hoje; default false ⇒ 'idle'), o ponto de wiring já pronto.
-  const generating = Boolean((data as { generating?: boolean })?.generating)
+  // 'generating' (Lote D — wiring concluído): heurística DEBOUNCED no renderer, não um sinal real
+  // do processo do agente (esse ainda não existe — ver ressalva abaixo). TerminalNode.tsx marca
+  // este id como "generating" no `generating` Set do canvasStore a cada chunk que o PRÓPRIO pty
+  // emite (window.orkestra.pty.onData), e desmarca depois de ~500ms sem novo chunk (mesmo padrão
+  // efêmero/Set do `attention` acima — nunca persistido, nunca no histórico de undo). Lido aqui
+  // via seletor (só re-renderiza quando o resultado MUDA para ESTE id, igual hasAttention).
+  // Trade-off aceito e documentado: por ser heurística de atividade do pty (não do CONTEÚDO), um
+  // terminal tagarela sem agente nenhum (`tail -f`, `watch`) também acende o beam — não há hoje
+  // como distinguir "agente produzindo resposta" de "processo qualquer imprimindo" sem parsear o
+  // spinner do wrapper claude ou um sinal real do processo, nenhum dos dois existe ainda.
+  const generating = useCanvasStore((s) => s.generating.has(id))
   const nodeState: NodeState = generating ? 'generating' : hasAttention ? 'needsInput' : 'idle'
 
   // Limpa a atenção QUANDO o usuário de fato volta a usar este terminal — dispara ao focar

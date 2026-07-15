@@ -5,6 +5,8 @@ import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
 import { pathsToTerminalInput } from '../terminal/dropPaths'
+import { xtermThemeFromTokens } from '../terminal/xtermTheme'
+import { useCanvasStore } from '../store/canvasStore'
 
 export function TerminalNode({
   nodeId,
@@ -24,11 +26,36 @@ export function TerminalNode({
     const el = containerRef.current
     if (!el) return
 
+    // Tema do xterm derivado dos tokens de design em runtime: o xterm não conhece nossas custom
+    // properties, então `xtermThemeFromTokens` (src/renderer/src/terminal/xtermTheme.ts) lê
+    // --term-bg/--term-fg/--accent/--accent-weak/--ok/--warn/--err/--paper-*/--text-* do <html> e
+    // monta o objeto `theme` (sem isso ele cai no preto/branco padrão, que ignora o tema do app).
+    // Fonte e tamanho também vêm dos tokens (--font-mono/--fs-base), nunca hex/px cru.
+    const rootCss = getComputedStyle(document.documentElement)
+    const fontFamily =
+      rootCss.getPropertyValue('--font-mono').trim() ||
+      'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
+    const fontSize = parseInt(rootCss.getPropertyValue('--fs-base'), 10) || 13
+
     const term = new XTerm({
       cursorBlink: true,
-      fontSize: 13,
-      fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace'
+      fontSize,
+      fontFamily,
+      theme: xtermThemeFromTokens()
     })
+
+    // Reaplica o tema quando o app troca claro↔escuro (flip de data-theme no <html>): recalcula os
+    // tokens e atualiza term.options.theme SEM recriar o terminal — o pty, o scrollback e o foco
+    // são preservados. É a única forma de o xterm acompanhar o tema, já que ele fotografou as cores
+    // no construtor. attributeFilter garante que só o data-theme dispara o recompute.
+    const themeObserver = new MutationObserver(() => {
+      term.options.theme = xtermThemeFromTokens()
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    })
+
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
@@ -42,6 +69,27 @@ export function TerminalNode({
     let disposeData = (): void => {}
     let ptyId = ''
     let disposed = false
+
+    // Sinal "generating" (border-beam, Lote D): HEURÍSTICA debounced — deliberadamente não é um
+    // sinal real de "o agente está pensando/gerando" (não existe hoje; o AgentBus só expõe
+    // onAttention, que é o OPOSTO: idle-APÓS-output). Cada chunk que o pty emite marca
+    // generating:true no canvasStore (Set efêmero, mesmo padrão de `attention` — nunca
+    // persistido/undo, ver canvasStore.ts); sem chunk novo por GENERATING_IDLE_MS, volta a false.
+    // Trade-off aceito e documentado: um terminal tagarela sem agente nenhum (ex.: `tail -f` de
+    // log, `watch`) também acende o beam — não há como distinguir "agente produzindo resposta" de
+    // "processo qualquer imprimindo" sem parsear o conteúdo (spinner do wrapper claude) ou expor
+    // um sinal real via IPC, nenhum dos dois existe ainda (ver TODO em TerminalFlowNode.tsx).
+    const GENERATING_IDLE_MS = 500
+    let generatingTimer: ReturnType<typeof setTimeout> | null = null
+    const markGenerating = (): void => {
+      if (!nodeId) return
+      useCanvasStore.getState().setGenerating(nodeId, true)
+      if (generatingTimer) clearTimeout(generatingTimer)
+      generatingTimer = setTimeout(() => {
+        generatingTimer = null
+        useCanvasStore.getState().setGenerating(nodeId, false)
+      }, GENERATING_IDLE_MS)
+    }
 
     // Auto-início do CLI do agente: um preset de agente (claude/codex/gemini) SEMPRE inicia seu CLI
     // ao montar — inclusive terminais HIDRATADOS ao reabrir o app (o usuário quer o agente "sempre
@@ -68,7 +116,10 @@ export function TerminalNode({
     const connect = (id: string): void => {
       ptyId = id
       if (nodeId) registerTerminalPty(nodeId, id)
-      disposeData = window.orkestra.pty.onData(id, (data) => term.write(data))
+      disposeData = window.orkestra.pty.onData(id, (data) => {
+        term.write(data)
+        markGenerating()
+      })
       term.onData((data) => window.orkestra.pty.write(id, data))
       term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
       window.orkestra.pty.resize(id, term.cols, term.rows)
@@ -125,10 +176,13 @@ export function TerminalNode({
 
     return () => {
       disposed = true
+      themeObserver.disconnect()
       ro.disconnect()
       el.removeEventListener('dragover', onDragOver)
       el.removeEventListener('drop', onDrop)
       disposeData()
+      if (generatingTimer) clearTimeout(generatingTimer)
+      if (nodeId) useCanvasStore.getState().setGenerating(nodeId, false)
       if (nodeId) unregisterTerminalPty(nodeId)
       // Fase 31: NÃO matar o pty aqui. Ao trocar de projeto, o TerminalNode desmonta mas o
       // processo deve continuar rodando — ele é reconectado (attach) quando o nó reaparece. O
