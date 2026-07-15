@@ -34,15 +34,17 @@ interface GitMarker {
   color: string
 }
 
-// M=amarelo (--warn), A ou ??=verde (--ok), D=vermelho (--err) — como o brief pede. Qualquer
-// outro código (rename/copy/conflito) cai num marcador neutro em vez de ser silenciosamente
-// ignorado.
+// Cor SEMÂNTICA por estado (§4.13): M=modificado (--warn), A=adicionado (--ok), D=removido
+// (--err), ??=untracked (--text-3, neutro — não é "verde/adicionado", é ausência de rastreio).
+// Nunca um accent de papel aqui (é status, não decoração). Qualquer outro código (rename/copy/
+// conflito) cai num marcador neutro em vez de ser silenciosamente ignorado.
 function gitMarker(status: string | undefined): GitMarker | null {
   if (!status) return null
   const code = status.trim()
   if (!code) return null
   if (code.includes('D')) return { label: 'D', color: 'var(--err)' }
-  if (code === '??' || code.includes('A')) return { label: code === '??' ? '?' : 'A', color: 'var(--ok)' }
+  if (code === '??') return { label: '?', color: 'var(--text-3)' }
+  if (code.includes('A')) return { label: 'A', color: 'var(--ok)' }
   if (code.includes('M')) return { label: 'M', color: 'var(--warn)' }
   return { label: code[0] ?? '•', color: 'var(--text-2)' }
 }
@@ -339,7 +341,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
           {resolving && <div className="ork-filetree-msg">carregando…</div>}
           {!resolving && !root && (
             <div className="ork-filetree-choose">
-              <p className="ork-filetree-msg">Nenhuma pasta selecionada.</p>
+              <p className="ork-filetree-msg">Nenhuma pasta. Escolha uma.</p>
               <button className="nodrag ork-node-go" onClick={() => void handleChooseFolder()}>
                 Escolher pasta
               </button>

@@ -379,6 +379,19 @@ export class ProjectManager {
   // precisa salvar o canvas do projeto que está SAINDO por id, sem depender da ordem entre esse
   // flush e a mudança do ativo — diferente de saveActiveCanvas, que sempre mira o ativo do
   // momento em que roda. Retorna se a gravação de fato aconteceu (INT-3).
+  // Badge da sidebar (2026-07-14): nº de terminais por projeto. Lê cada canvas e conta os nós
+  // type==='terminal'. Best-effort — projeto sem arquivo/ilegível conta 0. Para o projeto ATIVO,
+  // o renderer sobrepõe com a contagem ao vivo do canvasStore (aqui é o valor em disco).
+  terminalCounts(): Record<string, number> {
+    const idx = this.list()
+    const counts: Record<string, number> = {}
+    for (const p of idx.projects) {
+      const snap = this.readCanvas(this.canvasPath(p.id))
+      counts[p.id] = (snap?.nodes ?? []).filter((n) => n.type === 'terminal').length
+    }
+    return counts
+  }
+
   saveCanvas(id: string, snapshot: CanvasSnapshot): boolean {
     // INT-8: rejeita id que não seja UUID-like (path traversal via id='../projects') — nunca
     // compõe um caminho fora de projects/ a partir de entrada do renderer.

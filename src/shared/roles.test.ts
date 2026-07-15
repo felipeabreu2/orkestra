@@ -16,11 +16,11 @@ describe('PRESET_ROLES', () => {
 describe('roleMeta', () => {
   it('resolve um preset pelo label (case-insensitive)', () => {
     expect(roleMeta('Líder').color).toBe('var(--accent)')
-    expect(roleMeta('revisor').color).toBe('var(--warn)')
+    expect(roleMeta('revisor').color).toBe('var(--paper-orange)')
     expect(roleMeta('DEV').label).toBe('Dev')
   })
   it('resolve um preset pelo id', () => {
-    expect(roleMeta('testador').color).toBe('var(--err)')
+    expect(roleMeta('testador').color).toBe('var(--paper-pink)')
   })
   it('papel personalizado tem cor neutra e mantém o texto como label', () => {
     const m = roleMeta('Arquiteto')

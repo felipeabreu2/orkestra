@@ -1,13 +1,16 @@
-// Cores de post-it (F07). A chave é persistida em data.color; o valor `bg` é a cor de fundo.
-// `undefined`/ausente = post-it neutro (padrão do tema). Tons suaves que funcionam nos dois temas
-// com texto escuro fixo (as notas coloridas usam texto escuro — ver nodes.css).
+// Cores de post-it (F07). A chave (persistida em data.color) NÃO muda — só o valor `bg`, que é
+// consumido exclusivamente como valor de estilo CSS (style={{ background }} em NoteNode/NoteFormatBar).
+// Por isso os 6 hex de papel migraram para os tokens --note-* (definidos em styles/tokens.css na
+// reformulação 2026-07-14): var(--note-yellow/pink/blue/green/purple/orange). São tints de papel
+// theme-independentes (post-it é sempre claro); o texto por cima é escuro fixo (--note-ink, ver nodes.css).
+// `undefined`/ausente = post-it neutro (padrão do tema).
 export const NOTE_COLORS: Array<{ key: string; label: string; bg: string }> = [
-  { key: 'amarelo', label: 'Amarelo', bg: '#fff4b8' },
-  { key: 'rosa', label: 'Rosa', bg: '#ffc9de' },
-  { key: 'azul', label: 'Azul', bg: '#bfe3ff' },
-  { key: 'verde', label: 'Verde', bg: '#c9f0d1' },
-  { key: 'roxo', label: 'Roxo', bg: '#e0d1ff' },
-  { key: 'laranja', label: 'Laranja', bg: '#ffd9b0' }
+  { key: 'amarelo', label: 'Amarelo', bg: 'var(--note-yellow)' },
+  { key: 'rosa', label: 'Rosa', bg: 'var(--note-pink)' },
+  { key: 'azul', label: 'Azul', bg: 'var(--note-blue)' },
+  { key: 'verde', label: 'Verde', bg: 'var(--note-green)' },
+  { key: 'roxo', label: 'Roxo', bg: 'var(--note-purple)' },
+  { key: 'laranja', label: 'Laranja', bg: 'var(--note-orange)' }
 ]
 
 export function noteColorBg(color?: string): string | undefined {

@@ -274,6 +274,26 @@ describe('ProjectManager', () => {
     expect(r.removedNodeIds).toEqual([])
   })
 
+  // Badge da sidebar (2026-07-14): terminalCounts conta os nós type=terminal de cada projeto.
+  it('terminalCounts conta os terminais de cada projeto (0 quando ausente)', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const a = pm.list().activeId
+    const b = pm.create('B')
+    pm.saveCanvas(a, {
+      version: 2,
+      nodes: [
+        { id: 't1', type: 'terminal' } as never,
+        { id: 'n1', type: 'note' } as never,
+        { id: 't2', type: 'terminal' } as never
+      ],
+      edges: []
+    })
+    // projeto B fica com o canvas vazio (create) → 0 terminais
+    const counts = pm.terminalCounts()
+    expect(counts[a]).toBe(2)
+    expect(counts[b.id]).toBe(0)
+  })
+
   // INT-7: .tmp órfãos (crash entre write e rename) são limpos no bootstrap; backups .corrupt-* não.
   it('bootstrap limpa .tmp órfãos em projects/ e projects.json.tmp, sem tocar em .corrupt', () => {
     const pm = new ProjectManager(dir); pm.bootstrap()

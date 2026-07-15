@@ -14,15 +14,15 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .ork-filetree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px 3px 0;
-  font-size: 12.5px;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px 0;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   cursor: pointer;
   white-space: nowrap;
@@ -39,7 +39,7 @@
   display: inline-flex;
   justify-content: center;
   color: var(--text-3);
-  font-size: 10px;
+  font-size: var(--fs-2xs);
 }
 
 .ork-filetree-name {
@@ -49,19 +49,20 @@
   text-overflow: ellipsis;
 }
 
-/* Marca de status git (M/A/?/D) — cor via inline style (var(--warn|ok|err), calculada em
-   gitMarker()); o token em si permanece só aqui como referência de qual variável é usada. */
+/* Marca de status git (M/A/?/D) — cor SEMÂNTICA via inline style (--warn modificado, --ok
+   adicionado, --err removido, --text-3 untracked), calculada em gitMarker(); nunca um accent de
+   papel (é status, não decoração). O token em si permanece só aqui como referência. */
 .ork-filetree-gitmark {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  padding-right: 2px;
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  padding-right: var(--space-0-5);
 }
 
 .ork-filetree-msg {
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: var(--space-1-5) var(--space-2-5);
+  font-size: var(--fs-sm);
   color: var(--text-3);
 }
 .ork-filetree-msg--err {
@@ -71,15 +72,15 @@
   color: var(--warn);
 }
 
-/* Empty-state ("Nenhuma pasta selecionada" + botão Escolher pasta), centralizado no corpo. */
+/* Empty-state (voz de dois tempos "Nenhuma pasta. Escolha uma." + botão), centralizado no corpo. */
 .ork-filetree-choose {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 16px;
+  gap: var(--space-2-5);
+  padding: var(--space-4);
   text-align: center;
 }
 
@@ -96,8 +97,8 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--border);
 }
 
@@ -107,18 +108,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
+/* Botão de copiar caminho = ghost (§4.9): controle transparente com hairline; hover reforça a
+   borda e o texto. */
 .ork-filetree-copybtn {
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-2);
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: var(--fs-xs);
+  padding: 3px var(--space-2);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -134,14 +137,14 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px;
+  padding: var(--space-2);
 }
 
 .ork-filetree-pre {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
   color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-all;

@@ -33,8 +33,19 @@
   transition: border-color var(--dur-1) var(--ease);
 }
 
+/* Cor de grupo (§4.13 · Maestri §8.2, receita de papel a 7% com o caveat de tema claro): quando o
+   grupo tem cor, GroupNode.tsx seta --group-color inline e adiciona .ork-group--colored. Frame e
+   borda usam o hue puro (color-mix 7% / 30%) nos dois temas; o texto do header deriva por
+   luminosidade — hue puro no escuro, escurecido no claro até cruzar AA. Sem cor → neutro
+   --bg-2-weak/--border acima. O tracejado 1.5px é mantido (só --colored troca border-color). */
+.ork-group--colored {
+  background: color-mix(in srgb, var(--group-color) 7%, transparent);
+  border-color: color-mix(in srgb, var(--group-color) 30%, transparent);
+}
+
 /* Mesmo hook usado pelos outros tipos de nó (nodes.css): o React Flow soma `.selected` no
-   wrapper `.react-flow__node`, fora do que este componente renderiza. */
+   wrapper `.react-flow__node`, fora do que este componente renderiza. Vence o tint de cor
+   (especificidade maior), então o grupo selecionado sempre mostra a borda accent. */
 .react-flow__node.selected .ork-group {
   border-color: var(--accent);
 }
@@ -45,9 +56,15 @@
   height: 22px;
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  font-size: 11px;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-xs);
   color: var(--text-2);
   cursor: grab;
   user-select: none;
+}
+.ork-group--colored .ork-group-header {
+  color: var(--group-color);
+}
+:root[data-theme='light'] .ork-group--colored .ork-group-header {
+  color: color-mix(in srgb, var(--group-color) 62%, #000);
 }

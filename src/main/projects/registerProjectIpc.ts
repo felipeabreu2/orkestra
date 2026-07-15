@@ -33,6 +33,8 @@ export function registerProjectIpc(
     onProjectRemoved?.(removedNodeIds) // mata os ptys dos terminais do projeto removido
     return { activeId, snapshot } // shape para o renderer é inalterado ({activeId, snapshot})
   })
+  // Badge da sidebar (2026-07-14): nº de terminais por projeto.
+  ipcMain.handle('projects:terminalCounts', () => pm.terminalCounts())
   // Fase 15 (Task 3): flush explícito por id na troca de projeto. Via handle (não send/on) porque
   // o renderer precisa AGUARDAR a gravação terminar antes de chamar projects:switch — ao
   // contrário de persistence:save, aqui a ordem entre este flush e o switch importa.

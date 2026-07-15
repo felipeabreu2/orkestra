@@ -64,7 +64,12 @@ export const PortalNode = forwardRef<
     }, [name])
 
     return (
-      <webview ref={setRef} src={url} partition={partition} style={{ width: '100%', height: '100%' }} />
+      <webview
+        ref={setRef}
+        src={url}
+        partition={partition}
+        style={{ width: '100%', height: '100%', background: 'var(--bg-1)' }}
+      />
     )
   }
 )

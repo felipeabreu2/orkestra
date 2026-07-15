@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -9,14 +9,21 @@ import { useCanvasStore } from '../store/canvasStore'
 import { markdownToHtml } from '../markdown/markdownToHtml'
 import { noteColorBg } from '../notes/noteColors'
 import { registerNoteEditor, unregisterNoteEditor } from '../notes/noteEditorRegistry'
+import { SearchReplace } from '../notes/searchReplaceExtension'
+import { NoteFindBar } from './NoteFindBar'
+import { Icon } from './Icon'
 import './nodes.css'
 
 // Extensões compartilhadas por todas as notas (constante de módulo — não recriar por render, o
 // TipTap avisa sobre isso). StarterKit já traz bold/italic/strike/underline/heading/listas/code/
-// link; text-style traz cor/fonte/tamanho de texto; Image insere imagens por URL.
-const NOTE_EXTENSIONS = [StarterKit, TextStyle, Color, FontSize, FontFamily, Image]
+// link; text-style traz cor/fonte/tamanho de texto; Image insere imagens por URL; SearchReplace
+// (2026-07-14) adiciona localizar/substituir dentro da nota (Cmd+F).
+const NOTE_EXTENSIONS = [StarterKit, TextStyle, Color, FontSize, FontFamily, Image, SearchReplace]
 
 export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
+  // Localizar/substituir (2026-07-14): barra aberta por Cmd/Ctrl+F (com a nota/editor em foco) ou
+  // pelo botão de lupa (visível quando a nota está selecionada).
+  const [findOpen, setFindOpen] = useState(false)
   const updateNoteHtml = useCanvasStore((s) => s.updateNoteHtml)
   const d = data as { html?: string; content?: string; color?: string }
   // Migração lazy: nota antiga tem `content` (Markdown) e não `html` — converte na 1ª montagem.
@@ -52,6 +59,15 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
     }
   }, [editor, d.html])
 
+  // Cmd/Ctrl+F abre a barra de localizar quando a nota (ou seu editor) tem foco — o keydown do
+  // contentEditable borbulha até este container. preventDefault evita qualquer ação padrão.
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault()
+      setFindOpen(true)
+    }
+  }
+
   return (
     <>
       <NodeResizer minWidth={160} minHeight={100} isVisible={selected ?? false} />
@@ -59,6 +75,7 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
       <div
         className={`ork-node ork-note${bg ? ' ork-note--colored' : ''}`}
         style={bg ? { background: bg } : undefined}
+        onKeyDown={onKeyDown}
       >
         {/* Pega de arraste: o editor abaixo tem `nodrag` (para selecionar texto), então cobria o nó
             inteiro e não sobrava área para mover a nota. Esta faixa no topo NÃO é nodrag — é por ela
@@ -66,6 +83,22 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
         <div className="ork-note-drag" title="Arraste para mover a nota" aria-hidden="true" />
         <EditorContent editor={editor} className="nodrag nowheel ork-note-editor" />
       </div>
+      {/* Botão de localizar + barra ficam FORA do .ork-note (que tem overflow:hidden e cortaria a
+          barra em notas pequenas). Como irmãos, ancoram no wrapper do nó (React Flow) e podem
+          transbordar sobre o canvas sem serem clipados. */}
+      {selected && !findOpen && (
+        <button
+          type="button"
+          className="ork-note-find-btn nodrag"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={() => setFindOpen(true)}
+          title="Localizar na nota (⌘F)"
+          aria-label="Localizar na nota"
+        >
+          <Icon name="Search" size={13} animation="none" />
+        </button>
+      )}
+      {findOpen && editor && <NoteFindBar editor={editor} onClose={() => setFindOpen(false)} />}
     </>
   )
 }

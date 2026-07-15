@@ -1,5 +1,7 @@
-/* R4: menu de contexto do canvas. Overlay em tela cheia (fecha ao clicar fora) + card do menu
-   posicionado no cursor. Tokens => tema claro/escuro. */
+/* R4: menu de contexto do canvas (reskin §4.7). Overlay em tela cheia (fecha ao clicar fora) +
+   card do menu posicionado no cursor. O card é o material .menu — vidro fino (--glass-2 +
+   --material-thin) — então o texto direto sobre ele usa --label*; o tile opaco de hover
+   (--bg-2) fica por baixo. Tokens => tema claro/escuro. */
 
 .ork-ctxmenu-overlay {
   position: fixed;
@@ -10,11 +12,15 @@
 .ork-ctxmenu {
   position: fixed;
   min-width: 200px;
-  padding: 4px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
+  padding: var(--space-1);
+  background: var(--glass-2);
+  backdrop-filter: var(--material-thin);
+  -webkit-backdrop-filter: var(--material-thin);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-2);
+  box-shadow: var(--shadow-2), var(--hairline-glass);
+  color: var(--label);
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -24,10 +30,10 @@
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 7px 10px;
-  font-size: 13px;
+  padding: var(--space-1-5) var(--space-2-5);
+  font-size: var(--fs-base);
   text-align: left;
-  color: var(--text-1);
+  color: var(--label);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -41,9 +47,11 @@
   opacity: 0.4;
   cursor: default;
 }
+/* Item destrutivo (§4.7): --danger é token real (alias de --err); o hover ganha o tint --err-weak.
+   Sem fallback hex — o token existe. */
 .ork-ctxmenu-item--danger {
-  color: var(--err, #e5615f);
+  color: var(--danger);
 }
 .ork-ctxmenu-item--danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--err, #e5615f) 14%, transparent);
+  background: var(--err-weak);
 }
