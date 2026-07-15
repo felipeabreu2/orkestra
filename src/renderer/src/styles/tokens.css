@@ -1,70 +1,223 @@
-/* Design tokens (Fase 13): única fonte de verdade para cor/forma/tipografia/motion do app,
-   consumido via var(--token) nos componentes. O :root abaixo é o tema ESCURO (padrão). A
-   Fase 28 adicionou o tema CLARO como uma sobrecarga em :root[data-theme='light'] (só cor/
-   sombra mudam; forma/tipografia/motion herdam) — trocado via document.documentElement. */
+/* ============================================================================
+   Orkestra Design Tokens — fonte de verdade única (cor/forma/tipo/motion).
+   Reformulação 2026-07-14: linguagem de design "DesignCode UI" — traduz o kit
+   Figma DesignCode UI para o canvas Electron/React do Orkestra (ver spec em
+   docs/superpowers/specs/2026-07-14-orkestra-designcode-ui-design.md). Doutrina:
+   "vidro só no CROMO (topbar/sidebar/palette/menus/modais), conteúdo (nós/notas/
+   terminais) FLAT e OPACO; um accent AZUL (paleta de sistema Apple/HIG), usado
+   com parcimônia". Substitui a tentativa violeta/glass anterior (rejeitada).
+
+   :root = ESCURO (padrão). :root[data-theme='light'] = CLARO (só cor/sombra/
+   vidro; forma/tipografia/motion herdam). Consumir SEMPRE via var(--token).
+   Trocar tema = flip data-theme no <html> (theme.ts). Todos os nomes de token
+   foram MANTIDOS; só os valores mudaram para a paleta azul/Apple.
+   ============================================================================ */
+
+/* --beam: ângulo do conic-gradient do border-beam (nó "gerando"), animado via
+   @keyframes ork-beam (motion.css) de 0deg → 360deg. Registrado como <angle>
+   para que a interpolação seja angular (não discreta) durante a animação. */
+@property --beam {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 :root {
-  /* superfícies */
-  --bg-0: #0b0d12; /* fundo do canvas */
-  --bg-1: #12151c; /* painéis/nós */
-  --bg-2: #1a1e27; /* elevação/hover */
-  --bg-2-weak: #1a1e2766; /* --bg-2 translúcido (Fase 18 Task 3: corpo do GroupNode) */
-  --border: #262b36;
-  --border-strong: #333a48;
-  /* texto */
-  --text-1: #e6e9ef; /* primário */
-  --text-2: #a2abbd; /* secundário */
-  --text-3: #6b7488; /* terciário/placeholder */
-  /* acento */
-  --accent: #7c6cff; /* violeta/índigo */
-  --accent-weak: #7c6cff22;
-  --accent-text: #0e1016; /* texto sobre --accent sólido: ~3.2:1 com --text-1 (abaixo do AA
-    4.5:1) -> quase-preto sobre o violeta dá ~4.9:1 (Fase 13 Task 3, a11y). Não usar --accent-
-    text sobre nada além de um preenchimento --accent sólido. */
-  /* estados */
-  --ok: #3fb984;
-  --warn: #e0a13a;
-  --err: #e5615f;
-  /* forma */
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --shadow-1: 0 1px 2px #0006, 0 2px 8px #0004;
-  --shadow-2: 0 8px 30px #0008;
-  /* tipografia */
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
-  /* motion */
-  --dur-1: 120ms;
-  --dur-2: 200ms;
-  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+  /* superfícies — preto/branco + alpha (sem escala de cinza) */
+  --bg-0: #0A0A0F;
+  --bg-1: #16171D;
+  --bg-2: #1F2027;
+  --bg-3: #292B33;
+  --bg-2-weak: rgba(255, 255, 255, .04);
+  /* bordas & hairlines (Container/border = white-a10) */
+  --border: rgba(255, 255, 255, .09);
+  --border-strong: rgba(255, 255, 255, .16);
+  --hairline: rgba(255, 255, 255, .08);
+  --hairline-glass: inset 0 .5px 0 rgba(255, 255, 255, .14);
+  /* texto (Foreground primary/secondary/tertiary) */
+  --text-1: #F4F6FA;
+  --text-2: rgba(244, 246, 250, .62);
+  --text-3: rgba(244, 246, 250, .40);
+  --label: rgba(255, 255, 255, .92);
+  --label-2: rgba(235, 235, 245, .6);
+  --label-3: rgba(235, 235, 245, .3);
+  /* accent — AZUL (blue-400 no dark) */
+  --accent: #3395FF;
+  --accent-hover: #4AA3FF;
+  --accent-weak: rgba(51, 149, 255, .18);
+  --accent-text: #FFFFFF;
+  --gradient-brand: linear-gradient(135deg, #3395FF 0%, #5856D6 100%);   /* logo/headline (azul→índigo) */
+  --gradient-accent: linear-gradient(180deg, #3395FF 0%, #007AFF 100%); /* botão primário */
+  /* estados (Apple system) */
+  --ok: #34C759;
+  --ok-weak: rgba(52, 199, 89, .16);
+  --warn: #FF9500;
+  --warn-weak: rgba(255, 149, 0, .16);
+  --err: #FF453A;
+  --err-weak: rgba(255, 69, 58, .16);
+  --danger: var(--err);
+  --attention: #FF453A;
+  --attention-ring: rgba(255, 69, 58, .5);
+  /* accents de papel (papéis/edges/tags) — hues Apple */
+  --paper-blue: #0A84FF;
+  --paper-green: #34C759;
+  --paper-orange: #FF9500;
+  --paper-red: #FF453A;
+  --paper-indigo: #5E5CE6;
+  --paper-purple: #BF5AF2;
+  --paper-teal: #40C8E0;
+  --paper-pink: #FF375F;
+  --paper-cyan: #64D2FF;
+  --paper-yellow: #FFD60A;
+  /* post-it (nota; papel quente, tema-consciente — ver noteColors.ts) */
+  --note-yellow: #2C2612;
+  --note-ink: #F1D89A; /* + variantes; ver noteColors.ts */
+  /* terminal (xterm) */
+  --term-bg: #0B0C11;
+  --term-fg: #C3CBD9;
+  /* materiais / vidro */
+  --glass-1: rgba(22, 23, 29, .70);
+  --glass-2: rgba(23, 24, 30, .90);
+  --glass-3: rgba(23, 24, 30, .92);
+  --glass-border: rgba(255, 255, 255, .09);
+  --material-thin: saturate(180%) blur(20px);
+  --material-regular: saturate(180%) blur(24px);
+  --material-thick: saturate(180%) blur(30px);
+  --material-chrome: saturate(160%) blur(22px);
+  --scrim: rgba(0, 0, 0, .55);
+  /* sombras — NEUTRAS (nunca azul atrás do conteúdo) */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 26px rgba(0, 0, 0, .5);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, .55);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, .6), 0 4px 12px rgba(0, 0, 0, .5);
+  --ring-focus: 0 0 0 4px var(--accent-weak);
+  --ring-avatar: 0 0 0 2px var(--bg-0);
+
+  /* ── FORMA · raios ───────────────────────────────────────────────────── */
+  --radius-sm: 10px;   /* botões, inputs, badges, itens de lista */
+  --radius: 12px;      /* cartões / painéis */
+  --radius-lg: 16px;   /* modais, paleta */
+  --radius-node: 14px; /* nós de terminal */
+  --radius-note: 12px;
+  --radius-pill: 9999px;
+  --radius-circle: 50%;
+
+  /* ── TIPOGRAFIA · famílias (Inter + mono) ───────────────────────────── */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  /* ── TIPOGRAFIA · escala (densa; base 13). Mapeia DesignCode:
+     Small11 Caption13 Body16 Footnote14 Headline20 ────────────────────── */
+  --fs-micro: 9px;
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 15px;
+  --fs-xl: 17px;
+  --fs-2xl: 20px;
+  --fs-3xl: 24px;
+
+  --tracking-tight: -.02em;
+  --tracking-tighter: -.03em;
+  --tracking-normal: 0;
+  --tracking-label: .06em;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.25;
+  --lh-ui: 1;
+  --lh-normal: 1.5; /* Inter: 100–140% */
+
+  /* ── ESPAÇAMENTO · grid 4px ──────────────────────────────────────────── */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-canvas-grid: 22px;
+
+  /* ── MOTION · durações + curvas ──────────────────────────────────────── */
+  --dur-1: 130ms;
+  --dur-2: 220ms;
+  --dur-3: 320ms;
+  --ease: cubic-bezier(.2, .6, .2, 1);
+  --ease-out: cubic-bezier(0, 0, .58, 1);
+  --ease-in: cubic-bezier(.42, 0, 1, 1);
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  --press-scale: .965;
 }
 
-/* Tema claro (Fase 28): sobrecarga quando <html data-theme="light">. Só cor/sombra mudam —
-   forma/tipografia/motion herdam do :root. Contraste AA nos pares texto/fundo e texto-branco/
-   --accent. Ajustável (é só trocar valores aqui). */
+/* ── TEMA CLARO · sobrecarga (só cor/sombra/vidro; forma/tipo/motion herdam) ─ */
 :root[data-theme='light'] {
-  --bg-0: #e9ebf0; /* canvas cinza-claro */
-  --bg-1: #ffffff; /* painéis/nós/modais */
-  --bg-2: #eef0f4; /* elevação/hover */
-  --bg-2-weak: #1a1e2710;
-  --border: #e2e5ec;
-  --border-strong: #cbd1db;
-  --text-1: #14171f;
-  --text-2: #545e74;
-  --text-3: #949cae;
-  --accent: #6b5cf5; /* roxo do app, levemente mais escuro p/ contraste com texto branco */
-  --accent-weak: #6b5cf518;
-  --accent-text: #ffffff; /* branco sobre --accent sólido (~4.6:1 AA) */
-  --ok: #1f9d63;
-  --warn: #b77e1e;
-  --err: #cf4b48;
-  --shadow-1: 0 1px 2px #0000000f, 0 2px 8px #0000000a;
-  --shadow-2: 0 10px 30px #00000022;
+  --bg-0: #EDF0F5;
+  --bg-1: #FFFFFF;
+  --bg-2: #F4F5F8;
+  --bg-3: #E9EBF0;
+  --bg-2-weak: rgba(11, 11, 15, .04);
+  --border: rgba(11, 11, 15, .08);
+  --border-strong: rgba(11, 11, 15, .14);
+  --hairline: rgba(11, 11, 15, .06);
+  --hairline-glass: inset 0 .5px 0 rgba(255, 255, 255, .7);
+  --text-1: #0B0B0F;
+  --text-2: rgba(11, 11, 15, .60);
+  --text-3: rgba(11, 11, 15, .42);
+  --label: rgba(0, 0, 0, .88);
+  --label-2: rgba(60, 60, 67, .6);
+  --label-3: rgba(60, 60, 67, .3);
+  --accent: #007AFF;
+  --accent-hover: #0069E0;
+  --accent-weak: rgba(0, 122, 255, .12);
+  --accent-text: #FFFFFF;
+  --gradient-brand: linear-gradient(135deg, #3395FF 0%, #5856D6 100%);
+  --gradient-accent: linear-gradient(180deg, #3395FF 0%, #007AFF 100%);
+  --ok: #248A3D;
+  --ok-weak: rgba(52, 199, 89, .14);
+  --warn: #B45A09;
+  --warn-weak: rgba(255, 149, 0, .14);
+  --err: #D70015;
+  --err-weak: rgba(255, 59, 48, .12);
+  --danger: var(--err);
+  --attention: #FF3B30;
+  --attention-ring: rgba(255, 59, 48, .5);
+  --glass-1: rgba(255, 255, 255, .72);
+  --glass-2: rgba(255, 255, 255, .86);
+  --glass-3: rgba(255, 255, 255, .94);
+  --glass-border: rgba(11, 11, 15, .08);
+  --scrim: rgba(11, 11, 15, .30);
+  --shadow-1: 0 1px 2px rgba(11, 11, 15, .05), 0 10px 26px rgba(11, 11, 15, .09);
+  --shadow-2: 0 10px 30px rgba(11, 11, 15, .14);
+  --shadow-3: 0 16px 48px rgba(11, 11, 15, .2), 0 4px 12px rgba(11, 11, 15, .1);
+  /* nota clara */
+  --note-yellow: #FFF6D9;
+  --note-ink: #5A4A1A;
+  --term-bg: #F7F8FA;
+  --term-fg: #1D2230;
 }
+/* Papéis (roles) no claro: escurecer o TEXTO do chip (o hue de fundo fica a
+   ~12–15%); ex. Dev texto #1A7A43, Revisor #B45A09. Receita de chip: fundo
+   color-mix(hue 14%), texto = hue escurecido, dot = hue sólido. Ver roles.ts
+   (Lote C) para a implementação por papel — não faz parte deste lote. */
 
+/* ── ACESSIBILIDADE ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-1: 0ms;
     --dur-2: 0ms;
+    --dur-3: 0ms;
+    --press-scale: 1;
+  }
+}
+@media (prefers-contrast: more) {
+  :root {
+    --border: var(--border-strong); /* engrossa hairlines quando pedido */
   }
 }

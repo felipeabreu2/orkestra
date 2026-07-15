@@ -46,12 +46,15 @@
     "electron-vite": "^2.3.0",
     "eslint": "^9.39.4",
     "jsdom": "^25.0.1",
+    "shadcn": "^4.13.0",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "vitest": "^2.1.9"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@tiptap/core": "^3.27.4",
     "@tiptap/extension-image": "^3.27.4",
     "@tiptap/extension-text-style": "^3.27.4",

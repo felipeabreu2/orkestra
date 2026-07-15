@@ -22,7 +22,7 @@
 .ork-note-textarea::-webkit-scrollbar-thumb,
 .xterm-viewport::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   border: 3px solid transparent;
   background-clip: padding-box;
 }

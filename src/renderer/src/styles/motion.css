@@ -25,3 +25,49 @@
     transform: scale(1);
   }
 }
+
+/* Pulso de atenção do nó (centralizado aqui na reformulação 2026-07-14, antes vivia inline em
+   nodes.css com rgba hardcoded). O anel usa o token --attention-ring (systemRed translúcido), que
+   troca por tema. É a ÚNICA animação em loop do app; totalmente desligada sob prefers-reduced-motion
+   (o loop `animation` não é controlado pelos --dur-*, então zeramos aqui via media query). */
+@keyframes ork-attention-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--attention-ring);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* Border-beam (nó "gerando", DesignCode UI §6): anima o ângulo do conic-gradient
+   registrado como --beam (@property, tokens.css) de 0deg a 360deg. Consumido pelo
+   wrapper do nó em .is-generating (Lote C) via `background: conic-gradient(from
+   var(--beam), ...)`. Loop contínuo (~3.4s linear) — não usa --dur-*, por isso
+   colapsa explicitamente sob prefers-reduced-motion abaixo. */
+@keyframes ork-beam {
+  to {
+    --beam: 360deg;
+  }
+}
+
+/* Shimmer (botão primário, DesignCode UI §6): faixa de luz varrendo a superfície
+   do botão via ::before + transform (translateX/skewX), nunca opacity/filter —
+   mantém a animação em GPU. Loop contínuo (~3.8s) consumido pelo Lote E. */
+@keyframes ork-shimmer {
+  0% {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  55%,
+  100% {
+    transform: translateX(360%) skewX(-18deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ork-node-attention {
+    animation: none;
+  }
+}

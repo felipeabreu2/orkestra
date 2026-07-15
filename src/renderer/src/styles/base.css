@@ -1,6 +1,19 @@
 /* Base global (Fase 13): reset mínimo + aplicação dos tokens de superfície/tipografia no
    documento inteiro, e foco visível consistente (teclado) em qualquer elemento focável — os
    componentes continuam com estilo inline próprio (não é um reskin, é só a base do documento). */
+
+/* Fontes do bundle (DesignCode UI, 2026-07-14): Inter (UI) + JetBrains Mono (terminal),
+   self-hosted via @fontsource/* (sem chamada de rede em runtime). Pesos cobrem os usados
+   pela tipografia da spec (--weight-regular/medium/semibold/bold para Inter; regular/medium
+   para o mono). --font-ui / --font-mono (tokens.css) referenciam 'Inter' / 'JetBrains Mono'
+   primeiro, com fallback do SO caso o bundle falhe ao carregar. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
 html,
 body,
 #root {
@@ -12,8 +25,10 @@ body {
   background: var(--bg-0);
   color: var(--text-1);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--fs-base);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 * {
