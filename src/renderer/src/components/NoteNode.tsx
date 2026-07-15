@@ -10,6 +10,7 @@ import { markdownToHtml } from '../markdown/markdownToHtml'
 import { noteColorBg } from '../notes/noteColors'
 import { registerNoteEditor, unregisterNoteEditor } from '../notes/noteEditorRegistry'
 import { SearchReplace } from '../notes/searchReplaceExtension'
+import { normalizeNoteName } from '../notes/noteRename'
 import { NoteFindBar } from './NoteFindBar'
 import { Icon } from './Icon'
 import './nodes.css'
@@ -25,7 +26,17 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
   // pelo botão de lupa (visível quando a nota está selecionada).
   const [findOpen, setFindOpen] = useState(false)
   const updateNoteHtml = useCanvasStore((s) => s.updateNoteHtml)
-  const d = data as { html?: string; content?: string; color?: string }
+  const updateNoteName = useCanvasStore((s) => s.updateNoteName)
+  const d = data as { html?: string; content?: string; color?: string; name?: string }
+  // Notas #10 (T2): renomear a nota por duplo-clique na faixa de arraste. data.name vazio = volta à
+  // nomeação automática pela 1ª linha (mirror/orq list). normalizeNoteName apara/colapsa/corta em 40.
+  const customName = (d.name ?? '').trim()
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState(customName)
+  const commitName = (): void => {
+    setRenaming(false)
+    updateNoteName(id, normalizeNoteName(nameDraft))
+  }
   // Migração lazy: nota antiga tem `content` (Markdown) e não `html` — converte na 1ª montagem.
   const initialHtml = d.html ?? (d.content ? markdownToHtml(d.content) : '')
   const bg = noteColorBg(d.color)
@@ -80,7 +91,34 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
         {/* Pega de arraste: o editor abaixo tem `nodrag` (para selecionar texto), então cobria o nó
             inteiro e não sobrava área para mover a nota. Esta faixa no topo NÃO é nodrag — é por ela
             que o React Flow arrasta o nó. */}
-        <div className="ork-note-drag" title="Arraste para mover a nota" aria-hidden="true" />
+        <div
+          className={`ork-note-drag${customName || renaming ? ' ork-note-drag--named' : ''}`}
+          title="Arraste para mover · duplo-clique para renomear"
+          onDoubleClick={(e) => {
+            e.stopPropagation()
+            setNameDraft(customName)
+            setRenaming(true)
+          }}
+        >
+          {renaming ? (
+            <input
+              className="ork-note-name-input nodrag"
+              autoFocus
+              value={nameDraft}
+              placeholder="Nome da nota"
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') commitName()
+                else if (e.key === 'Escape') setRenaming(false)
+              }}
+            />
+          ) : customName ? (
+            <span className="ork-note-name">{customName}</span>
+          ) : null}
+        </div>
         <EditorContent editor={editor} className="nodrag nowheel ork-note-editor" />
       </div>
       {/* Botão de localizar + barra ficam FORA do .ork-note (que tem overflow:hidden e cortaria a

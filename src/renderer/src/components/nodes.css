@@ -404,6 +404,41 @@
   background: color-mix(in srgb, var(--note-ink) 35%, transparent);
 }
 
+/* Notas #10 (T2): quando a nota tem nome (ou está sendo renomeada), a faixa vira um título —
+   esconde o "puxador" (::before), alinha à esquerda e mostra o nome. O arraste segue funcionando
+   pela própria faixa; o input de rename é `nodrag`. */
+.ork-note-drag--named {
+  justify-content: flex-start;
+  height: 18px;
+  padding: 0 8px;
+}
+.ork-note-drag--named::before {
+  display: none;
+}
+.ork-note-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.ork-note--colored .ork-note-name {
+  color: color-mix(in srgb, var(--note-ink) 75%, transparent);
+}
+.ork-note-name-input {
+  width: 100%;
+  height: 16px;
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
 .ork-note-editor {
   flex: 1;
   min-height: 0;
