@@ -46,20 +46,19 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // já existe (hasAttention, acima) — o AgentBus (main) detecta "produziu saída e depois ficou
   // `idleMs` sem nada novo", exatamente a semântica de "agente terminou e espera você" da spec.
   //
-  // 'generating' (Lote D; fix border-beam preso, 2026-07-15): agora é o MESMO tipo de sinal real
-  // de `hasAttention` acima — só que a metade "ligada" em vez da "desligada". O AgentBus (main)
-  // expõe busy=true no primeiro chunk de uma rajada de output e busy=false só depois de `idleMs`
-  // de silêncio REAL (mesmo detector de ociosidade do watcher de atenção, timer próprio — ver
-  // AgentBus.ts), chegando aqui via window.orkestra.onAgentBusy (assinado uma vez em Canvas.tsx,
-  // que grava no `generating` Set do canvasStore). Substituiu a heurística antiga (timer fixo de
-  // 500ms em TerminalNode.tsx), que ficava PRESA ligada porque a TUI do Claude Code/Ink emite
-  // saída mesmo ociosa (repaints, barra "auto mode on", cursor) em intervalos > 500ms. Lido aqui
-  // via seletor (só re-renderiza quando o resultado MUDA para ESTE id, igual hasAttention).
-  // Trade-off aceito e documentado (herdado da heurística anterior, ainda vale): por ser sinal de
-  // atividade do PTY (não do CONTEÚDO), um terminal tagarela sem agente nenhum (`tail -f`,
-  // `watch`) também acende o beam — distinguir "agente respondendo" de "processo qualquer
-  // imprimindo" exigiria parsear o conteúdo (spinner do wrapper claude), o que este fix
-  // deliberadamente evita (frágil a mudanças de UI do Claude Code).
+  // 'generating' (Lote D; fix border-beam preso — tentativa 3, 2026-07-15): NÃO é mais um sinal
+  // de OCIOSIDADE do pty (duas tentativas anteriores — timer fixo de 500ms, depois o watcher
+  // `busy` do AgentBus com idleMs — ficavam PRESAS ligadas porque a TUI do Claude Code/Ink emite
+  // saída mesmo ociosa). Agora é derivado por CONTEÚDO: TerminalNode.tsx varre o buffer VISÍVEL
+  // do seu xterm a cada chunk (throttled ~150ms) procurando a marca "esc to interrupt" — presente
+  // na linha de status do Claude Code SÓ enquanto ele está gerando (ver
+  // src/renderer/src/terminal/generatingSignal.ts) — e grava o resultado direto no `generating`
+  // Set do canvasStore (sem passar por Canvas.tsx; cada TerminalNode cuida do seu próprio id).
+  // Lido aqui via seletor (só re-renderiza quando o resultado MUDA para ESTE id, igual
+  // hasAttention). Como o sinal agora É por conteúdo (não por atividade crua do pty), o caso de
+  // "terminal tagarela sem agente" (`tail -f`, `watch`) NÃO acende mais o beam — só a marca
+  // específica do Claude Code faz isso. Se uma versão futura do Claude Code trocar o texto do
+  // indicador, o único ajuste necessário é WORKING_MARKER em generatingSignal.ts.
   const generating = useCanvasStore((s) => s.generating.has(id))
   const nodeState: NodeState = generating ? 'generating' : hasAttention ? 'needsInput' : 'idle'
 

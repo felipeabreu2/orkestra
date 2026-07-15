@@ -137,7 +137,6 @@ export function Canvas(): JSX.Element {
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const setAttention = useCanvasStore((s) => s.setAttention)
-  const setGenerating = useCanvasStore((s) => s.setGenerating)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [newTermOpen, setNewTermOpen] = useState(false)
   // "Arrastar para criar" (Figma-like): ferramenta pendente escolhida na barra (nota/site/arquivos).
@@ -180,29 +179,18 @@ export function Canvas(): JSX.Element {
     return off
   }, [setAttention])
 
-  // Fix border-beam preso (2026-07-15): assina window.orkestra.onAgentBusy (AgentBus no main) —
-  // o sinal REAL de "generating" (border-beam), ancorado no MESMO detector de ociosidade do
-  // onAgentAttention acima (idleMs de silêncio real), substituindo a heurística de 500ms fixos
-  // que vivia em TerminalNode.tsx (presa ligada por repaints ociosos da TUI do Claude Code/Ink —
-  // ver AgentBus.ts). Global (não por-nó) pelo mesmo motivo de onAgentAttention: um único
-  // listener aqui evita recriar a assinatura IPC por terminal montado.
-  useEffect(() => {
-    // Guard defensivo: em dev, trocar o preload sem reiniciar o processo (um reload só do renderer,
-    // ou HMR) deixa window.orkestra.onAgentBusy indefinido — chamá-lo lançaria e derrubaria o Canvas
-    // inteiro (ErrorBoundary "Falha ao renderizar este item"). Aqui degradamos sem o beam em vez de
-    // crashar; um restart do `npm run dev` recarrega o preload e o sinal volta.
-    if (typeof window.orkestra?.onAgentBusy !== 'function') return
-    const off = window.orkestra.onAgentBusy((nodeId, busy) => {
-      // Mesmo guard de "nó ausente" do onAgentAttention acima: um pty de OUTRO projeto (que
-      // sobrevive à troca, Fase 31) pode seguir emitindo saída em segundo plano — sem este guard,
-      // `generating` acumularia um id órfão que nenhum TerminalFlowNode desta tela representa
-      // (hydrate() já limpa tudo na troca de projeto, mas evitar a entrada é mais barato/seguro).
-      const node = useCanvasStore.getState().nodes.find((n) => n.id === nodeId)
-      if (!node) return
-      setGenerating(nodeId, busy)
-    })
-    return off
-  }, [setGenerating])
+  // Fix border-beam preso — tentativa 3 (2026-07-15): a assinatura de window.orkestra.onAgentBusy
+  // que vivia aqui foi REMOVIDA. O driver de ociosidade do AgentBus (busy=true no 1º chunk de uma
+  // rajada, busy=false só após idleMs de silêncio) ainda ficava preso ligado — a TUI do Claude
+  // Code/Ink emite saída mesmo ociosa (repaints da barra de status) em intervalos menores que
+  // idleMs, então "silêncio real" no stream do pty praticamente nunca acontece. `generating` agora
+  // é 100% derivado por CONTEÚDO da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) —
+  // ver src/renderer/src/terminal/generatingSignal.ts e a varredura em TerminalNode.tsx (dentro do
+  // callback de term.write, throttled a 150ms). Manter os dois drivers ativos causaria conflito: o
+  // onAgentBusy religaria o beam a cada repaint ocioso, brigando com a varredura de conteúdo. O
+  // plumbing onAgentBusy (AgentBus.onBusyChange, main/index.ts, preload) fica DORMENTE — sem
+  // assinante no renderer — em vez de removido, para não arriscar a bateria de testes do main
+  // nesta correção; pode ser desmontado num follow-up se confirmado que não há mais uso.
 
   // Rederiva a cor da máscara do MiniMap quando o tema vira (data-theme no <html> muda). Observa
   // só esse atributo — barato e desacoplado do ThemeToggle (Lote E), que não precisa saber do

@@ -281,13 +281,15 @@ interface CanvasState {
   attention: Set<string>
   setAttention: (nodeId: string, on: boolean) => void
   // Reformulação DesignCode UI (Lote D): sinal "generating" (dispara o border-beam do nó, ver
-  // nodeState.ts/nodes.css) — ids de terminal cujo pty está "ocupado" (produzindo saída) agora.
-  // Fix border-beam preso (2026-07-15): a fonte deixou de ser uma heurística local DEBOUNCED em
-  // TerminalNode.tsx (timer fixo de 500ms — ficava preso ligado com repaints ociosos da TUI do
-  // Claude Code/Ink) e passou a ser o AgentBus (main), ancorado no MESMO detector de ociosidade
-  // já tunado do watcher de atenção (`attention` acima): busy=true no primeiro chunk de uma
-  // rajada, busy=false só após idleMs de silêncio real. Chega via window.orkestra.onAgentBusy,
-  // assinado uma vez em Canvas.tsx, que chama setGenerating aqui. Mesmo padrão de `attention`:
+  // nodeState.ts/nodes.css) — ids de terminal cujo agente está gerando resposta agora.
+  // Fix border-beam preso — tentativa 3 (2026-07-15): DUAS heurísticas de OCIOSIDADE anteriores
+  // (timer fixo de 500ms em TerminalNode.tsx; depois o watcher `busy` do AgentBus/main com idleMs)
+  // ficavam PRESAS ligadas — a TUI do Claude Code/Ink emite saída mesmo ociosa (repaints da barra
+  // de status), então "silêncio" no stream do pty nunca acontece de verdade. A fonte agora é
+  // CONTEÚDO da tela: cada TerminalNode.tsx varre o buffer VISÍVEL do seu próprio xterm (throttled
+  // ~150ms) procurando a marca "esc to interrupt" (ver terminal/generatingSignal.ts), presente na
+  // linha de status do Claude Code SÓ enquanto ele está gerando, e chama setGenerating diretamente
+  // — sem passar por um listener global em Canvas.tsx como antes. Mesmo padrão de `attention`:
   // puramente efêmero/UI (nunca serializado, nunca entra no histórico de undo — por isso NÃO vive
   // em `data.generating` do nó, que passaria por serialize()/histPatch); setGenerating SEMPRE
   // atribui uma NOVA instância de Set (o zustand compara referência).

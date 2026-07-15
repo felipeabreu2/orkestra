@@ -6,6 +6,13 @@ import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
 import { pathsToTerminalInput } from '../terminal/dropPaths'
 import { xtermThemeFromTokens } from '../terminal/xtermTheme'
+import { screenIsGenerating } from '../terminal/generatingSignal'
+import { useCanvasStore } from '../store/canvasStore'
+
+// Throttle da varredura de conteúdo (ver bloco "Sinal generating" abaixo): cadência fixa, não
+// debounce — durante streaming contínuo (Claude Code TUI repintando a cada poucos ms) um debounce
+// clássico (reagenda a cada chunk) NUNCA chegaria a disparar.
+const GENERATING_SCAN_THROTTLE_MS = 150
 
 export function TerminalNode({
   nodeId,
@@ -69,16 +76,46 @@ export function TerminalNode({
     let ptyId = ''
     let disposed = false
 
-    // Sinal "generating" (border-beam, Lote D): fix border-beam preso (2026-07-15) — NÃO vive
-    // mais aqui. A antiga heurística local (timer fixo de 500ms, recriado a cada chunk do pty)
-    // ficava PRESA ligada porque a TUI do Claude Code/Ink emite saída mesmo ociosa (repaints,
-    // barra "auto mode on", cursor) em intervalos > 500ms — o timer nunca chegava a vencer. O
-    // sinal real agora vem do AgentBus (main), ancorado no MESMO detector de ociosidade já tunado
-    // do watcher de atenção (onAttention/`needsInput`): busy=true no primeiro chunk de uma
-    // rajada, busy=false só após idleMs de silêncio REAL. Chega ao renderer via
-    // window.orkestra.onAgentBusy, assinado UMA VEZ globalmente em Canvas.tsx (não por-nó) —
-    // ver o useEffect lá, que chama setGenerating(nodeId, busy). Este componente não precisa
-    // mais tocar `generating` em nenhum momento do seu ciclo de vida.
+    // Sinal "generating" (border-beam, Lote D) — tentativa 3 (2026-07-15): as DUAS heurísticas de
+    // OCIOSIDADE anteriores (timer fixo de 500ms aqui mesmo; depois o watcher `busy` do AgentBus
+    // com idleMs) ficavam PRESAS ligadas porque a TUI do Claude Code/Ink emite saída mesmo ociosa
+    // (repaints da barra de status, cursor piscando) em intervalos curtos — "silêncio" no stream
+    // do pty nunca acontece de verdade. Esta versão abandona silêncio como sinal e detecta por
+    // CONTEÚDO da tela: `screenIsGenerating` (src/renderer/src/terminal/generatingSignal.ts) casa
+    // a marca "esc to interrupt" — presente na linha de status do Claude Code SÓ enquanto ele está
+    // gerando — contra as linhas VISÍVEIS do buffer do xterm (o estado ATUAL da tela, ao contrário
+    // do stream do pty, que é append-only e nunca "desmostra" a marca quando ela some). Varredura
+    // throttled (não debounce) a cada chunk de dados via `scheduleGeneratingScan` abaixo, chamada
+    // dentro do callback de `term.write` (garante que o buffer já reflete o chunk recém-escrito
+    // antes de ler `term.buffer.active`). O único knob a reajustar se uma versão futura do Claude
+    // Code trocar o texto do indicador é WORKING_MARKER em generatingSignal.ts.
+    const scanGenerating = (): void => {
+      if (disposed || !nodeId) return
+      const buf = term.buffer.active
+      const lines: string[] = []
+      for (let y = Math.max(0, buf.length - term.rows); y < buf.length; y++) {
+        const line = buf.getLine(y)
+        if (line) lines.push(line.translateToString(true))
+      }
+      useCanvasStore.getState().setGenerating(nodeId, screenIsGenerating(lines))
+    }
+    let scanThrottleTimer: ReturnType<typeof setTimeout> | null = null
+    let scanPending = false
+    const scheduleGeneratingScan = (): void => {
+      if (!nodeId) return
+      if (scanThrottleTimer) {
+        scanPending = true
+        return
+      }
+      scanGenerating()
+      scanThrottleTimer = setTimeout(() => {
+        scanThrottleTimer = null
+        if (scanPending) {
+          scanPending = false
+          scanGenerating()
+        }
+      }, GENERATING_SCAN_THROTTLE_MS)
+    }
 
     // Auto-início do CLI do agente: um preset de agente (claude/codex/gemini) SEMPRE inicia seu CLI
     // ao montar — inclusive terminais HIDRATADOS ao reabrir o app (o usuário quer o agente "sempre
@@ -106,7 +143,11 @@ export function TerminalNode({
       ptyId = id
       if (nodeId) registerTerminalPty(nodeId, id)
       disposeData = window.orkestra.pty.onData(id, (data) => {
-        term.write(data)
+        // callback (não `scheduleGeneratingScan()` solto após o write): garante que o buffer do
+        // xterm já processou ESTE chunk antes de varrer — term.write pode adiar o parsing de
+        // chunks grandes para não travar a UI, e ler o buffer cedo demais arriscaria varrer o
+        // estado ANTERIOR ao chunk que acabou de chegar.
+        term.write(data, scheduleGeneratingScan)
       })
       term.onData((data) => window.orkestra.pty.write(id, data))
       term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
@@ -120,7 +161,11 @@ export function TerminalNode({
       const attached = nodeId ? await window.orkestra.pty.attach(nodeId) : null
       if (disposed) return
       if (attached) {
-        if (attached.buffer) term.write(attached.buffer)
+        // Varredura pós-attach (mesmo raciocínio do callback em connect() acima): o buffer
+        // restaurado pode já conter "esc to interrupt" se o pty ficou gerando enquanto este nó
+        // estava desmontado (fora da viewport ou troca de projeto) — sem isto, o beam só
+        // acenderia no PRÓXIMO chunk que chegasse depois do re-attach.
+        if (attached.buffer) term.write(attached.buffer, scheduleGeneratingScan)
         connect(attached.ptyId)
         return
       }
@@ -173,12 +218,16 @@ export function TerminalNode({
       // Fase 31: NÃO matar o pty aqui. Ao trocar de projeto, o TerminalNode desmonta mas o
       // processo deve continuar rodando — ele é reconectado (attach) quando o nó reaparece. O
       // pty só morre ao REMOVER o terminal (× -> pty.killForNode) ou ao fechar o app (killAll).
-      // NB (fix border-beam preso): não zeramos `generating` aqui de propósito — este componente
-      // também desmonta quando o nó só sai da VIEWPORT (suspensão de visibilidade, Otimização
-      // Bloco 4), com o pty (e a geração) seguindo vivo em segundo plano. Zerar aqui apagaria o
-      // beam incorretamente até o próximo chunk de output; `generating` agora é 100% derivado do
-      // AgentBus via o listener global em Canvas.tsx, e a limpeza de órfãos (nó removido de fato,
-      // troca de projeto) já é feita no canvasStore (removeNode/onNodesChange/hydrate).
+      // Sinal "generating" (tentativa 3): zera aqui SEMPRE, ao contrário da versão anterior
+      // (que deliberadamente preservava o beam porque o sinal vinha do AgentBus, independente
+      // deste componente). Agora a varredura é por CONTEÚDO do buffer deste xterm específico —
+      // sem um xterm montado não há como saber se a marca ainda está na tela, então zerar é a
+      // única opção segura (nunca preso ligado). Isto inclui o caso de suspensão de visibilidade
+      // (Otimização Bloco 4: o nó sai da viewport, o pty segue vivo em segundo plano): o beam
+      // apaga enquanto suspenso e a varredura pós-attach (ver `start` acima) o reacende
+      // corretamente ao reconectar, se a marca ainda estiver no buffer restaurado.
+      if (scanThrottleTimer) clearTimeout(scanThrottleTimer)
+      if (nodeId) useCanvasStore.getState().setGenerating(nodeId, false)
       term.dispose()
     }
   }, [])
