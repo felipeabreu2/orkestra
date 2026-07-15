@@ -187,6 +187,11 @@ export function Canvas(): JSX.Element {
   // ver AgentBus.ts). Global (não por-nó) pelo mesmo motivo de onAgentAttention: um único
   // listener aqui evita recriar a assinatura IPC por terminal montado.
   useEffect(() => {
+    // Guard defensivo: em dev, trocar o preload sem reiniciar o processo (um reload só do renderer,
+    // ou HMR) deixa window.orkestra.onAgentBusy indefinido — chamá-lo lançaria e derrubaria o Canvas
+    // inteiro (ErrorBoundary "Falha ao renderizar este item"). Aqui degradamos sem o beam em vez de
+    // crashar; um restart do `npm run dev` recarrega o preload e o sinal volta.
+    if (typeof window.orkestra?.onAgentBusy !== 'function') return
     const off = window.orkestra.onAgentBusy((nodeId, busy) => {
       // Mesmo guard de "nó ausente" do onAgentAttention acima: um pty de OUTRO projeto (que
       // sobrevive à troca, Fase 31) pode seguir emitindo saída em segundo plano — sem este guard,
