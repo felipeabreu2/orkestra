@@ -4,6 +4,8 @@ import { NodeHandles } from './NodeHandles'
 import { useCanvasStore } from '../store/canvasStore'
 import type { FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
+import { gitKeyForEntry } from './fileTreeGit'
+import { ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
 import './nodes.css'
 import './FileTreeNode.css'
 
@@ -20,14 +22,8 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path
 }
 
-// `file.path` vem absoluto (join(dir, name) no main) — a chave do gitStatus é relativa à raiz
-// do repo. No MVP o root do FileTree É o cwd do projeto (tipicamente a raiz do repo), então
-// "descascar" o prefixo `root + '/'` do path absoluto já basta (ver notas de risco do brief:
-// isso não resolve o caso de root ser um SUBdiretório do repo).
-function relativeToRoot(root: string, path: string): string {
-  const prefix = root.endsWith('/') ? root : `${root}/`
-  return path.startsWith(prefix) ? path.slice(prefix.length) : path
-}
+// A chave de casamento do gitStatus (prefix + relativoÀRaiz) vive em ./fileTreeGit (puro/testável);
+// o `prefix` vem do main junto do status e cobre o caso de a raiz ser um SUBdiretório do repo.
 
 interface GitMarker {
   label: string
@@ -49,13 +45,21 @@ function gitMarker(status: string | undefined): GitMarker | null {
   return { label: code[0] ?? '•', color: 'var(--text-2)' }
 }
 
+// Shape do gitStatus vindo do main (ver preload/FileTreeService): `prefix` é o caminho da raiz da
+// árvore dentro do repo ('' no toplevel, 'sub/' num subdir); `entries` mapeia path-relativo-ao-
+// toplevel -> código de status. A chave certa por entrada é gitKeyForEntry(prefix, root, path).
+interface GitStatus {
+  prefix: string
+  entries: Record<string, string>
+}
+
 interface TreeLevelProps {
   entries: FileEntry[]
   depth: number
   root: string
   expanded: Set<string>
   childrenCache: Map<string, FileEntry[]>
-  gitStatus: Record<string, string>
+  gitStatus: GitStatus
   onToggleDir: (dir: FileEntry) => void
   onOpenFile: (file: FileEntry) => void
 }
@@ -102,13 +106,23 @@ function TreeLevel(props: TreeLevelProps): JSX.Element {
             </div>
           )
         }
-        const marker = gitMarker(gitStatus[relativeToRoot(root, entry.path)])
+        const marker = gitMarker(gitStatus.entries[gitKeyForEntry(gitStatus.prefix, root, entry.path)])
         return (
           <div
             key={entry.path}
             className="nodrag ork-filetree-row"
             style={{ paddingLeft: indent }}
             onClick={() => onOpenFile(entry)}
+            // Arrastar uma linha de ARQUIVO (pastas não — evita `cd` ambíguo) injeta seu caminho
+            // absoluto no terminal de um agente ao soltar sobre um TerminalNode (que lê o MIME
+            // interno via readDroppedPaths). `draggable` (HTML5) coexiste com `nodrag`, que só
+            // bloqueia o pan por ponteiro do React Flow; text/plain é fallback p/ alvos externos.
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(ORKESTRA_PATH_MIME, entry.path)
+              e.dataTransfer.setData('text/plain', entry.path)
+              e.dataTransfer.effectAllowed = 'copy'
+            }}
             title={entry.path}
           >
             <span className="ork-filetree-triangle" aria-hidden="true" />
@@ -179,7 +193,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [treeLoading, setTreeLoading] = useState(false)
   const [treeError, setTreeError] = useState('')
-  const [gitStatus, setGitStatus] = useState<Record<string, string>>({})
+  const [gitStatus, setGitStatus] = useState<GitStatus>({ prefix: '', entries: {} })
 
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<PreviewState | null>(null)
@@ -223,13 +237,13 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     window.orkestra.filetree
       .gitStatus(dir)
       .then(setGitStatus)
-      .catch(() => setGitStatus({}))
+      .catch(() => setGitStatus({ prefix: '', entries: {} }))
   }, [])
 
   // Git status: no mount (quando root muda) + reforçado pelo botão "atualizar" no header.
   useEffect(() => {
     if (!root) {
-      setGitStatus({})
+      setGitStatus({ prefix: '', entries: {} })
       return
     }
     fetchGitStatus(root)

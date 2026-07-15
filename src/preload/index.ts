@@ -86,7 +86,10 @@ const api = {
     list: (dir: string): Promise<FileEntry[]> => ipcRenderer.invoke('filetree:list', dir),
     read: (path: string): Promise<{ content: string; truncated: boolean; binary: boolean }> =>
       ipcRenderer.invoke('filetree:read', path),
-    gitStatus: (dir: string): Promise<Record<string, string>> =>
+    // `prefix`: caminho do `dir` dentro do repo git ('' no toplevel, 'sub/' num subdir); o renderer
+    // compõe a chave de `entries` como `prefix + relativoÀRaiz(root, path)` (ver fileTreeGit.ts),
+    // pois o git devolve os paths sempre relativos ao TOPLEVEL, não ao `dir` consultado.
+    gitStatus: (dir: string): Promise<{ prefix: string; entries: Record<string, string> }> =>
       ipcRenderer.invoke('filetree:gitStatus', dir)
   },
   orchestration: {

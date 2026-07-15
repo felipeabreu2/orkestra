@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
-import { pathsToTerminalInput } from '../terminal/dropPaths'
+import { pathsToTerminalInput, readDroppedPaths, ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
 import { xtermThemeFromTokens } from '../terminal/xtermTheme'
 import { screenIsGenerating } from '../terminal/generatingSignal'
 import { useCanvasStore } from '../store/canvasStore'
@@ -181,23 +181,26 @@ export function TerminalNode({
     const ro = new ResizeObserver(() => fit.fit())
     ro.observe(el)
 
-    // Arrastar arquivos (do Finder) para o terminal insere seus caminhos, como num terminal
-    // nativo. dragover.preventDefault habilita o drop E impede o Chromium de navegar para o
-    // arquivo; getPathForFile (preload/webUtils) resolve o caminho absoluto; pathsToTerminalInput
-    // aspa cada um (seguro p/ espaços/unicode) e escreve no pty deste terminal.
+    // Arrastar arquivos para o terminal insere seus caminhos, como num terminal nativo. Duas
+    // origens: (a) arquivos do Finder (dataTransfer.files, resolvidos via getPathForFile do
+    // preload) e (b) uma linha de arquivo da própria árvore do canvas (FileTreeNode marca o
+    // caminho no MIME ORKESTRA_PATH_MIME). dragover.preventDefault habilita o drop E impede o
+    // Chromium de navegar para o arquivo; readDroppedPaths unifica as duas origens e
+    // pathsToTerminalInput aspa cada caminho (seguro p/ espaços/unicode) antes de escrever no pty.
     const onDragOver = (e: DragEvent): void => {
-      if (e.dataTransfer?.types.includes('Files')) {
+      const types = e.dataTransfer?.types
+      if (types && (types.includes('Files') || types.includes(ORKESTRA_PATH_MIME))) {
         e.preventDefault()
-        e.dataTransfer.dropEffect = 'copy'
+        e.dataTransfer!.dropEffect = 'copy'
       }
     }
     const onDrop = (e: DragEvent): void => {
-      if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
+      if (!e.dataTransfer) return
+      const hasInternal = e.dataTransfer.types.includes(ORKESTRA_PATH_MIME)
+      if (!hasInternal && e.dataTransfer.files.length === 0) return
       e.preventDefault()
       if (!ptyId) return
-      const paths = Array.from(e.dataTransfer.files)
-        .map((f) => window.orkestra.getPathForFile(f))
-        .filter((p) => p.length > 0)
+      const paths = readDroppedPaths(e.dataTransfer, (f) => window.orkestra.getPathForFile(f))
       const text = pathsToTerminalInput(paths)
       if (text) {
         window.orkestra.pty.write(ptyId, text)

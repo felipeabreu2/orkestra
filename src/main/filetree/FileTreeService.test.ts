@@ -78,7 +78,7 @@ describe('FileTreeService', () => {
   })
 
   it('gitStatus vazio p/ dir sem git; reporta modificados num repo', async () => {
-    expect(await svc.gitStatus(dir)).toEqual({})
+    expect(await svc.gitStatus(dir)).toEqual({ prefix: '', entries: {} })
     const g = (a: string[]): void => {
       execFileSync('git', a, { cwd: dir })
     }
@@ -89,7 +89,7 @@ describe('FileTreeService', () => {
     g(['commit', '-qm', 'i'])
     writeFileSync(join(dir, 'README.md'), '# changed\n')
     const st = await svc.gitStatus(dir)
-    expect(st['README.md']).toBeTruthy() // 'M'
+    expect(st.entries['README.md']).toBeTruthy() // 'M'
   })
 
   it('gitStatus reporta arquivo novo/nao rastreado como "??"', async () => {
@@ -103,7 +103,7 @@ describe('FileTreeService', () => {
     g(['commit', '-qm', 'i'])
     writeFileSync(join(dir, 'novo.txt'), 'novo\n')
     const st = await svc.gitStatus(dir)
-    expect(st['novo.txt']).toBe('??')
+    expect(st.entries['novo.txt']).toBe('??')
   })
 
   it('gitStatus preserva nome de arquivo nao-ASCII (acentuado) como chave UTF-8 real', async () => {
@@ -121,7 +121,32 @@ describe('FileTreeService', () => {
     g(['commit', '-qm', 'i'])
     writeFileSync(join(dir, accented), '# changed\n')
     const st = await svc.gitStatus(dir)
-    expect(st[accented]).toBeTruthy() // 'M', com a chave exatamente 'café.txt'
-    expect(Object.keys(st).some((k) => k.includes('café'))).toBe(true)
+    expect(st.entries[accented]).toBeTruthy() // 'M', com a chave exatamente 'café.txt'
+    expect(Object.keys(st.entries).some((k) => k.includes('café'))).toBe(true)
+  })
+
+  it('gitStatus resolve prefixo do subdiretório do repo (regressão: overlay em raiz ≠ toplevel)', async () => {
+    const g = (a: string[]): void => {
+      execFileSync('git', a, { cwd: dir })
+    }
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t'])
+    g(['config', 'user.name', 't'])
+    mkdirSync(join(dir, 'sub', 'deep'), { recursive: true })
+    writeFileSync(join(dir, 'sub', 'deep', 'a.txt'), 'a\n')
+    g(['add', '.'])
+    g(['commit', '-qm', 'i'])
+    writeFileSync(join(dir, 'sub', 'deep', 'a.txt'), '# changed\n')
+
+    // Raiz da árvore = subdiretório: `git status --porcelain` devolve paths relativos ao TOPLEVEL
+    // ('sub/deep/a.txt'), então o overlay só casa se soubermos o prefixo do subdir dentro do repo.
+    const st = await svc.gitStatus(join(dir, 'sub'))
+    expect(st.prefix).toBe('sub/')
+    expect(st.entries['sub/deep/a.txt']).toBeTruthy() // 'M'
+
+    // Raiz = toplevel: prefixo vazio, comportamento preservado.
+    const top = await svc.gitStatus(dir)
+    expect(top.prefix).toBe('')
+    expect(top.entries['sub/deep/a.txt']).toBeTruthy()
   })
 })

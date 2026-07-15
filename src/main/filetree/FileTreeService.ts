@@ -72,11 +72,18 @@ export class FileTreeService {
     return { content: buffer.toString('utf-8'), binary: false, truncated: size > MAX_READ_BYTES }
   }
 
-  // `git status --porcelain` -> { path: 'M' | 'A' | '??' | ... }. `path` é relativo à raiz do
-  // repo, como o próprio git devolve (quem consome — Task 2 — casa por sufixo/join com o cwd do
-  // projeto). Fora de um repo git (ou git ausente do PATH), execFile rejeita -> {}: do ponto de
-  // vista do file-explorer isso não é um erro, só significa "sem status para mostrar".
-  async gitStatus(dir: string): Promise<Record<string, string>> {
+  // `git status --porcelain` -> { entries: { path: 'M' | 'A' | '??' | ... }, prefix }. Os paths que
+  // o git devolve são SEMPRE relativos ao TOPLEVEL do repo, nunca a `dir` (confirmado: num repo com
+  // `sub/deep/a.txt` modificado, tanto `git -C <toplevel>` quanto `git -C <toplevel>/sub` imprimem
+  // `sub/deep/a.txt`). Por isso devolvemos também o `prefix` do `dir` dentro do repo (via
+  // `rev-parse --show-prefix`): o consumidor (renderer) compõe `prefix + relativoÀRaiz(root, path)`
+  // para casar a chave mesmo quando a raiz da árvore é um SUBdiretório do repo (bug do overlay que
+  // sumia em arquivos aninhados). No toplevel o prefixo é '' e o comportamento é idêntico ao de
+  // antes. Usamos `--show-prefix` (relativo) e NÃO `--show-toplevel` (absoluto) de propósito: o
+  // toplevel normaliza symlinks (ex.: /tmp -> /private/tmp) e não casaria com o `path` cru do
+  // renderer. Fora de um repo git (ou git ausente do PATH), execFile rejeita -> { prefix:'',
+  // entries:{} }: do ponto de vista do file-explorer isso não é um erro, só "sem status".
+  async gitStatus(dir: string): Promise<{ prefix: string; entries: Record<string, string> }> {
     let stdout: string
     try {
       // `core.quotePath=false`: sem isso, o git C-escapa bytes não-ASCII em OCTAL (ex.: `café.txt`
@@ -93,10 +100,21 @@ export class FileTreeService {
       ])
       stdout = result.stdout
     } catch {
-      return {}
+      return { prefix: '', entries: {} }
     }
 
-    const out: Record<string, string> = {}
+    // Prefixo do `dir` dentro do repo (relativo ao toplevel): '' no toplevel, 'sub/' num subdir.
+    // Best-effort — na dúvida (falha do rev-parse) assume '', que degrada para o comportamento
+    // pré-fix (só casa no toplevel) em vez de quebrar.
+    let prefix = ''
+    try {
+      const pref = await execFileAsync('git', ['-C', dir, 'rev-parse', '--show-prefix'])
+      prefix = pref.stdout.trim()
+    } catch {
+      prefix = ''
+    }
+
+    const entries: Record<string, string> = {}
     for (const rawLine of stdout.split('\n')) {
       const line = rawLine.replace(/\r$/, '')
       if (line.length < 3) continue // curta demais p/ ter "XY " + path; ignora sem quebrar
@@ -107,8 +125,8 @@ export class FileTreeService {
       if (arrowIdx !== -1) rest = rest.slice(arrowIdx + 4)
       const path = cleanGitPath(rest)
       if (!path) continue
-      out[path] = status.trim()
+      entries[path] = status.trim()
     }
-    return out
+    return { prefix, entries }
   }
 }

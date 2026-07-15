@@ -66,7 +66,8 @@ describe('registerFileTreeIpc', () => {
 
     const result = await ipc.handlers.get('filetree:gitStatus')!({}, dir)
 
-    expect(result).toEqual({})
+    // Novo shape (fix do relativeToRoot, #11): { prefix, entries } — fora de repo, ambos vazios.
+    expect(result).toEqual({ prefix: '', entries: {} })
   })
 
   it('filetree:gitStatus reporta arquivos modificados num repo git real', async () => {
@@ -84,6 +85,8 @@ describe('registerFileTreeIpc', () => {
     registerFileTreeIpc(ipc as any, svc)
     const result = await ipc.handlers.get('filetree:gitStatus')!({}, dir)
 
-    expect(result['README.md']).toBeTruthy()
+    // Repo no toplevel → prefix vazio; a chave do entries é o path relativo à raiz.
+    expect(result.prefix).toBe('')
+    expect(result.entries['README.md']).toBeTruthy()
   })
 })
