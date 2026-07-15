@@ -10,6 +10,7 @@ import { registerProjectIpc } from './projects/registerProjectIpc'
 import { FileTreeService } from './filetree/FileTreeService'
 import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
 import { registerIdeIpc } from './ide/registerIdeIpc'
+import { registerSshIpc } from './ssh/registerSshIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { installOrq } from './orchestration/installOrq'
@@ -425,6 +426,9 @@ app.whenReady().then(async () => {
   // R1 (abrir no editor externo): handler 'ide:open' — abre a pasta do projeto no editor de código
   // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.
   registerIdeIpc(ipcMain)
+  // Onda 2 (SSH Trilha B): handler ssh:scpDrop (spawn scp sem shell) para arrastar arquivo local
+  // → terminal remoto. buildScpDrop valida host (isValidSshHost) e sanitiza o basename.
+  registerSshIpc(ipcMain)
   // O `orq` + o wrapper `claude` (com onboarding) são instalados de forma SÍNCRONA e o PATH/
   // REAL_PATH entram no env ANTES de criar a janela. Assim os terminais HIDRATADOS — que spawnam
   // durante a hidratação do renderer, logo dentro de createWindow() — já nascem com o binDir no PATH

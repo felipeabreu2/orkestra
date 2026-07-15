@@ -135,8 +135,14 @@ export function registerPtyIpc(
     })
     ptyManager.onData(id, (data) => batcher.push(id, data))
     // No exit, flush imediato do pendente deste pty — não perder o final do output (ex.: o pty
-    // morre em menos de um frame após o último chunk).
-    ptyManager.onExit(id, () => batcher.flushOne(id))
+    // morre em menos de um frame após o último chunk). Onda 2 (T1): além do flush, encaminha o
+    // exit ao renderer pelo MESMO getSender() de pty:data — é o sinal que o TerminalNode assina
+    // (pty.onExit no preload) para o badge SSH virar "caiu". Infra genérica (qualquer terminal),
+    // não só SSH; o `e.exitCode` vem do PtyManager.onExit (multi-subscriber já existente).
+    ptyManager.onExit(id, (e) => {
+      batcher.flushOne(id)
+      getSender()?.send('pty:exit', id, e.exitCode)
+    })
     onSpawn(id)
     return id
   })

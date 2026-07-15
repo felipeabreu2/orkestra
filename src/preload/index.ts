@@ -38,6 +38,16 @@ const api = {
       }
       ipcRenderer.on('pty:data', listener)
       return () => ipcRenderer.removeListener('pty:data', listener)
+    },
+    // Onda 2 (T1): exit do pty encaminhado pelo main (registerPtyIpc) — o TerminalNode assina
+    // por id para virar o badge SSH em "caiu". Mesmo formato de onData (filtra por id, devolve
+    // unsubscribe); o cleanup do useEffect chama o unsubscribe para não vazar listener.
+    onExit: (id: string, cb: (exitCode: number) => void): (() => void) => {
+      const listener = (_e: unknown, incomingId: string, code: number): void => {
+        if (incomingId === id) cb(code)
+      }
+      ipcRenderer.on('pty:exit', listener)
+      return () => ipcRenderer.removeListener('pty:exit', listener)
     }
   },
   persistence: {
@@ -140,7 +150,16 @@ const api = {
   // Caminho absoluto de um File solto no terminal (drag-drop do Finder). No Electron 33 o
   // File.path foi removido — webUtils.getPathForFile é a forma suportada (resolve no preload,
   // sem o renderer tocar em `fs`). Só resolve Files reais que o usuário arrastou.
-  getPathForFile: (file: File): string => webUtils.getPathForFile(file)
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  // Onda 2 (Trilha B): drag-drop de arquivo para um terminal SSH — o renderer só passa (host,
+  // localPath); toda a construção de argumentos (mkdir/scp) e a validação anti-injeção
+  // (isValidSshHost + sanitização do basename) vivem no main (buildScpDrop/registerSshIpc). O
+  // main envia via `scp` (reusando ~/.ssh) e devolve o caminho REMOTO, que o TerminalNode
+  // escreve no PTY. Rejeita se o host for inválido ou o scp falhar.
+  ssh: {
+    scpDrop: (host: string, localPath: string): Promise<string> =>
+      ipcRenderer.invoke('ssh:scpDrop', { host, localPath })
+  }
 }
 
 contextBridge.exposeInMainWorld('orkestra', api)

@@ -26,6 +26,18 @@ function makeFakePty(): { pty: IPtyLike; emit: (d: string) => void } {
   }
 }
 
+// Fake que captura o callback de exit (o makeFakePty tem `onExit: () => {}` e descarta o cb) —
+// necessário para T1 (Onda 2): provar que registerPtyIpc encaminha pty:exit ao sender. O
+// PtyManager assina um único pty.onExit bruto e o repassa aos exitSubs, então guardar esse cb aqui
+// é suficiente para disparar o exit no teste.
+function makeExitFakePty(): { pty: IPtyLike; emitExit: (code: number) => void } {
+  let exitCb: (e: { exitCode: number }) => void = () => {}
+  return {
+    pty: { onData: () => {}, onExit: (cb) => { exitCb = cb }, write: vi.fn(), resize: vi.fn(), kill: vi.fn() },
+    emitExit: (code) => exitCb({ exitCode: code })
+  }
+}
+
 // Fake multi-subscriber (não sobrescreve o assinante anterior) — o mesmo formato usado em
 // PtyManager.test.ts. Necessário aqui para provar que DUAS assinaturas onData independentes
 // (o streaming do registerPtyIpc para o renderer + o buffer do AgentBus) coexistem no mesmo
@@ -217,6 +229,22 @@ describe('registerPtyIpc', () => {
     const call = spawner.mock.calls[0]
     expect(call[0]).toBe('ssh')
     expect(call[1]).toEqual(['user@host'])
+  })
+
+  // T1 (Onda 2, habilitante do feedback de estado de conexão): o exit do pty precisa CHEGAR ao
+  // renderer para o badge SSH poder virar "caiu". registerPtyIpc, além do flush final já
+  // existente, encaminha ('pty:exit', id, exitCode) pelo MESMO getSender() usado por pty:data.
+  it('pty:spawn encaminha pty:exit ao sender com id e exitCode', async () => {
+    const fake = makeExitFakePty()
+    const mgr = new PtyManager(() => fake.pty)
+    const sender = { send: vi.fn() }
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => sender as any)
+
+    const id = await ipc.handlers.get('pty:spawn')!({}, {})
+    fake.emitExit(7)
+
+    expect(sender.send).toHaveBeenCalledWith('pty:exit', id, 7)
   })
 
   it('sshHost inválido é rejeitado e não spawna nada', async () => {
