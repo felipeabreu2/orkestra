@@ -67,6 +67,35 @@ const edgeTypes = {
   typed: TypedEdge
 }
 
+// MiniMap · maskColor tema-aware (reformulação Lote B, §4.11). A máscara é a área ESCURECIDA fora
+// do viewport no minimap; o React Flow expõe `maskColor` só como prop e a pinta no atributo SVG
+// `fill` de um <path>, que NÃO resolve var()/color-mix() — precisa de uma cor CONCRETA. Antes era
+// "rgba(11,13,18,0.6)" fixo (o --bg-0 ESCURO escrito à mão), que não acompanhava o tema claro
+// (véu escuro sobre um minimap claro). readBgMask lê o --bg-0 ATUAL do :root via getComputedStyle
+// e compõe rgba(...,0.6) — a mesma cor do fundo do canvas, translúcida. hexToRgb aceita #rgb e
+// #rrggbb (formato do token nos dois temas); fallback pro escuro se o token não puder ser lido
+// (ex.: jsdom/teste sem :root pintado).
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  let h = hex.trim().replace('#', '')
+  if (h.length === 3) {
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('')
+  }
+  if (h.length !== 6) return null
+  const n = Number.parseInt(h, 16)
+  if (Number.isNaN(n)) return null
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+
+function readBgMask(): string {
+  if (typeof document === 'undefined') return 'rgba(11, 13, 18, 0.6)'
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--bg-0')
+  const rgb = hexToRgb(raw)
+  return rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6)` : 'rgba(11, 13, 18, 0.6)'
+}
+
 // isTypingTarget guarda os atalhos que SÃO sensíveis a texto (foco/zoom/minimap da Fase 18:
 // Shift+1/2/M; foco em nó com atenção da Fase 20 Task 2: Shift+A) — Cmd/Ctrl+K (Fase 12) e
 // Cmd/Ctrl+G / Cmd/Ctrl+Shift+G (Fase 18 Task 3) são comandos, não texto, e rodam ANTES deste
@@ -114,6 +143,11 @@ export function Canvas(): JSX.Element {
   // Enquanto != null, o CreateOverlay captura o gesto e cria o item com a posição/tamanho arrastados.
   const [pendingTool, setPendingTool] = useState<'note' | 'portal' | 'filetree' | 'draw' | null>(null)
   const [minimapOn, setMinimapOn] = useState(true)
+  // Cor da máscara do MiniMap derivada do --bg-0 em runtime (ver readBgMask acima, §4.11). Um
+  // MutationObserver no data-theme do <html> (o flip de tema vive em theme.ts/ThemeToggle, fora
+  // deste arquivo) rederiva a cor no flip — mantém a máscara alinhada ao fundo do canvas nos dois
+  // temas sem hardcodar o valor escuro.
+  const [minimapMask, setMinimapMask] = useState(readBgMask)
   // R4: menu de contexto (botão direito). nodeId!==null => menu de ações do nó; senão => menu de
   // criação no ponto do cursor (flowX/flowY já em coordenadas do canvas). x/y são de tela (posição
   // do menu). null => fechado.
@@ -144,6 +178,18 @@ export function Canvas(): JSX.Element {
     })
     return off
   }, [setAttention])
+
+  // Rederiva a cor da máscara do MiniMap quando o tema vira (data-theme no <html> muda). Observa
+  // só esse atributo — barato e desacoplado do ThemeToggle (Lote E), que não precisa saber do
+  // minimap. Sincroniza uma vez na montagem também, caso o tema tenha sido aplicado após o
+  // primeiro render (loadTheme roda antes, mas o :root pode não estar computado no lazy init).
+  useEffect(() => {
+    const root = document.documentElement
+    setMinimapMask(readBgMask())
+    const obs = new MutationObserver(() => setMinimapMask(readBgMask()))
+    obs.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
 
   // Barra de alinhar/distribuir/organizar em grade (Fase 18 Task 2): só aparece com 2+ nós
   // selecionados (node.selected, setado pelo próprio React Flow no clique/box-select). Cada
@@ -479,22 +525,26 @@ export function Canvas(): JSX.Element {
         }}
         proOptions={{ hideAttribution: true }}
       >
-        {/* Grid de pontos finos (F02/ajuste): gap 20 = snapGrid, então os nós alinham aos pontos
-            ao criar/mover; size pequeno deixa os pontos discretos. */}
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+        {/* Grid de pontos finos (reformulação Lote B, §2.3/§4): gap=22 é o token
+            --space-canvas-grid (mockup orkestra-canvas.html usa background-size:22px 22px) —
+            puramente visual, independente do snapGrid=[20,20] acima (o snap dos nós ao mover/
+            criar não precisa coincidir com o espaçamento dos pontos). size pequeno deixa os
+            pontos discretos. */}
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
         <Controls />
         {/* MiniMap ancora bottom-right por padrão (Controls fica bottom-left) — sem colisão.
             nodeColor usa --text-3 (cinza neutro de "chrome", já usado em scrollbars.css) em
             vez de --accent, que já é reservado p/ estados interativos/seleção (handles, edge
             selecionada, caixa de seleção) — reaproveitar --accent aqui competiria com esses
-            usos. maskColor é --bg-0 traduzido p/ rgba (a mesma cor do fundo do canvas, só
-            translúcida) p/ a área fora do viewport ler bem no dark. */}
+            usos. maskColor (área fora do viewport) é derivado do --bg-0 em runtime (minimapMask,
+            ver readBgMask/effect acima) p/ acompanhar o tema claro/escuro — antes era um rgba
+            escuro fixo que só lia bem no dark. */}
         {minimapOn && (
           <MiniMap
             pannable
             zoomable
             className="ork-minimap"
-            maskColor="rgba(11, 13, 18, 0.6)"
+            maskColor={minimapMask}
             nodeColor="var(--text-3)"
           />
         )}

@@ -40,16 +40,18 @@
 
 /* Onda 2 (F02): handles com cara de "haltere/pino" (imagem 7) — um ponto arredondado destacado,
    maior que o padrão, com anel na cor de fundo para "descolar" do nó. A cor de preenchimento já
-   vem de --xy-handle-background-color (accent). */
+   vem de --xy-handle-background-color (accent). Reformulação (§4.11): o anel de recorte agora é o
+   token --ring-avatar (= inset do handle no fundo do canvas) e o hover reusa --ring-focus (o mesmo
+   halo de foco/seleção do resto do app), em vez dos box-shadow escritos à mão. */
 .react-flow__handle {
   width: 11px;
   height: 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border-width: 2px;
-  box-shadow: 0 0 0 2px var(--bg-0);
+  box-shadow: var(--ring-avatar);
 }
 .react-flow__handle:hover {
-  box-shadow: 0 0 0 3px var(--accent-weak);
+  box-shadow: var(--ring-focus);
 }
 /* Semântica de entrada/saída (F03): entrada (esquerda/topo) verde, saída (direita/base) accent —
    ajuda a ler a direção do fluxo ao ligar os cards. */
@@ -98,7 +100,8 @@
 /* MiniMap (Fase 18): background via --xy-minimap-background-color acima (mesma técnica de
    fallback chain do @xyflow/react/dist/style.css usada no resto deste arquivo); maskColor/
    nodeColor são passados como props em Canvas.tsx (RF os expõe só via prop, não via um --xy-*
-   herdável). Border/radius/shadow aqui pois RF não tem uma variável dedicada p/ isso no
+   herdável) — o maskColor agora é derivado do --bg-0 em runtime p/ acompanhar o tema (ver
+   Canvas.tsx). Border/radius/shadow aqui pois RF não tem uma variável dedicada p/ isso no
    wrapper do minimap (mesmo caso de .react-flow__controls acima). */
 .ork-minimap {
   border: 1px solid var(--border);
@@ -107,30 +110,42 @@
   box-shadow: var(--shadow-1);
 }
 
-/* Creation toolbar */
+/* Creation toolbar — pílula de vidro-cromo (reformulação, §3.1/§4.9): esta barra FLUTUA sobre o
+   canvas, então é CROMO (doutrina §1: cromo = vidro; conteúdo = opaco), não conteúdo. Recebe a
+   receita .superficie-cromo: tint --glass-1 + backdrop-filter --material-chrome + borda
+   --glass-border + sombra --shadow-1,--hairline-glass (a quina de luz no topo). `isolation:
+   isolate` contém o custo de GPU do blur (§3.2) e evita empilhar dois backdrop-filter — o único
+   fundo atrás é o próprio canvas. Substitui o antigo --bg-1 sólido. Classe compartilhada por
+   .ork-arrange-toolbar e .ork-node-toolbar (só mudam âncora/raio). */
 .ork-toolbar {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: var(--space-3);
+  left: var(--space-3);
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
+  gap: var(--space-1);
+  padding: var(--space-1-5);
+  background: var(--glass-1);
+  backdrop-filter: var(--material-chrome);
+  -webkit-backdrop-filter: var(--material-chrome);
+  isolation: isolate;
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-1), var(--hairline-glass);
   animation: ork-fade-in var(--dur-2) var(--ease);
 }
 
 .ork-toolbar-btn {
-  padding: 6px 12px;
+  padding: var(--space-1-5) var(--space-3);
   background: transparent;
-  color: var(--text-2);
+  /* Texto SOBRE o vidro-cromo da .ork-toolbar → --label* (vibrancy), nunca --text-* sólido
+     (doutrina §3 regra 3 / §3.2). O resting state fica transparente diretamente sobre o vidro,
+     então usa --label-2; no hover/active o botão ganha um chip opaco --bg-2 e aí --text-1 vale. */
+  color: var(--label-2);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--fs-base);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -143,7 +158,10 @@
   color: var(--text-1);
 }
 .ork-toolbar-btn:active {
-  transform: translateY(1px);
+  /* Press universal (§4.9 / rigor): escala via --press-scale em vez do translateY escrito à mão —
+     é o mesmo feedback de "afundar" do resto do app e colapsa sozinho sob prefers-reduced-motion
+     (o token vira 1, sem movimento), coisa que o translateY(1px) fixo não respeitava. */
+  transform: scale(var(--press-scale));
 }
 .ork-toolbar-btn:disabled,
 .ork-toolbar-btn[aria-disabled='true'] {
@@ -155,21 +173,21 @@
   flex: 0 0 auto;
   width: 1px;
   align-self: stretch;
-  margin: 4px 2px;
+  margin: var(--space-1) var(--space-0-5);
   background: var(--border);
 }
 
 /* Barra de alinhar/distribuir/organizar em grade (Fase 18 Task 2): mesmo visual da
-   .ork-toolbar de criação (fundo/borda/raio/sombra via --bg-1/--border/--radius/--shadow-1,
-   herdados por reaproveitar a classe) — só a âncora muda, pra topo-centro em vez de
-   topo-esquerda, e só existe no DOM quando há 2+ nós selecionados (ver Canvas.tsx). */
+   .ork-toolbar de criação (fundo/borda/raio/sombra via a receita de vidro-cromo, herdada por
+   reaproveitar a classe) — só a âncora muda, pra topo-centro em vez de topo-esquerda, e só
+   existe no DOM quando há 2+ nós selecionados (ver Canvas.tsx). */
 .ork-arrange-toolbar,
 .ork-node-toolbar {
   top: 56px; /* abaixo da barra superior (Fase 30, header de 44px) */
   left: 50%;
   transform: translateX(-50%);
   flex-wrap: wrap;
-  max-width: calc(100% - 24px);
+  max-width: calc(100% - var(--space-6));
   justify-content: center;
 }
 
@@ -179,6 +197,9 @@
 .ork-node-toolbar {
   flex-wrap: nowrap;
   width: max-content;
+  /* Borda 100% redonda (pedido do usuário, 2026-07-14) — pílula via --radius-pill, padronizando
+     com os chips do Topbar. Sobrepõe o var(--radius) do .ork-toolbar base (esta regra vem depois). */
+  border-radius: var(--radius-pill);
 }
 
 /* Onda 3 (F04/F05): botões só-ícone e o "chip" de contagem de ligações (número em destaque). */
@@ -186,14 +207,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
 }
 .ork-node-toolbar-links {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
-  color: var(--text-2);
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
+  /* Contador de ligações fica direto sobre o vidro-cromo → --label-2 (vibrancy, §3.2), não
+     --text-* sólido. */
+  color: var(--label-2);
 }
 .ork-node-toolbar-badge {
   min-width: 18px;
@@ -202,14 +225,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  /* Chip de contagem: texto SOBRE o fill --accent sólido → --accent-text (uso restrito do token,
+     §2 regra 5). Antes era #fff cru, que quebrava no tema claro (accent claro + branco). */
+  color: var(--accent-text);
   background: var(--accent);
-  border-radius: 9px;
+  border-radius: var(--radius-pill);
 }
 .ork-node-toolbar-danger:hover {
-  color: var(--danger, #e5484d);
+  /* --danger agora existe como token (alias de --err) — fallback #e5484d removido. */
+  color: var(--danger);
 }
 
 /* Onda 5 (F06/F07): barra de formatação da nota — swatches de cor, estado ativo dos botões e o
@@ -218,14 +244,16 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
 }
 .ork-fmt-swatch {
   width: 16px;
   height: 16px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-circle);
+  /* Contorno neutro só p/ delinear o swatch colorido do fundo da barra — token --border (antes
+     rgba(0,0,0,0.15) cru, que era um anel escuro fixo e não acompanhava o tema). */
+  border: 1px solid var(--border);
   cursor: pointer;
   transition: transform var(--dur-1) var(--ease);
 }
@@ -238,8 +266,8 @@
 }
 .ork-fmt-imgurl {
   width: 160px;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-sm);
   color: var(--text-1);
   background: var(--bg-2);
   border: 1px solid var(--border);
@@ -270,7 +298,9 @@
 /* Traçado por tipo de conexão (Fase 22 Task 2): canvasStore (Task 1) grava `edge.className`
    como `ork-edge--<kind>` (agent|chain|note|portal|link, ver deriveEdgeKind em edges/edgeKind.ts)
    — o React Flow aplica essa classe no <g class="react-flow__edge …"> que envolve o path
-   desenhado por TypedEdge (BaseEdge), então o seletor abaixo mira o path dentro dele. */
+   desenhado por TypedEdge (BaseEdge), então o seletor abaixo mira o path dentro dele. Cores por
+   tipo revisadas na reformulação (§4.10): agent→accent, chain→ok, note→warn, portal/link→
+   border-strong (portal tracejado) — todas já em token, mantidas. */
 .react-flow__edge.ork-edge--agent .react-flow__edge-path {
   stroke: var(--accent);
 }
