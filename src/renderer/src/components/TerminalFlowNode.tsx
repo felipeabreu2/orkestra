@@ -140,7 +140,7 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
         {visible ? (
           <div className="nodrag nowheel ork-node-body">
             <ErrorBoundary>
-              <TerminalNode nodeId={id} preset={preset} sshHost={sshHost} />
+              <TerminalNode nodeId={id} preset={preset} role={role} sshHost={sshHost} />
             </ErrorBoundary>
           </div>
         ) : (

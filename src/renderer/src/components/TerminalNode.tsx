@@ -17,10 +17,14 @@ const GENERATING_SCAN_THROTTLE_MS = 150
 export function TerminalNode({
   nodeId,
   preset,
+  role,
   sshHost
 }: {
   nodeId?: string
   preset?: string
+  // Papel do agente (Dev/Revisor/...): propagado ao main p/ injetar a instrução de arranque no
+  // cwd do pty (CLAUDE.md/AGENTS.md; ver registerPtyIpc). Vazio/ausente = nenhuma injeção.
+  role?: string
   // Fase 27 (Task 3): quando presente, este terminal spawna `ssh <sshHost>` em vez de um shell
   // local (ver o branch de spawnOpts abaixo). Passado como prop por TerminalFlowNode, mesmo
   // padrão de preset — não lido diretamente de data aqui.
@@ -133,7 +137,7 @@ export function TerminalNode({
     // independente de ser um shell local ou uma sessão ssh.
     const spawnOpts = sshHost
       ? { cols: term.cols, rows: term.rows, nodeId, sshHost }
-      : { cols: term.cols, rows: term.rows, nodeId, initialCommand }
+      : { cols: term.cols, rows: term.rows, nodeId, initialCommand, preset, role }
 
     // Liga este xterm a um pty (recém-criado OU reconectado): saída do pty -> xterm, teclado ->
     // pty, resize -> pty, e registra nodeId->ptyId no registry do renderer. Idêntico nos dois
