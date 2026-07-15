@@ -202,7 +202,9 @@
    O preenchimento usa --attention (systemRed, "pare e olhe"); o anel que pulsa usa --attention-ring.
    Reformulação 2026-07-14: o @keyframes ork-attention-pulse (agora tokenizado com --attention-ring)
    E o desligamento sob prefers-reduced-motion foram CENTRALIZADOS em styles/motion.css — esta
-   classe apenas consome a animação. É a única animação em loop do app. */
+   classe apenas consome a animação. NÃO é a única animação em loop do app (ork-beam/ork-shimmer/
+   ork-think/ork-edge-flow também são, ver motion.css) — todas desligam sob prefers-reduced-motion
+   pelo mesmo bloco centralizado em styles/motion.css. */
 .ork-node-attention {
   flex: 0 0 auto;
   width: 7px;
@@ -261,7 +263,7 @@
 .ork-ssh-badge {
   font-size: var(--fs-micro);
   font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-badge);
+  letter-spacing: var(--tracking-label);
   padding: 0 5px;
   border-radius: var(--radius-sm);
   color: var(--accent-text);

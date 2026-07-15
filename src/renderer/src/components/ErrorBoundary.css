@@ -1,0 +1,15 @@
+/* Fallback do ErrorBoundary (ver ErrorBoundary.tsx) — de-inline (2026-07-15, finishing a11y/
+   tokens): antes era 100% inline style no .tsx; movido pra classes tokenizadas aqui, sem
+   fallback hex (só var(--token)), pra ficar consistente com o resto do app. Visualmente
+   idêntico ao que já existia: bloco de erro compacto, texto mono em --err, scroll próprio. */
+.ork-error-boundary {
+  padding: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--err);
+  font-family: var(--font-mono);
+  overflow: auto;
+  height: 100%;
+}
+.ork-error-boundary-detail {
+  opacity: 0.7;
+}

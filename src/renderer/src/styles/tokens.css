@@ -69,8 +69,18 @@
   --paper-pink: #FF375F;
   --paper-cyan: #64D2FF;
   --paper-yellow: #FFD60A;
-  /* post-it (nota; papel quente, tema-consciente — ver noteColors.ts) */
+  /* post-it (nota; papel quente, tema-consciente — ver noteColors.ts). Resíduo corrigido
+     (2026-07-15): só --note-yellow tinha sido migrado pra tokens.css na reformulação; as outras 5
+     cores do seletor de nota (noteColors.ts) apontavam pra tokens --note-pink/blue/green/purple/
+     orange inexistentes (post-it renderizava sem fundo). Hues alinhados aos --paper-* já usados
+     no app (pink~paper-pink, blue~paper-blue, green~paper-green, purple~paper-purple,
+     orange~paper-orange), na mesma luminância/saturação do --note-yellow acima. */
   --note-yellow: #2C2612;
+  --note-pink: #2B1216;
+  --note-blue: #121E2B;
+  --note-green: #122B17;
+  --note-purple: #24122B;
+  --note-orange: #2B2012;
   --note-ink: #F1D89A; /* + variantes; ver noteColors.ts */
   /* terminal (xterm) */
   --term-bg: #0B0C11;
@@ -198,6 +208,11 @@
   --shadow-3: 0 16px 48px rgba(11, 11, 15, .2), 0 4px 12px rgba(11, 11, 15, .1);
   /* nota clara */
   --note-yellow: #FFF6D9;
+  --note-pink: #FFD6DD;
+  --note-blue: #D6EAFF;
+  --note-green: #D6FFDE;
+  --note-purple: #F3D6FF;
+  --note-orange: #FFEDD6;
   --note-ink: #5A4A1A;
   --term-bg: #F7F8FA;
   --term-fg: #1D2230;

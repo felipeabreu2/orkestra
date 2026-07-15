@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import './ErrorBoundary.css'
 
 // Isola crashes de render de uma subárvore (ex.: um nó do canvas). Sem isto, um erro em UM nó
 // (como o antigo crash assíncrono do @xterm/addon-webgl) sobe pela árvore e derruba o React
@@ -23,20 +24,10 @@ export class ErrorBoundary extends Component<
     if (!this.state.hasError) return this.props.children
     if (this.props.fallback !== undefined) return this.props.fallback
     return (
-      <div
-        role="alert"
-        style={{
-          padding: 12,
-          fontSize: 12,
-          color: 'var(--err, #ff6b6b)',
-          fontFamily: 'ui-monospace, Menlo, monospace',
-          overflow: 'auto',
-          height: '100%'
-        }}
-      >
+      <div role="alert" className="ork-error-boundary">
         Falha ao renderizar este item.
         <br />
-        <span style={{ opacity: 0.7 }}>{this.state.message}</span>
+        <span className="ork-error-boundary-detail">{this.state.message}</span>
       </div>
     )
   }

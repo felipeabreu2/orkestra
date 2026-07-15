@@ -1,8 +1,15 @@
-/* Shared motion keyframes (Fase 13 Task 2): a couple of small, reusable entrance animations
-   consumed by component-local CSS via `animation-name`. Kept separate from tokens.css (which
-   stays purely declarative custom properties, no selectors/keyframes) and from base.css (global
-   element resets). Durations always come from the --dur-* tokens, so these already collapse to
-   0ms under prefers-reduced-motion (see tokens.css) without any extra media query here. */
+/* Shared motion keyframes (Fase 13 Task 2), expanded during the 2026-07-14 DesignCode UI
+   reformulação with several continuous-loop effects (border-beam, shimmer, attention-pulse,
+   "thinking" dots, edge dash-flow). Kept separate from tokens.css (which stays purely
+   declarative custom properties, no selectors/keyframes) and from base.css (global element
+   resets). Two different reduced-motion strategies live in this file:
+   1) The entrance animations (ork-fade-in/ork-scale-in) use --dur-* for their duration, so they
+      already collapse to 0ms under prefers-reduced-motion via tokens.css — no extra rule needed
+      for those two specifically.
+   2) Every CONTINUOUS/infinite-loop animation below (ork-attention-pulse, ork-beam, ork-shimmer,
+      ork-think, ork-edge-flow) uses a fixed duration, NOT --dur-*, so it does NOT collapse on its
+      own — each is explicitly stopped in the @media (prefers-reduced-motion: reduce) block at the
+      bottom of this file. */
 
 @keyframes ork-fade-in {
   from {
@@ -28,8 +35,10 @@
 
 /* Pulso de atenção do nó (centralizado aqui na reformulação 2026-07-14, antes vivia inline em
    nodes.css com rgba hardcoded). O anel usa o token --attention-ring (systemRed translúcido), que
-   troca por tema. É a ÚNICA animação em loop do app; totalmente desligada sob prefers-reduced-motion
-   (o loop `animation` não é controlado pelos --dur-*, então zeramos aqui via media query). */
+   troca por tema. Uma das VÁRIAS animações em loop do app (ver ork-beam/ork-shimmer/ork-think/
+   ork-edge-flow abaixo) — todas totalmente desligadas sob prefers-reduced-motion no mesmo bloco
+   centralizado no fim deste arquivo (o loop `animation` não é controlado pelos --dur-*, então
+   zeramos explicitamente via media query). */
 @keyframes ork-attention-pulse {
   0% {
     box-shadow: 0 0 0 0 var(--attention-ring);
@@ -91,10 +100,14 @@
   }
 }
 
-/* Reformulação 2026-07-14 (Lote C): TODAS as animações em loop contínuo do app (não as de
-   entrada/saída pontuais como ork-fade-in/ork-scale-in, que já colapsam via --dur-* zerado em
-   tokens.css) são desligadas aqui sob prefers-reduced-motion — centralizado num único bloco,
-   mesmo padrão do --beam (que fica parado em 0deg, um destaque estático em vez de animado). */
+/* Reformulação 2026-07-14 (Lote C): as animações em loop contínuo ligadas a ESTADO DE NÓ/EDGE
+   (attention-pulse, beam, think, edge-flow + o ponto viajante SMIL) são desligadas aqui sob
+   prefers-reduced-motion — centralizadas num único bloco, mesmo padrão do --beam (que fica
+   parado em 0deg, um destaque estático em vez de animado). As demais animações em loop do app
+   (não as de entrada/saída pontuais como ork-fade-in/ork-scale-in, que já colapsam via --dur-*
+   zerado em tokens.css) têm seu próprio bloco @media LOCAL, ao lado do seletor que as usa, em
+   vez de aqui: ork-shimmer em NewTerminalModal.css/Topbar.css (botão primário/CTA) e
+   ork-icon-spin em Icon.css (`.ork-icon--spin-hover`). */
 @media (prefers-reduced-motion: reduce) {
   .ork-node-attention,
   .ork-node.is-generating::after,
