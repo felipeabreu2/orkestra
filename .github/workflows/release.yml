@@ -35,25 +35,24 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      # HOTFIX v1.2.1 — regressão de arquitetura: o runner `macos-latest` migrou para Apple Silicon
-      # (macos-26-arm64), então `npm ci` roda com node arm64 e o install do node-pty (scripts/
-      # prebuild.js) copia o prebuild do arch do HOST → build/Release fica ARM64. Mas o app é
-      # empacotado x64 (electron-builder.yml → mac.target.arch: x64) e npmRebuild:false não recompila.
-      # Resultado: spawn-helper arm64 dentro de um app x64 → "posix_spawnp failed" no terminal em
-      # produção (Intel nativamente, e Apple Silicon via Rosetta). node-pty JÁ traz prebuilds/
-      # darwin-x64 — então forçamos build/Release para x64 (o 1º dir que node-pty tenta em
-      # lib/utils.js). Só macOS; casado com mac.target.arch: x64 no electron-builder.yml.
-      - name: Casar node-pty (nativo) com o alvo x64 do app
-        if: runner.os == 'macOS'
+      # HOTFIX v1.2.1 — "posix_spawnp failed" no terminal em produção. Causa-raiz: o `spawn-helper`
+      # embutido em node-pty/prebuilds/<plat>-<arch>/ é shippado no tarball do npm SEM o bit +x
+      # (-rw-r--r--). Quando o node-pty resolve o binário pelos prebuilds (lib/utils.js) — o que
+      # acontece quando `npm ci` NÃO cria build/Release, caso do runner macos-latest atual (arm64,
+      # macos-26) — o posix_spawnp do helper dá EACCES = "posix_spawnp failed" e nenhum terminal
+      # abre. (A v1.1.1 funcionou porque o runner x64 antigo criava build/Release com +x.) Em dev
+      # não aparece: build/Release é criado localmente com +x. Fix: restaura +x em TODOS os
+      # spawn-helper dos prebuilds antes de empacotar (electron-builder preserva o modo no
+      # asarUnpack). Não-Windows (conpty não usa spawn-helper).
+      - name: node-pty — restaura +x do spawn-helper dos prebuilds
+        if: runner.os != 'Windows'
         run: |
           set -euo pipefail
-          NP=node_modules/node-pty/build/Release
-          cp -f node_modules/node-pty/prebuilds/darwin-x64/pty.node "$NP/pty.node"
-          cp -f node_modules/node-pty/prebuilds/darwin-x64/spawn-helper "$NP/spawn-helper"
-          chmod +x "$NP/spawn-helper"
-          echo "verificação (deve ser x86_64):"
-          file "$NP/spawn-helper" "$NP/pty.node"
-          file "$NP/spawn-helper" | grep -q x86_64 || { echo "ERRO: spawn-helper não é x86_64"; exit 1; }
+          find node_modules/node-pty/prebuilds -name spawn-helper -exec chmod +x {} +
+          echo "verificação (todos devem ter +x):"
+          find node_modules/node-pty/prebuilds -name spawn-helper -exec ls -la {} \;
+          # gate: falha o build se algum spawn-helper ficou sem +x
+          find node_modules/node-pty/prebuilds -name spawn-helper ! -perm -u+x -print -exec false {} +
 
       - name: Empacotar e publicar
         run: npm run release
