@@ -281,13 +281,16 @@ interface CanvasState {
   attention: Set<string>
   setAttention: (nodeId: string, on: boolean) => void
   // Reformulação DesignCode UI (Lote D): sinal "generating" (dispara o border-beam do nó, ver
-  // nodeState.ts/nodes.css) — ids de terminal cujo pty emitiu saída "recentemente" (heurística
-  // DEBOUNCED em TerminalNode.tsx: cada chunk marca on=true e reagenda um timeout de 500ms que
-  // marca off; documentada como heurística — não distingue "agente respondendo" de "processo
-  // qualquer imprimindo"). Mesmo padrão de `attention` acima: puramente efêmero/UI (nunca
-  // serializado, nunca entra no histórico de undo — por isso NÃO vive em `data.generating` do nó,
-  // que passaria por serialize()/histPatch); setGenerating SEMPRE atribui uma NOVA instância de
-  // Set (o zustand compara referência).
+  // nodeState.ts/nodes.css) — ids de terminal cujo pty está "ocupado" (produzindo saída) agora.
+  // Fix border-beam preso (2026-07-15): a fonte deixou de ser uma heurística local DEBOUNCED em
+  // TerminalNode.tsx (timer fixo de 500ms — ficava preso ligado com repaints ociosos da TUI do
+  // Claude Code/Ink) e passou a ser o AgentBus (main), ancorado no MESMO detector de ociosidade
+  // já tunado do watcher de atenção (`attention` acima): busy=true no primeiro chunk de uma
+  // rajada, busy=false só após idleMs de silêncio real. Chega via window.orkestra.onAgentBusy,
+  // assinado uma vez em Canvas.tsx, que chama setGenerating aqui. Mesmo padrão de `attention`:
+  // puramente efêmero/UI (nunca serializado, nunca entra no histórico de undo — por isso NÃO vive
+  // em `data.generating` do nó, que passaria por serialize()/histPatch); setGenerating SEMPRE
+  // atribui uma NOVA instância de Set (o zustand compara referência).
   generating: Set<string>
   setGenerating: (nodeId: string, on: boolean) => void
   addTerminalNode: (

@@ -137,6 +137,7 @@ export function Canvas(): JSX.Element {
   const setNodePositions = useCanvasStore((s) => s.setNodePositions)
   const ungroupGroupsById = useCanvasStore((s) => s.ungroupGroupsById)
   const setAttention = useCanvasStore((s) => s.setAttention)
+  const setGenerating = useCanvasStore((s) => s.setGenerating)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [newTermOpen, setNewTermOpen] = useState(false)
   // "Arrastar para criar" (Figma-like): ferramenta pendente escolhida na barra (nota/site/arquivos).
@@ -178,6 +179,25 @@ export function Canvas(): JSX.Element {
     })
     return off
   }, [setAttention])
+
+  // Fix border-beam preso (2026-07-15): assina window.orkestra.onAgentBusy (AgentBus no main) —
+  // o sinal REAL de "generating" (border-beam), ancorado no MESMO detector de ociosidade do
+  // onAgentAttention acima (idleMs de silêncio real), substituindo a heurística de 500ms fixos
+  // que vivia em TerminalNode.tsx (presa ligada por repaints ociosos da TUI do Claude Code/Ink —
+  // ver AgentBus.ts). Global (não por-nó) pelo mesmo motivo de onAgentAttention: um único
+  // listener aqui evita recriar a assinatura IPC por terminal montado.
+  useEffect(() => {
+    const off = window.orkestra.onAgentBusy((nodeId, busy) => {
+      // Mesmo guard de "nó ausente" do onAgentAttention acima: um pty de OUTRO projeto (que
+      // sobrevive à troca, Fase 31) pode seguir emitindo saída em segundo plano — sem este guard,
+      // `generating` acumularia um id órfão que nenhum TerminalFlowNode desta tela representa
+      // (hydrate() já limpa tudo na troca de projeto, mas evitar a entrada é mais barato/seguro).
+      const node = useCanvasStore.getState().nodes.find((n) => n.id === nodeId)
+      if (!node) return
+      setGenerating(nodeId, busy)
+    })
+    return off
+  }, [setGenerating])
 
   // Rederiva a cor da máscara do MiniMap quando o tema vira (data-theme no <html> muda). Observa
   // só esse atributo — barato e desacoplado do ThemeToggle (Lote E), que não precisa saber do

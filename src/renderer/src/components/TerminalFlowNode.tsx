@@ -57,16 +57,20 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // já existe (hasAttention, acima) — o AgentBus (main) detecta "produziu saída e depois ficou
   // `idleMs` sem nada novo", exatamente a semântica de "agente terminou e espera você" da spec.
   //
-  // 'generating' (Lote D — wiring concluído): heurística DEBOUNCED no renderer, não um sinal real
-  // do processo do agente (esse ainda não existe — ver ressalva abaixo). TerminalNode.tsx marca
-  // este id como "generating" no `generating` Set do canvasStore a cada chunk que o PRÓPRIO pty
-  // emite (window.orkestra.pty.onData), e desmarca depois de ~500ms sem novo chunk (mesmo padrão
-  // efêmero/Set do `attention` acima — nunca persistido, nunca no histórico de undo). Lido aqui
+  // 'generating' (Lote D; fix border-beam preso, 2026-07-15): agora é o MESMO tipo de sinal real
+  // de `hasAttention` acima — só que a metade "ligada" em vez da "desligada". O AgentBus (main)
+  // expõe busy=true no primeiro chunk de uma rajada de output e busy=false só depois de `idleMs`
+  // de silêncio REAL (mesmo detector de ociosidade do watcher de atenção, timer próprio — ver
+  // AgentBus.ts), chegando aqui via window.orkestra.onAgentBusy (assinado uma vez em Canvas.tsx,
+  // que grava no `generating` Set do canvasStore). Substituiu a heurística antiga (timer fixo de
+  // 500ms em TerminalNode.tsx), que ficava PRESA ligada porque a TUI do Claude Code/Ink emite
+  // saída mesmo ociosa (repaints, barra "auto mode on", cursor) em intervalos > 500ms. Lido aqui
   // via seletor (só re-renderiza quando o resultado MUDA para ESTE id, igual hasAttention).
-  // Trade-off aceito e documentado: por ser heurística de atividade do pty (não do CONTEÚDO), um
-  // terminal tagarela sem agente nenhum (`tail -f`, `watch`) também acende o beam — não há hoje
-  // como distinguir "agente produzindo resposta" de "processo qualquer imprimindo" sem parsear o
-  // spinner do wrapper claude ou um sinal real do processo, nenhum dos dois existe ainda.
+  // Trade-off aceito e documentado (herdado da heurística anterior, ainda vale): por ser sinal de
+  // atividade do PTY (não do CONTEÚDO), um terminal tagarela sem agente nenhum (`tail -f`,
+  // `watch`) também acende o beam — distinguir "agente respondendo" de "processo qualquer
+  // imprimindo" exigiria parsear o conteúdo (spinner do wrapper claude), o que este fix
+  // deliberadamente evita (frágil a mudanças de UI do Claude Code).
   const generating = useCanvasStore((s) => s.generating.has(id))
   const nodeState: NodeState = generating ? 'generating' : hasAttention ? 'needsInput' : 'idle'
 

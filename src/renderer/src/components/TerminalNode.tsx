@@ -6,7 +6,6 @@ import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
 import { pathsToTerminalInput } from '../terminal/dropPaths'
 import { xtermThemeFromTokens } from '../terminal/xtermTheme'
-import { useCanvasStore } from '../store/canvasStore'
 
 export function TerminalNode({
   nodeId,
@@ -70,26 +69,16 @@ export function TerminalNode({
     let ptyId = ''
     let disposed = false
 
-    // Sinal "generating" (border-beam, Lote D): HEURÍSTICA debounced — deliberadamente não é um
-    // sinal real de "o agente está pensando/gerando" (não existe hoje; o AgentBus só expõe
-    // onAttention, que é o OPOSTO: idle-APÓS-output). Cada chunk que o pty emite marca
-    // generating:true no canvasStore (Set efêmero, mesmo padrão de `attention` — nunca
-    // persistido/undo, ver canvasStore.ts); sem chunk novo por GENERATING_IDLE_MS, volta a false.
-    // Trade-off aceito e documentado: um terminal tagarela sem agente nenhum (ex.: `tail -f` de
-    // log, `watch`) também acende o beam — não há como distinguir "agente produzindo resposta" de
-    // "processo qualquer imprimindo" sem parsear o conteúdo (spinner do wrapper claude) ou expor
-    // um sinal real via IPC, nenhum dos dois existe ainda (ver TODO em TerminalFlowNode.tsx).
-    const GENERATING_IDLE_MS = 500
-    let generatingTimer: ReturnType<typeof setTimeout> | null = null
-    const markGenerating = (): void => {
-      if (!nodeId) return
-      useCanvasStore.getState().setGenerating(nodeId, true)
-      if (generatingTimer) clearTimeout(generatingTimer)
-      generatingTimer = setTimeout(() => {
-        generatingTimer = null
-        useCanvasStore.getState().setGenerating(nodeId, false)
-      }, GENERATING_IDLE_MS)
-    }
+    // Sinal "generating" (border-beam, Lote D): fix border-beam preso (2026-07-15) — NÃO vive
+    // mais aqui. A antiga heurística local (timer fixo de 500ms, recriado a cada chunk do pty)
+    // ficava PRESA ligada porque a TUI do Claude Code/Ink emite saída mesmo ociosa (repaints,
+    // barra "auto mode on", cursor) em intervalos > 500ms — o timer nunca chegava a vencer. O
+    // sinal real agora vem do AgentBus (main), ancorado no MESMO detector de ociosidade já tunado
+    // do watcher de atenção (onAttention/`needsInput`): busy=true no primeiro chunk de uma
+    // rajada, busy=false só após idleMs de silêncio REAL. Chega ao renderer via
+    // window.orkestra.onAgentBusy, assinado UMA VEZ globalmente em Canvas.tsx (não por-nó) —
+    // ver o useEffect lá, que chama setGenerating(nodeId, busy). Este componente não precisa
+    // mais tocar `generating` em nenhum momento do seu ciclo de vida.
 
     // Auto-início do CLI do agente: um preset de agente (claude/codex/gemini) SEMPRE inicia seu CLI
     // ao montar — inclusive terminais HIDRATADOS ao reabrir o app (o usuário quer o agente "sempre
@@ -118,7 +107,6 @@ export function TerminalNode({
       if (nodeId) registerTerminalPty(nodeId, id)
       disposeData = window.orkestra.pty.onData(id, (data) => {
         term.write(data)
-        markGenerating()
       })
       term.onData((data) => window.orkestra.pty.write(id, data))
       term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
@@ -181,12 +169,16 @@ export function TerminalNode({
       el.removeEventListener('dragover', onDragOver)
       el.removeEventListener('drop', onDrop)
       disposeData()
-      if (generatingTimer) clearTimeout(generatingTimer)
-      if (nodeId) useCanvasStore.getState().setGenerating(nodeId, false)
       if (nodeId) unregisterTerminalPty(nodeId)
       // Fase 31: NÃO matar o pty aqui. Ao trocar de projeto, o TerminalNode desmonta mas o
       // processo deve continuar rodando — ele é reconectado (attach) quando o nó reaparece. O
       // pty só morre ao REMOVER o terminal (× -> pty.killForNode) ou ao fechar o app (killAll).
+      // NB (fix border-beam preso): não zeramos `generating` aqui de propósito — este componente
+      // também desmonta quando o nó só sai da VIEWPORT (suspensão de visibilidade, Otimização
+      // Bloco 4), com o pty (e a geração) seguindo vivo em segundo plano. Zerar aqui apagaria o
+      // beam incorretamente até o próximo chunk de output; `generating` agora é 100% derivado do
+      // AgentBus via o listener global em Canvas.tsx, e a limpeza de órfãos (nó removido de fato,
+      // troca de projeto) já é feita no canvasStore (removeNode/onNodesChange/hydrate).
       term.dispose()
     }
   }, [])

@@ -18,6 +18,14 @@ export interface AgentBusOptions {
   // nenhum novo onData — ou seja, "o agente falou e agora parou". Ver watcher em track().
   onAttention?: (ptyId: string) => void
   idleMs?: number
+  // Fix border-beam preso (2026-07-15): dispara quando o estado "ocupado" de um pty MUDA — true
+  // já no primeiro chunk de uma rajada de output, false depois de `idleMs` (mesmo valor usado por
+  // onAttention acima — a MESMA detecção de ociosidade já tunada/funcional, não um timer novo)
+  // de silêncio subsequente. É o sinal real por trás de "generating"/border-beam no renderer,
+  // substituindo a heurística antiga de 500ms fixos em TerminalNode.tsx (presa por repaints
+  // ociosos da TUI do Claude Code/Ink, que emite saída mesmo parado). Timer PRÓPRIO — ver
+  // busyTimers abaixo — para não depender de/ser cancelado por clearAttention().
+  onBusyChange?: (ptyId: string, busy: boolean) => void
 }
 
 export class AgentBus {
@@ -28,6 +36,16 @@ export class AgentBus {
   // onData, cancelado em clearAttention/untrack).
   private sawOutput = new Map<string, boolean>()
   private attentionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  // Fix border-beam preso: estado/timer do watcher de "busy", INDEPENDENTE do de atenção acima.
+  // Por quê não reaproveitar o mesmo attentionTimers? clearAttention() (chamado pelo renderer ao
+  // focar o terminal) cancela o timer pendente de propósito — é a semântica certa para "atenção"
+  // (usuário já viu, exige NOVO output para avisar de novo), mas seria ERRADA para "busy": se o
+  // usuário focar o terminal no exato instante em que o agente ainda está gerando, cancelar esse
+  // timer deixaria busy=true PARA SEMPRE (nenhum onData futuro para reagendar um novo timer) —
+  // exatamente o bug que este fix resolve, só que disparado por foco em vez de repaint ocioso.
+  // Timer próprio, mesmo idleMs: imune a clearAttention, só reage a onData/onExit deste pty.
+  private busy = new Map<string, boolean>()
+  private busyTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   // opts é opcional e por padrão `{}` — construtor retrocompatível: `new AgentBus(ptyManager)`
   // (uso pré-Fase 20) continua válido e nunca dispara onAttention (fica undefined).
@@ -56,6 +74,28 @@ export class AgentBus {
         ptyId,
         setTimeout(() => {
           if (this.sawOutput.get(ptyId)) this.opts.onAttention?.(ptyId)
+        }, idleMs)
+      )
+
+      // Watcher de "busy" (fix border-beam preso): liga NA HORA (não espera idleMs) no primeiro
+      // chunk de uma rajada — o beam deve acender assim que o agente começa a falar. Timer
+      // próprio (busyTimers, não attentionTimers) reagendado a cada chunk, igual ao de atenção
+      // acima; só desliga quando ele chega a disparar sem ter sido cancelado/reagendado antes —
+      // ou seja, `idleMs` de silêncio real, a mesma janela já validada pelo watcher de atenção.
+      if (!this.busy.get(ptyId)) {
+        this.busy.set(ptyId, true)
+        this.opts.onBusyChange?.(ptyId, true)
+      }
+      const existingBusy = this.busyTimers.get(ptyId)
+      if (existingBusy) clearTimeout(existingBusy)
+      this.busyTimers.set(
+        ptyId,
+        setTimeout(() => {
+          this.busyTimers.delete(ptyId)
+          if (this.busy.get(ptyId)) {
+            this.busy.set(ptyId, false)
+            this.opts.onBusyChange?.(ptyId, false)
+          }
         }, idleMs)
       )
     })
@@ -91,6 +131,18 @@ export class AgentBus {
     if (t) clearTimeout(t)
     this.attentionTimers.delete(ptyId)
     this.sawOutput.delete(ptyId)
+    // Fix border-beam preso: o pty morreu — nenhum onData futuro vai reagendar/disparar o timer
+    // de busy. Se ele ainda estava ligado (agente matado/caiu no meio de uma resposta), força off
+    // aqui — prioridade é "nunca preso ligado", nunca deixar o timer pendente resolver sozinho
+    // (ou pior, nunca resolver) num pty que já não existe mais.
+    const bt = this.busyTimers.get(ptyId)
+    if (bt) clearTimeout(bt)
+    this.busyTimers.delete(ptyId)
+    if (this.busy.get(ptyId)) {
+      this.busy.set(ptyId, false)
+      this.opts.onBusyChange?.(ptyId, false)
+    }
+    this.busy.delete(ptyId)
   }
 
   // Fase 14 (Task 1): resolve quando o pty ficar `idleMs` sem nenhum onData, ou quando

@@ -262,6 +262,126 @@ describe('AgentBus attention', () => {
   })
 })
 
+// Fix border-beam preso (2026-07-15): watcher de "busy" — ancora o sinal "generating" do
+// renderer NA MESMA detecção de ociosidade do watcher de atenção acima (idleMs), em vez do timer
+// fixo de 500ms que ficava preso ligado com repaints ociosos da TUI do Claude Code/Ink (que
+// emite saída mesmo parado, em intervalos > 500ms mas < idleMs). onBusyChange(ptyId, true) já no
+// primeiro chunk de uma rajada; onBusyChange(ptyId, false) só depois de idleMs de silêncio real.
+describe('AgentBus busy', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('liga busy=true já no primeiro chunk de output, sem esperar idleMs', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    expect(onBusyChange).toHaveBeenCalledWith(id, true)
+    expect(onBusyChange).toHaveBeenCalledTimes(1) // não duplica: só a transição false->true dispara
+  })
+
+  it('desliga busy=false após idleMs de silêncio (mesma janela do watcher de atenção)', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    vi.advanceTimersByTime(999)
+    expect(onBusyChange).toHaveBeenCalledTimes(1) // ainda não desligou
+    vi.advanceTimersByTime(1)
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, id, false)
+  })
+
+  it('reseta a contagem de ociosidade a cada chunk — não desliga cedo com repaints esparsos', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('token 1')
+    vi.advanceTimersByTime(700)
+    f.emit('repaint ocioso') // chunk esparso da TUI — reseta o timer de busy
+    vi.advanceTimersByTime(700)
+    expect(onBusyChange).toHaveBeenCalledTimes(1) // só o "true" inicial — nunca desligou
+    vi.advanceTimersByTime(300) // agora 1000ms desde o último chunk
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, id, false)
+  })
+
+  it('multi-turno: novo output depois de idle religa busy=true', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('resposta 1\n')
+    vi.advanceTimersByTime(1000) // desliga
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, id, false)
+    f.emit('resposta 2 (novo turno)\n') // usuário mandou outra mensagem
+    expect(onBusyChange).toHaveBeenNthCalledWith(3, id, true)
+    vi.advanceTimersByTime(1000)
+    expect(onBusyChange).toHaveBeenNthCalledWith(4, id, false)
+  })
+
+  it('clearAttention (foco do usuário) NÃO desliga busy nem cancela o timer de busy pendente', () => {
+    // Este é o caso que exige um timer PRÓPRIO para busy (não reaproveitar attentionTimers):
+    // se o usuário focar o terminal enquanto o agente ainda está gerando, clearAttention() só
+    // pode afetar o pulso de "precisa de você" — nunca travar o beam ligado para sempre.
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('gerando...\n')
+    bus.clearAttention(id) // usuário focou o terminal no meio da geração
+    vi.advanceTimersByTime(1000) // idleMs real de silêncio depois do foco
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, id, false) // ainda desliga sozinho
+  })
+
+  it('untrack (pty morreu) força busy=false na hora, mesmo com o timer ainda pendente', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('gerando quando o processo caiu\n')
+    f.emitExit(1) // auto-untrack via onExit — meio de uma "rajada", timer de busy ainda pendente
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, id, false)
+    vi.advanceTimersByTime(5000)
+    expect(onBusyChange).toHaveBeenCalledTimes(2) // não disparou de novo quando o timer teria vencido
+  })
+
+  it('untrack não chama onBusyChange se o pty já não estava busy (idle antes de sair)', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('resposta\n')
+    vi.advanceTimersByTime(1000) // já desligou sozinho
+    onBusyChange.mockClear()
+    f.emitExit(0)
+    expect(onBusyChange).not.toHaveBeenCalled()
+  })
+
+  it('idle prolongado com repaints esparsos ANTES de qualquer output novo real não liga busy de novo', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const onBusyChange = vi.fn()
+    const bus = new AgentBus(mgr, { onBusyChange, idleMs: 1000 })
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('resposta\n')
+    vi.advanceTimersByTime(1000) // desliga (idle real)
+    expect(onBusyChange).toHaveBeenNthCalledWith(2, id, false)
+    onBusyChange.mockClear()
+    // nenhum chunk novo por um bom tempo: não deve haver mais nenhuma chamada
+    vi.advanceTimersByTime(30000)
+    expect(onBusyChange).not.toHaveBeenCalled()
+  })
+
+  it('construtor sem onBusyChange continua funcionando (retrocompatível)', () => {
+    const f = fakePty(); const mgr = new PtyManager(() => f.pty)
+    const bus = new AgentBus(mgr, { idleMs: 1000 }) // sem onBusyChange
+    const id = mgr.spawn({}); bus.track(id)
+    f.emit('trabalhando...\n')
+    expect(() => vi.advanceTimersByTime(5000)).not.toThrow()
+  })
+})
+
 // PTY-4 / PTY-8 (auditoria 2026-07-14): teto do delta + fast-path de saída no waitForIdle.
 describe('AgentBus.waitForIdle — cap e fast-path de saída', () => {
   it('PTY-8: resolve imediatamente quando o pty sai, sem esperar o teto de tempo', async () => {
