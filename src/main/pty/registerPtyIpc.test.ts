@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { registerPtyIpc } from './registerPtyIpc'
 import { PtyManager, type IPtyLike, type PtySpawner } from './PtyManager'
 import { AgentBus } from '../orchestration/AgentBus'
+import { buildRolePrompt } from '../../shared/rolePrompt'
 
 function fakeIpcMain() {
   const handlers = new Map<string, (...a: any[]) => any>()
@@ -235,6 +239,55 @@ describe('registerPtyIpc', () => {
 
     const call = spawner.mock.calls[0]
     expect(call[2].cwd).toBe(process.env.HOME ?? process.cwd())
+  })
+
+  // T2 (injeção de papel): um preset de agente com papel materializa o arquivo de contexto
+  // (CLAUDE.md/AGENTS.md) num subdir isolado por nodeId e aponta o cwd do pty pra lá — o CLI lê
+  // o papel no startup sem gastar tokens. role/preset entram por allowlist (destructure), nunca
+  // via { ...o }.
+  it('pty:spawn com preset agente + papel grava o arquivo de contexto e aponta o cwd pro subdir', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+    const base = mkdtempSync(join(tmpdir(), 'ork-role-'))
+    try {
+      await ipc.handlers.get('pty:spawn')!({}, {
+        preset: 'claude',
+        role: 'dev',
+        nodeId: 'terminal-abc123',
+        cwd: base
+      })
+      const expectedDir = join(base, '.orkestra', 'agents', 'terminal-abc123')
+      const call = spawner.mock.calls[0]
+      expect(call[2].cwd).toBe(expectedDir)
+      const file = join(expectedDir, 'CLAUDE.md')
+      expect(existsSync(file)).toBe(true)
+      expect(readFileSync(file, 'utf8')).toBe(buildRolePrompt('dev'))
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('pty:spawn shell (ou sem papel) não escreve arquivo nem muda o cwd', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+    const base = mkdtempSync(join(tmpdir(), 'ork-role-'))
+    try {
+      await ipc.handlers.get('pty:spawn')!({}, {
+        preset: 'shell',
+        role: 'dev',
+        nodeId: 'terminal-xyz789',
+        cwd: base
+      })
+      const call = spawner.mock.calls[0]
+      expect(call[2].cwd).toBe(base)
+      expect(existsSync(join(base, '.orkestra'))).toBe(false)
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 
   it('a assinatura onData do streaming (renderer) e a do AgentBus.track coexistem no mesmo pty (multi-subscriber)', async () => {

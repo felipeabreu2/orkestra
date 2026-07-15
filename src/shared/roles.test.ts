@@ -13,7 +13,25 @@ describe('PRESET_ROLES', () => {
   })
 })
 
+describe('Role.prompt', () => {
+  it('todos os presets carregam uma instrução de arranque não vazia', () => {
+    for (const r of PRESET_ROLES) {
+      expect(r.prompt.length).toBeGreaterThan(0)
+    }
+  })
+  it('o prompt é serializável e sobrevive a um round-trip de JSON', () => {
+    const round = JSON.parse(JSON.stringify(PRESET_ROLES[1]))
+    expect(round.prompt).toBe(PRESET_ROLES[1].prompt)
+    expect(typeof round.prompt).toBe('string')
+  })
+})
+
 describe('roleMeta', () => {
+  it('expõe o prompt do preset e vazio para papel livre', () => {
+    const dev = PRESET_ROLES.find((r) => r.id === 'dev')!
+    expect(roleMeta('dev').prompt).toBe(dev.prompt)
+    expect(roleMeta('Arquiteto').prompt).toBe('')
+  })
   it('resolve um preset pelo label (case-insensitive)', () => {
     expect(roleMeta('Líder').color).toBe('var(--accent)')
     expect(roleMeta('revisor').color).toBe('var(--paper-orange)')
