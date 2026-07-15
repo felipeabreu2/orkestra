@@ -26,6 +26,7 @@ import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
 import { emitNewProject } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
+import { AttentionHud } from './AttentionHud'
 import { CreateOverlay } from './CreateOverlay'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -432,6 +433,9 @@ export function Canvas(): JSX.Element {
       {pendingTool && <CreateOverlay onCreate={handleCreateNode} onCancel={() => setPendingTool(null)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
+      {/* Ombro T5: HUD dos agentes aguardando você — irmão da toolbar, derivado do Set `attention`
+          (some quando vazio). Overlay clicável que enquadra cada nó (reusa o helper do Shift+A). */}
+      <AttentionHud />
       {selectedNodes.length === 1 && <NodeToolbar node={selectedNodes[0]} />}
       {selectedNodes.length >= 2 && (
         <div className="ork-toolbar ork-arrange-toolbar" role="toolbar" aria-label="Alinhar e organizar seleção">

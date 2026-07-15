@@ -1,0 +1,118 @@
+/* Ombro T5 — HUD de "agentes aguardando" (docs/planejamento/ombro.md). Overlay flutuante ancorado
+   no topo-direito, ABAIXO do Topbar (top:56px), longe das outras superfícies: Controls (bottom-left),
+   MiniMap (bottom-right), arrange/node toolbar (top-center). É CROMO (flutua sobre o canvas), então
+   usa a mesma receita de vidro-cromo da .ork-toolbar (tint --glass-1 + backdrop-filter
+   --material-chrome + borda --glass-border + sombra --shadow-1/--hairline-glass). Self-contained (não
+   herda .ork-toolbar) para o layout em coluna (chip em cima, lista embaixo) não brigar com o flex-row
+   da toolbar e para não depender da ordem de import das folhas de estilo. */
+.ork-attention-hud {
+  position: absolute;
+  top: 56px;
+  right: var(--space-3);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  max-width: 260px;
+  background: var(--glass-1);
+  backdrop-filter: var(--material-chrome);
+  -webkit-backdrop-filter: var(--material-chrome);
+  isolation: isolate;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1), var(--hairline-glass);
+  animation: ork-fade-in var(--dur-2) var(--ease);
+}
+
+/* Chip clicável "● 🔔 N aguardando" — expande/recolhe a lista. Texto sobre o vidro-cromo → --label-*
+   (vibrancy), não --text-* sólido, seguindo a doutrina dos botões da toolbar. */
+.ork-attention-hud-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2);
+  background: transparent;
+  color: var(--label-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-base);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+.ork-attention-hud-chip:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.ork-attention-hud-chip:active {
+  transform: scale(var(--press-scale));
+}
+
+.ork-attention-hud-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-bold);
+}
+.ork-attention-hud-text {
+  color: var(--label-2);
+}
+
+/* O ponto de atenção reusa a MESMA cor (--attention, systemRed "pare e olhe") e a animação de pulso
+   centralizada (ork-attention-pulse em styles/motion.css) do badge do nó, para o HUD "falar a mesma
+   língua" que o indicador dentro do terminal. Desliga sob prefers-reduced-motion pelo bloco central. */
+.ork-attention-hud-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-circle);
+  background: var(--attention);
+  animation: ork-attention-pulse 1.6s ease-in-out infinite;
+}
+
+.ork-attention-hud-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-1);
+}
+
+/* Cada item enquadra + seleciona o nó (mesmo comportamento do Shift+A). */
+.ork-attention-hud-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  color: var(--label-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+.ork-attention-hud-item:hover {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.ork-attention-hud-item:active {
+  transform: scale(var(--press-scale));
+}
+.ork-attention-hud-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

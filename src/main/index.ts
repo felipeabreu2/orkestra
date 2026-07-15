@@ -15,6 +15,12 @@ import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { installOrq } from './orchestration/installOrq'
 import { buildEnvPath } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
+import {
+  NotificationCoalescer,
+  buildAggregateBody,
+  aggregateClickTarget,
+  DEFAULT_COALESCE_WINDOW_MS
+} from './orchestration/NotificationCoalescer'
 import { setupAutoUpdater } from './updater'
 import type { CanvasMirror, PortalState } from '../shared/orchestration'
 
@@ -31,41 +37,56 @@ const ptyManager = new PtyManager(nodePtySpawner)
 // CHAMADO bem depois, quando algum pty realmente ficar ocioso. Por isso o callback lê a
 // variável `mainWindow` no momento em que dispara (closure sobre a variável do módulo, `let`),
 // e não uma referência capturada agora — nunca ficaria presa a `null`.
+// Ombro T6 — coalescer anti-spam: os eventos de atenção com a janela fora de foco são enfileirados
+// numa janela curta e o `onFlush` monta e dispara UMA Notification (agregada se ≥2 na rajada; a
+// individual rica da T4 se só 1). Declarado ANTES de `agentBus` para o closure de onAttention (que
+// roda muito depois, quando um pty fica ocioso) referenciá-lo já inicializado.
+const attentionCoalescer = new NotificationCoalescer((events) => {
+  // A janela pode ter voltado ao foco durante a janela de coalescência; não re-checamos — os eventos
+  // já foram enfileirados com a janela FORA de foco (mesmo comportamento pré-coalescer). Tudo dentro
+  // do try/catch: notificações nativas podem faltar/ser negadas no SO — nunca travar o app.
+  try {
+    // Ombro T4 — corpo enriquecido: título por status (precisa de você / travou / ficou ocioso) +
+    // prévia da última linha, para 1 evento; contagem + nomes para a rajada agregada.
+    const { title, body } = buildAggregateBody(events)
+    const notification = new Notification({ title, body })
+    // Ombro T2 — clicar na notificação traz a janela à frente (mesmo minimizada) e enquadra o nó do
+    // agente (o primeiro/mais antigo da rajada; ver aggregateClickTarget). Nó ausente no canvas atual
+    // (agente de outro projeto) = no-op seguro no renderer.
+    const targetNodeId = aggregateClickTarget(events)
+    notification.on('click', () => {
+      if (!mainWindow) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+      if (targetNodeId && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('agent:frame', targetNodeId)
+      }
+    })
+    notification.show()
+  } catch {
+    // Notificações nativas podem faltar/ser negadas dependendo do SO — nunca travar o app.
+  }
+}, DEFAULT_COALESCE_WINDOW_MS)
+
 const agentBus = new AgentBus(ptyManager, {
   onAttention: (ptyId) => {
     const nodeId = ptyManager.nodeForPty(ptyId)
     if (!nodeId) return
     // "Monitorar atividade" desligado (Fase 29, data.monitor === false via mirror): não sinaliza
     // atenção nem notifica este terminal.
-    if (mirror.nodes.find((n) => n.id === nodeId)?.monitor === false) return
+    const node = mirror.nodes.find((n) => n.id === nodeId)
+    if (node?.monitor === false) return
     // BLD-9: guard isDestroyed — na janela entre a destruição do webContents e o evento 'closed'
     // (que zera mainWindow), um send() num objeto destruído lançaria dentro deste callback.
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send('agent:attention', nodeId)
     }
+    // Só notifica o SO com a janela FORA de foco (guard mantido). Em vez de criar a Notification
+    // inline, roteia pelo coalescer (T6): lê o nome do agente do mirror e o buffer via
+    // agentBus.read(ptyId) UMA vez, e enfileira o evento — o onFlush acima monta e dispara.
     if (mainWindow && !mainWindow.isFocused()) {
-      try {
-        const notification = new Notification({
-          title: 'Agente ocioso',
-          body: 'Um agente parou e pode precisar de você.'
-        })
-        // Ombro T2 — fecha o ciclo alerta→ação: clicar na notificação traz a janela à frente
-        // (mesmo minimizada) e pede ao renderer para enquadrar o nó do agente ocioso. `nodeId` já
-        // está resolvido acima. Se o nó não existir mais no canvas atual (agente de outro projeto),
-        // o renderer trata como no-op seguro.
-        notification.on('click', () => {
-          if (!mainWindow) return
-          if (mainWindow.isMinimized()) mainWindow.restore()
-          mainWindow.show()
-          mainWindow.focus()
-          if (!mainWindow.webContents.isDestroyed()) {
-            mainWindow.webContents.send('agent:frame', nodeId)
-          }
-        })
-        notification.show()
-      } catch {
-        // Notificações nativas podem faltar/ser negadas dependendo do SO — nunca travar o app.
-      }
+      attentionCoalescer.push({ nodeId, agentName: node?.name, bufferText: agentBus.read(ptyId) })
     }
   }
 })
