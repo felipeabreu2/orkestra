@@ -1,6 +1,11 @@
 /* Barra superior (Onda 1 / F01): 3 grupos — esquerda (novo projeto, painel, workspace),
    centro (ferramentas de criação) e direita (código/ações). Grid 1fr auto 1fr centraliza o
-   grupo do meio independentemente da largura dos outros dois. Tokens => tema. */
+   grupo do meio independentemente da largura dos outros dois. Tokens => tema.
+
+   Linguagem de design unificada (Apple + Maestri, §4.1): cada grupo flutuante é uma PÍLULA de
+   vidro-cromo (.superficie-cromo) — --glass-1 + --material-chrome + hairline de luz — que refrata
+   o canvas por trás em vez do antigo --bg-1 sólido. As áreas VAZIAS da barra seguem transparentes
+   e sem pointer-events (o clique passa pro canvas). */
 
 .ork-topbar {
   position: absolute;
@@ -12,61 +17,90 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 0 10px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-1);
+  padding: 0 var(--space-2-5);
+  /* Fundo removido (pedido do usuário, 2026-07-14): a barra fica transparente e os grupos
+     (pílula/workspace/centro/direita) "flutuam" sobre o canvas, cada um com seu próprio chip de
+     vidro — sem faixa, border-bottom nem sombra na barra; os pontos do canvas aparecem atrás. */
+  background: transparent;
+  /* Sem faixa, as áreas VAZIAS da barra deixam de capturar clique — passam pro canvas atrás
+     (os grupos reativam pointer-events abaixo). Assim clicar/arrastar no topo do canvas funciona. */
+  pointer-events: none;
 }
 
 .ork-topbar-left {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   justify-self: start;
   color: var(--text-2);
+  pointer-events: auto;
 }
-/* Grupo central de ferramentas agrupado num container com borda (igual ao chip do workspace). */
-.ork-topbar-center {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  justify-self: center;
+
+/* Pílula de vidro-cromo reutilizada pelos grupos flutuantes (§3.1 .superficie-cromo, §4.1). */
+.ork-topbar-center,
+.ork-topbar-right,
+.ork-topbar-workspace,
+.ork-topbar-pill {
   height: 32px;
   box-sizing: border-box;
-  padding: 0 4px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  background: var(--glass-1);
+  backdrop-filter: var(--material-chrome);
+  -webkit-backdrop-filter: var(--material-chrome);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-1), var(--hairline-glass);
+  isolation: isolate; /* contém o custo de GPU do blur (§3.2) */
+  pointer-events: auto;
+}
+
+/* Grupo central de ferramentas de criação. `position:relative` ancora o thumb deslizante
+   (.ork-topbar-thumb) — seu `offsetLeft` (medido no .tsx) é relativo a este container. */
+.ork-topbar-center {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  justify-self: center;
+  padding: 0 var(--space-1);
+}
+
+/* Thumb azul deslizante (§6 "Indicador deslizante", DesignCode UI): pill absoluto atrás do botão
+   da ferramenta ARMADA (select/note/files/portal/draw — ver Topbar.tsx modeKeyFor). Medido via
+   refs no .tsx porque as ferramentas de disparo único (Terminal/Arquivo/Texto) ficam intercaladas
+   entre elas — a posição não é um múltiplo fixo de índice. `transform`+`width` (não left/right)
+   pra ficar em GPU; --spring dá o "assentar com leve overshoot" do mockup. */
+.ork-topbar-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 1px;
+  left: 0;
+  height: 30px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 4px 10px var(--accent-weak);
+  transition:
+    transform var(--dur-3) var(--spring),
+    width var(--dur-3) var(--spring);
+  pointer-events: none;
 }
 .ork-topbar-right {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   justify-self: end;
-  height: 32px;
-  box-sizing: border-box;
-  padding: 0 4px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: 0 var(--space-1);
 }
 
-/* "My Workspace" num chip com borda (igual à referência, imagem 1): ícone de pasta + nome dentro
-   de um container com fundo sutil e borda arredondada. */
+/* "My Workspace" na pílula: ícone de pasta + nome. */
 .ork-topbar-workspace {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--space-1-5);
+  font-size: var(--fs-sm);
   color: var(--text-2);
   max-width: 22vw;
-  height: 32px;
-  box-sizing: border-box;
-  padding: 0 10px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: 0 var(--space-2-5);
 }
 .ork-topbar-workspace-name {
   white-space: nowrap;
@@ -74,19 +108,13 @@
   text-overflow: ellipsis;
 }
 
-/* Pílula do grupo "novo projeto | ocultar menu": dois botões dentro de um container 100%
-   arredondado, separados por uma divisória vertical (igual à referência). Os botões ficam
-   circulares para acompanhar a pílula. */
+/* Pílula do grupo "novo projeto | ocultar menu": dois botões numa pílula, separados por uma
+   divisória vertical (só aparece com a sidebar oculta). Os botões ficam circulares. */
 .ork-topbar-pill {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 32px;
-  box-sizing: border-box;
+  gap: var(--space-0-5);
   padding: 0 3px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
 }
 .ork-topbar-pill-sep {
   width: 1px;
@@ -96,17 +124,19 @@
 .ork-topbar-pill .ork-topbar-tool {
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .ork-topbar-tool {
+  position: relative; /* fica ACIMA do thumb (z-index 0) — só o botão ativo é coberto por ele */
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 30px;
   height: 30px;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--text-2);
   background: transparent;
   border: none;
@@ -114,20 +144,80 @@
   cursor: pointer;
   transition:
     background var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease);
+    color var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--spring);
 }
 .ork-topbar-tool:hover:not(:disabled) {
+  /* Sobre a pílula de vidro, o hover usa --bg-2 (superfície sutil) para o botão "acender". */
   background: var(--bg-2);
   color: var(--text-1);
 }
+.ork-topbar-tool:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+/* Ferramenta ARMADA (§5/§6): o thumb azul (.ork-topbar-thumb) já pinta o fundo — o botão só
+   precisa virar texto/ícone branco por cima, e não pode reativar o hover --bg-2 (pintaria uma
+   camada acinzentada sobre o azul, já que o botão fica em z-index 1 acima do thumb). */
 .ork-topbar-tool--active {
-  color: var(--accent);
+  color: var(--accent-text);
+}
+.ork-topbar-tool--active:hover:not(:disabled) {
+  background: transparent;
+  color: var(--accent-text);
 }
 .ork-topbar-tool--text {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.5px;
 }
 .ork-topbar-tool:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* CTA "Novo terminal" (§4.9 Botões/Primário + §6 Shimmer): pílula com --gradient-accent, gloss
+   (--hairline-glass — mesma receita das pílulas de vidro acima, aqui como realce em vez de
+   hairline de topo), glow azul (--accent-weak) e uma faixa de luz varrendo via ::before +
+   @keyframes ork-shimmer (motion.css, reaproveitado — só transform, sem cor, então serve pra
+   qualquer superfície). Único botão com "peso de marca" na barra (parcimônia do accent, §1). */
+.ork-topbar-cta {
+  width: auto;
+  padding: 0 var(--space-3);
+  gap: var(--space-1-5);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  color: var(--accent-text);
+  background: var(--gradient-accent);
+  box-shadow:
+    0 6px 16px var(--accent-weak),
+    var(--hairline-glass);
+  font-weight: var(--weight-semibold);
+}
+.ork-topbar-cta:hover:not(:disabled) {
+  background: var(--gradient-accent);
+  color: var(--accent-text);
+  box-shadow:
+    0 10px 24px var(--accent-weak),
+    var(--hairline-glass);
+}
+.ork-topbar-cta-label {
+  white-space: nowrap;
+}
+.ork-topbar-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 20%,
+    color-mix(in srgb, var(--accent-text) 55%, transparent) 42%,
+    transparent 60%
+  );
+  transform: translateX(-130%) skewX(-18deg);
+  animation: ork-shimmer 3.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ork-topbar-cta::before {
+    animation: none;
+  }
 }

@@ -1,131 +1,224 @@
-/* ProjectsSidebar (Fase 15 Task 3): barra fixa à esquerda, full height — brand no topo, lista de
-   projetos rolável no meio, "+ Novo projeto" no rodapé. Self-contained (não depende de
-   panels.css) para manter este componente como uma unidade só, igual pedido no brief. */
+/* ProjectsSidebar — redesenho 2026-07-14 (mockup do usuário): header com +/ocultar, filtro,
+   grupo colapsável, linhas com badge de terminais, rodapé. Theme-aware via tokens (--bg-*,
+   --accent, etc.) — funciona em tema claro e escuro. Minimizada = componente não renderiza (o
+   trilho estreito foi removido). Self-contained.
+
+   Linguagem de design unificada (Apple + Maestri, §4.2): a sidebar é CROMO — material de vidro
+   (--glass-1 + --material-chrome) que deixa o canvas/wallpaper vazar por trás. O popover do
+   seletor de ícone permanece OPACO (--bg-2) para nunca empilhar dois backdrop-filter (§3.2). */
 
 .ork-sidebar {
-  width: 210px;
-  flex: 0 0 210px;
+  position: relative;
+  width: 224px;
+  flex: 0 0 224px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg-1);
+  /* Material chrome (§4.2): vidro sobre o canvas, hairline de luz no topo — mesma receita das
+     pílulas flutuantes do Topbar (--hairline-glass como box-shadow inset), aqui aplicada na
+     borda superior do painel inteiro em vez de num ::before de gradiente (ambos sancionados
+     pela spec §3 "Materiais"; reaproveitar o token evita fabricar outra cor). */
+  background: var(--glass-1);
+  backdrop-filter: var(--material-chrome);
+  -webkit-backdrop-filter: var(--material-chrome);
+  isolation: isolate; /* contém o custo de GPU do blur sem clipar o popover de ícone (§3.2) */
   border-right: 1px solid var(--border);
+  box-shadow: var(--hairline-glass);
   color: var(--text-1);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   overflow: hidden;
-  transition: width var(--dur-2) var(--ease), flex-basis var(--dur-2) var(--ease);
 }
 
-/* Fase 18 (Task 4): trilho colapsado — só ícones (~52px), ver .ork-sidebar-rail abaixo. */
-.ork-sidebar--collapsed {
-  width: 52px;
-  flex: 0 0 52px;
-}
-
-.ork-sidebar-brand {
+/* ===== Header (controles: novo projeto / ocultar). Área de arraste da janela (macOS traffic
+   lights ficam à esquerda, no espaço vazio); os botões têm no-drag para continuarem clicáveis. */
+.ork-sidebar-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 14px;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2);
+  padding: 9px var(--space-2-5);
+  -webkit-app-region: drag;
 }
-
-/* Colapsado: só sobra o botão de toggle na faixa do brand — centraliza em vez do gap/padding
-   pensado pra Logo + texto lado a lado. */
-.ork-sidebar--collapsed .ork-sidebar-brand {
-  justify-content: center;
-  padding: 10px 0;
+.ork-sidebar-header-drag {
+  flex: 1;
+  align-self: stretch;
 }
-
-/* Fase 18 (Task 4): toggle de colapso — sempre no topo da sidebar, expandida ou não. */
-.ork-sidebar-collapse-btn {
+.ork-sidebar-header-actions {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  -webkit-app-region: no-drag;
+}
+.ork-sidebar-hbtn {
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  margin-left: auto;
   background: transparent;
-  color: var(--text-3);
+  color: var(--text-2);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  font-size: 12px;
-  line-height: 1;
   cursor: pointer;
   transition:
     color var(--dur-1) var(--ease),
-    border-color var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease);
+    background var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease);
 }
-.ork-sidebar-collapse-btn:hover {
+.ork-sidebar-hbtn:hover {
   color: var(--text-1);
-  border-color: var(--border-strong);
   background: var(--bg-2);
-}
-.ork-sidebar--collapsed .ork-sidebar-collapse-btn {
-  margin-left: 0;
+  border-color: var(--border-strong);
 }
 
-.ork-sidebar-brand-text {
-  color: var(--text-1);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.ork-sidebar-error {
+/* ===== Filtro por nome ===== */
+.ork-sidebar-filter {
   flex: 0 0 auto;
-  padding: 6px 10px;
-  color: var(--err);
-  font-size: 11px;
-  word-break: break-word;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin: 0 var(--space-2-5) var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--dur-1) var(--ease);
+}
+.ork-sidebar-filter:focus-within {
+  border-color: var(--accent);
+}
+.ork-sidebar-filter-icon {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.ork-sidebar-filter-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+.ork-sidebar-filter-input::placeholder {
+  color: var(--text-3);
+}
+.ork-sidebar-filter-clear {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--text-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease);
+}
+.ork-sidebar-filter-clear:hover {
+  color: var(--text-1);
 }
 
-.ork-sidebar-list {
+/* ===== Área rolável ===== */
+.ork-sidebar-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  padding: var(--space-0-5) var(--space-2) var(--space-2);
 }
-
-.ork-sidebar-list::-webkit-scrollbar {
+.ork-sidebar-scroll::-webkit-scrollbar {
   width: 10px;
 }
-.ork-sidebar-list::-webkit-scrollbar-track {
+.ork-sidebar-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
-.ork-sidebar-list::-webkit-scrollbar-thumb {
+.ork-sidebar-scroll::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   border: 3px solid transparent;
   background-clip: padding-box;
 }
-.ork-sidebar-list::-webkit-scrollbar-thumb:hover {
+.ork-sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--text-3);
   background-clip: padding-box;
 }
 
+/* ===== Grupo (cabeçalho colapsável + itens) ===== */
+.ork-sidebar-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-1-5) var(--space-1-5) var(--space-1);
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-1) var(--ease);
+}
+.ork-sidebar-group-header:hover {
+  color: var(--text-2);
+}
+.ork-sidebar-group-chevron {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: transform var(--dur-1) var(--ease);
+}
+.ork-sidebar-group-chevron--open {
+  transform: rotate(90deg);
+}
+.ork-sidebar-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ork-sidebar-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: ork-sidebar-fade var(--dur-2) var(--ease);
+}
+@keyframes ork-sidebar-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ork-sidebar-group-items {
+    animation: none;
+  }
+  .ork-sidebar-group-chevron {
+    transition: none;
+  }
+}
+
 .ork-sidebar-empty {
-  padding: 16px 8px;
+  padding: var(--space-3) var(--space-2);
   color: var(--text-3);
   text-align: center;
 }
 
+/* ===== Linha de projeto (source list estilo macOS) ===== */
 .ork-sidebar-project {
   position: relative;
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 7px 8px 7px 12px;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--dur-1) var(--ease);
@@ -133,82 +226,138 @@
 .ork-sidebar-project:hover {
   background: var(--bg-2);
 }
-/* Projeto ativo: fundo fraco do acento + barra de acento à esquerda, mesmo idioma visual do
-   item ativo no CommandPalette (ork-palette-item--active). */
+/* Pílula azul CHEIA (reformulação 2026-07-14, DesignCode UI §4 "Sidebar" — mockup .prj.act):
+   antes era só um fundo --accent-weak + barra de 3px; agora o item ativo preenche com --accent
+   sólido + sombra azul suave, texto/ícones brancos por cima — leitura muito mais forte que a
+   fileira "source list" padrão do macOS, no idioma "um accent com parcimônia" do resto do app
+   (só ISSO fica azul cheio na sidebar). `color-mix(in srgb, var(--accent-text) N%, transparent)`
+   deriva os brancos semi-transparentes (--accent-text É branco nos dois temas) sem hardcodar
+   hex/rgba — mesma técnica já usada em Logo.tsx pros tints de marca. */
 .ork-sidebar-project--active {
-  background: var(--accent-weak);
+  background: var(--accent);
+  box-shadow: 0 6px 16px var(--accent-weak);
 }
 .ork-sidebar-project--active:hover {
-  background: var(--accent-weak);
+  background: var(--accent-hover);
 }
-.ork-sidebar-project--active::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 6px;
-  bottom: 6px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--accent);
+.ork-sidebar-project--active .ork-sidebar-project-name {
+  color: var(--accent-text);
+  font-weight: var(--weight-semibold);
+}
+.ork-sidebar-project--active .ork-sidebar-badge {
+  color: color-mix(in srgb, var(--accent-text) 82%, transparent);
+}
+.ork-sidebar-project--active .ork-sidebar-icon-fallback {
+  color: var(--accent-text);
+}
+.ork-sidebar-project--active .ork-sidebar-icon:hover {
+  border-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-text) 14%, transparent);
+}
+.ork-sidebar-project--active .ork-sidebar-folder,
+.ork-sidebar-project--active .ork-sidebar-remove {
+  color: color-mix(in srgb, var(--accent-text) 85%, transparent);
+}
+.ork-sidebar-project--active .ork-sidebar-folder:hover {
+  color: var(--accent-text);
+  border-color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent-text) 18%, transparent);
+}
+.ork-sidebar-project--active .ork-sidebar-remove:hover {
+  color: var(--err);
+  border-color: var(--err);
+  background: var(--bg-1);
 }
 
-/* Fase 17 (Task 2): coluna nome+pasta — substitui o antigo span solto (flex:1) como o item
-   flexível da linha; name/cwd empilham dentro dela em vez de disputar espaço horizontal. */
+/* Ícone do projeto — glyph limpo (sem chip pesado); abre o seletor inline ao clicar. */
+.ork-sidebar-icon-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.ork-sidebar-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--text-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-md);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    background var(--dur-1) var(--ease);
+}
+.ork-sidebar-icon:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-1);
+}
+.ork-sidebar-icon-fallback {
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-2);
+}
+
 .ork-sidebar-project-main {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
-
 .ork-sidebar-project-name {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-1);
+  font-size: var(--fs-sm);
 }
-
-/* Basename da pasta do projeto (ex.: "Apps"), discreto sob o nome — path completo vai no title
-   da linha inteira (.ork-sidebar-project). */
-.ork-sidebar-project-cwd {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-3);
-  font-size: 10px;
-}
-.ork-sidebar-project-cwd--empty {
-  opacity: 0.6;
-}
-
-.ork-sidebar-project-actions {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
 .ork-sidebar-rename-input {
-  flex: 1;
-  min-width: 0;
-  box-sizing: border-box;
   width: 100%;
+  box-sizing: border-box;
   background: var(--bg-0);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   color: var(--text-1);
-  font-size: 12px;
-  padding: 3px 6px;
+  font-size: var(--fs-sm);
+  padding: var(--space-0-5) var(--space-1-5);
   outline: none;
 }
 
-/* Fase 17 (Task 2): botão "definir pasta" por linha — mesmo tamanho/forma do "remover", hover em
-   --accent (neutro/convite) em vez de --err (destrutivo). */
-.ork-sidebar-folder {
+/* Lado direito: badge (default) trocado pelas ações no hover da linha. */
+.ork-sidebar-project-right {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+.ork-sidebar-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.ork-sidebar-badge-n {
+  line-height: 1;
+}
+.ork-sidebar-project-actions {
+  display: none;
+  align-items: center;
+  gap: var(--space-0-5);
+}
+.ork-sidebar-project:hover .ork-sidebar-badge {
+  display: none;
+}
+.ork-sidebar-project:hover .ork-sidebar-project-actions {
+  display: flex;
+}
+
+.ork-sidebar-folder,
+.ork-sidebar-remove {
   width: 20px;
   height: 20px;
   display: flex;
@@ -219,7 +368,7 @@
   color: var(--text-3);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1;
   cursor: pointer;
   transition:
@@ -232,27 +381,6 @@
   border-color: var(--accent);
   background: var(--bg-1);
 }
-
-.ork-sidebar-remove {
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: transparent;
-  color: var(--text-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    color var(--dur-1) var(--ease),
-    border-color var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease);
-}
 .ork-sidebar-remove:hover {
   color: var(--err);
   border-color: var(--err);
@@ -260,167 +388,76 @@
 }
 .ork-sidebar-remove--armed {
   width: auto;
-  padding: 0 6px;
+  padding: 0 var(--space-1-5);
   color: var(--err);
   border-color: var(--err);
+  font-size: var(--fs-2xs);
 }
 
+.ork-sidebar-error {
+  flex: 0 0 auto;
+  margin: 0 var(--space-2-5) var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2);
+  color: var(--err);
+  font-size: var(--fs-xs);
+  word-break: break-word;
+  border: 1px solid var(--err);
+  border-radius: var(--radius-sm);
+}
+
+/* ===== Rodapé ===== */
 .ork-sidebar-footer {
   flex: 0 0 auto;
-  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--space-2-5);
   border-top: 1px solid var(--border);
 }
-
-.ork-sidebar-new-btn {
-  width: 100%;
-  padding: 7px 10px;
-  background: var(--accent);
-  /* --accent-text (quase-preto) em vez de --text-1: mesma correção de contraste do
-     ork-panel-primary-btn (Fase 13 Task 3, a11y) — --text-1 sobre --accent sólido fica ~3.2:1. */
-  color: var(--accent-text);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    filter var(--dur-1) var(--ease),
-    transform var(--dur-1) var(--ease);
-}
-.ork-sidebar-new-btn:hover {
-  filter: brightness(1.18);
-}
-.ork-sidebar-new-btn:active {
-  transform: translateY(1px);
-}
-
-/* Fase 18 (Task 4): trilho colapsado — lista vertical de ícones (nome só no title/hover) +
-   "+" compacto pra criar projeto. Sem rename/pasta/remover aqui (exigem a linha expandida). */
-.ork-sidebar-rail {
+.ork-sidebar-group-btn {
   flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.ork-sidebar-rail-item {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 0;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2);
   background: transparent;
-  color: var(--text-1);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background var(--dur-1) var(--ease),
-    border-color var(--dur-1) var(--ease);
-}
-.ork-sidebar-rail-item:hover {
-  background: var(--bg-2);
-}
-/* Ativo: mesmo idioma visual de .ork-sidebar-project--active (fundo --accent-weak), sem a barra
-   lateral (não há espaço sobrando num item de 34px). */
-.ork-sidebar-rail-item--active {
-  background: var(--accent-weak);
-  border-color: var(--accent);
-}
-
-.ork-sidebar-rail-add {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: var(--accent);
-  color: var(--accent-text);
+  color: var(--text-3);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: 17px;
-  font-weight: 500;
-  line-height: 1;
+  font-size: var(--fs-sm);
+  cursor: not-allowed;
+  transition: color var(--dur-1) var(--ease);
+}
+.ork-sidebar-group-btn:not(:disabled) {
   cursor: pointer;
-  transition: filter var(--dur-1) var(--ease);
 }
-.ork-sidebar-rail-add:hover {
-  filter: brightness(1.18);
-}
-
-/* Fase 18 (Task 4): ícone por projeto (linha expandida) — chip clicável que abre o seletor
-   inline; wrap precisa de position:relative pro popover se ancorar nele. */
-.ork-sidebar-icon-wrap {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.ork-sidebar-icon {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: var(--bg-2);
+.ork-sidebar-group-btn:not(:disabled):hover {
   color: var(--text-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    border-color var(--dur-1) var(--ease),
-    background var(--dur-1) var(--ease);
-}
-.ork-sidebar-icon:hover {
-  border-color: var(--accent);
-  background: var(--bg-1);
+  background: var(--bg-2);
 }
 
-/* Fallback sem `icon`: inicial do nome — mesmo chip, cor mais discreta que um emoji real. */
-.ork-sidebar-icon-fallback {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-/* Popover do seletor: lista curada (ICON_CHOICES) + input de texto livre. Ancorado sob o chip
-   (top:100%), z-index alto o bastante pra ficar acima da lista de projetos ao lado. */
+/* ===== Seletor de ícone (popover) — OPACO (--bg-2): fica DENTRO do vidro da sidebar, então
+   nunca usa backdrop-filter próprio (§3.2 — não empilhar dois blurs na mesma pilha z). ===== */
 .ork-sidebar-icon-picker {
   position: absolute;
   z-index: 20;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--space-1));
   left: 0;
   width: 176px;
-  padding: 8px;
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   background: var(--bg-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
 }
-
 .ork-sidebar-icon-picker-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
-
 .ork-sidebar-icon-choice {
   width: 24px;
   height: 24px;
@@ -431,7 +468,7 @@
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1;
   cursor: pointer;
   transition:
@@ -442,12 +479,10 @@
   border-color: var(--accent);
   background: var(--bg-2);
 }
-
 .ork-sidebar-icon-picker-form {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
-
 .ork-sidebar-icon-picker-input {
   flex: 1;
   min-width: 0;
@@ -456,11 +491,10 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   color: var(--text-1);
-  font-size: 12px;
-  padding: 3px 6px;
+  font-size: var(--fs-sm);
+  padding: 3px var(--space-1-5);
   outline: none;
 }
-
 .ork-sidebar-icon-picker-confirm {
   flex: 0 0 auto;
   width: 22px;
@@ -473,7 +507,7 @@
   color: var(--accent-text);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   transition: filter var(--dur-1) var(--ease);
 }
@@ -481,16 +515,18 @@
   filter: brightness(1.18);
 }
 
-/* Alternar tema claro/escuro (Fase 28) */
+/* ===== Alternar tema (Fase 28) — ícone-botão compacto 30px no rodapé (§4.2) ===== */
 .ork-theme-toggle {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 10px;
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--text-2);
+  justify-content: center;
+  gap: var(--space-2);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -502,15 +538,4 @@
 .ork-theme-toggle:hover {
   background: var(--bg-2);
   color: var(--text-1);
-}
-/* No trilho colapsado o toggle vira um botão-ícone quadrado, sem rótulo */
-.ork-sidebar-rail .ork-theme-toggle {
-  width: 32px;
-  height: 32px;
-  justify-content: center;
-  padding: 0;
-  margin: 0 auto;
-}
-.ork-sidebar-rail-spacer {
-  flex: 1;
 }

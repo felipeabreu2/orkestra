@@ -1,0 +1,53 @@
+/* Icon.css (reformulação 2026-07-14, DesignCode UI §4 "Ícones") — normaliza o traço de TODO
+   ícone do app e oferece 3 classes de micro-motion reutilizáveis, CSS-puras, para hover.
+
+   Traço: motion-icons-react (wrapper em Icon.tsx) só expõe `weight` light/regular/bold, que
+   mapeiam pra strokeWidth 1.5/2/2.5 (ver node_modules/motion-icons-react/dist/index.esm.js) —
+   nenhum bate o 1.7 pedido pela spec ("estilo HugeIcons"), e a lib não aceita um número
+   arbitrário via prop. `stroke-width` como propriedade CSS vence o atributo de apresentação SVG
+   que a lib escreve (`stroke-width="2"`), então normalizamos aqui uma única vez. Cap/join já
+   nascem "round" no lucide-react (defaultAttributes) — nada a ajustar ali.
+
+   Micro-motion: a lib já cobre boa parte do catálogo (nudge/pop/wiggle/swing/bounce/spin, usados
+   em Topbar/ProjectsSidebar via `animation=`), mas não expressa os 3 gestos exatos do mockup
+   (`orkestra-elementos.html` .icob.rot/.spin/.slide — girar 90° fixos, rodar contínuo, deslizar
+   2px), porque seu catálogo é por nome de efeito, não por transform arbitrário. Por isso as 3
+   classes abaixo, com --spring (tokens.css), aplicadas onde faz sentido (botão "+", abrir/expandir,
+   ícone giratório). Consumidor troca `animation="none"` ao usá-las, pra não competir com a
+   animação da lib no mesmo <svg>. */
+.ork-icon svg {
+  stroke-width: 1.7;
+}
+
+.ork-icon--rotate svg {
+  transition: transform var(--dur-2) var(--spring);
+}
+.ork-icon--rotate:hover svg {
+  transform: rotate(90deg);
+}
+
+.ork-icon--slide svg {
+  transition: transform var(--dur-2) var(--spring);
+}
+.ork-icon--slide:hover svg {
+  transform: translateX(2px);
+}
+
+.ork-icon--spin-hover:hover svg {
+  animation: ork-icon-spin 0.7s linear infinite;
+}
+@keyframes ork-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ork-icon--rotate:hover svg,
+  .ork-icon--slide:hover svg {
+    transition: none;
+  }
+  .ork-icon--spin-hover:hover svg {
+    animation: none;
+  }
+}

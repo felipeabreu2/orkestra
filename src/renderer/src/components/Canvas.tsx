@@ -378,6 +378,7 @@ export function Canvas(): JSX.Element {
       <Topbar
         cwd={activeCwd}
         collapsed={sidebarCollapsed}
+        pendingTool={pendingTool}
         onToggleSidebar={toggleSidebar}
         onNewProject={emitNewProject}
         onSelectMode={() => setPendingTool(null)}
