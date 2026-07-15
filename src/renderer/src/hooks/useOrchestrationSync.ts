@@ -72,7 +72,8 @@ export function useOrchestrationSync(): void {
         id: n.id,
         type: n.type ?? 'terminal',
         name: (n.type === 'note'
-          ? htmlToText((n.data?.html as string) ?? '') || 'Nota'
+          ? // Notas #10: nome personalizado (data.name) vence; sem ele, a 1ª linha do conteúdo.
+            (n.data?.name as string)?.trim() || htmlToText((n.data?.html as string) ?? '') || 'Nota'
           : (n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó'
         ).slice(0, 40),
         // content = conteúdo LEGÍVEL do bloco, para `orq context` entregar ao agente: texto da nota
