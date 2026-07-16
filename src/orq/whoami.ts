@@ -1,4 +1,5 @@
 import type { CanvasMirror, MirrorNode } from '../shared/orchestration'
+import { connectedAgentNames } from '../shared/agentTopology'
 
 // Helper puro do `orq whoami` (quick win #7 — "recrutas sabem quem são"): a partir do espelho do
 // canvas e do id deste terminal (ORKESTRA_NODE_ID), monta uma descrição legível pelo agente com o
@@ -30,6 +31,12 @@ export function describeSelf(mirror: CanvasMirror, nodeId: string): string {
   } else {
     lines.push('conexões:')
     for (const n of neighbors) lines.push(`  - ${n.name} (${n.type})`)
+  }
+  // Aresta `agent` carregada (T5 Conexões): destaca os agentes conectados como alvos prontos de
+  // `orq ask` — o roteamento por nome continua livre, isto só torna a topologia visível ao agente.
+  const agents = connectedAgentNames(mirror, nodeId)
+  if (agents.length > 0) {
+    lines.push(`agentes conectados (use "orq ask <nome>"): ${agents.join(', ')}`)
   }
   return lines.join('\n')
 }

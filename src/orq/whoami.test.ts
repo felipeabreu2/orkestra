@@ -22,6 +22,25 @@ describe('describeSelf', () => {
     expect(out).toContain('Dev') // vizinho por aresta que sai
   })
 
+  it('destaca os agentes conectados (aresta agent) como alvos de orq ask', () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 't1', type: 'terminal', name: 'Líder', role: 'Líder' },
+        { id: 't2', type: 'terminal', name: 'Dev' },
+        { id: 'n1', type: 'note', name: 'Spec' }
+      ],
+      edges: [
+        { source: 't1', target: 't2' },
+        { source: 'n1', target: 't1' }
+      ]
+    }
+    const out = describeSelf(mirror, 't1')
+    expect(out).toContain('agentes conectados')
+    expect(out).toContain('Dev')
+    // A nota NÃO é um agente — não aparece na linha de agentes (só nas conexões).
+    expect(out).not.toMatch(/agentes conectados[^\n]*Spec/)
+  })
+
   it('id ausente no mirror → mensagem amigável de não-identificação', () => {
     const mirror: CanvasMirror = {
       nodes: [{ id: 't1', type: 'terminal', name: 'Líder' }],
