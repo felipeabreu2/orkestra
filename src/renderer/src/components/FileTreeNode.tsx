@@ -7,6 +7,7 @@ import { Icon } from './Icon'
 import { gitKeyForEntry } from './fileTreeGit'
 import { FileEditor } from './FileEditor'
 import { ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
+import { openEntryInEditor } from '../ui/openInEditor'
 import './nodes.css'
 import './FileTreeNode.css'
 
@@ -114,6 +115,11 @@ function TreeLevel(props: TreeLevelProps): JSX.Element {
             className="nodrag ork-filetree-row"
             style={{ paddingLeft: indent }}
             onClick={() => onOpenFile(entry)}
+            // Onda 1 · T3: duplo-clique = válvula de escape "abre isso no meu editor de verdade".
+            // O onClick acima dispara junto (o preview embutido tolera o disparo duplo — é o mesmo
+            // arquivo, idempotente); pastas não têm este handler (lá o duplo-clique só expande e
+            // colapsa de novo). Fire-and-forget: openEntryInEditor nunca rejeita.
+            onDoubleClick={() => void openEntryInEditor(entry, window.orkestra.ide.open)}
             // Arrastar uma linha de ARQUIVO (pastas não — evita `cd` ambíguo) injeta seu caminho
             // absoluto no terminal de um agente ao soltar sobre um TerminalNode (que lê o MIME
             // interno via readDroppedPaths). `draggable` (HTML5) coexiste com `nodrag`, que só
