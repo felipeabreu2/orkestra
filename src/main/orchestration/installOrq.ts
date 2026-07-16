@@ -20,6 +20,7 @@ Verbos de gerência (Modo Maestro) — só têm efeito se este terminal for um M
 - orq recruit "<nome>" ["<preset>"] ["<papel>"] — cria um novo terminal-agente abaixo de você, já conectado a você (presets: shell/claude/codex/gemini; papéis: Dev/Revisor/Testador/Docs). Sem preset, o recruta herda o seu.
 - orq squad "<preset>" "<nota-spec>" — monta de uma vez um esquadrão inteiro (Dev + Revisor + Testador + Docs), cada um já conectado à nota-spec que você indicar. Use quando a tarefa pede uma equipe, em vez de vários recruit/connect na mão.
 - orq connect "<A>" "<B>" — liga dois blocos: dois terminais, ou um recruta a uma nota já conectada a você.
+- orq reassign "<nome>" "<papel>" — troca o papel de um recruta no meio do trabalho (papéis: Dev/Revisor/Testador/Docs). O nó, o nome e as conexões dele ficam intactos; só o processo do agente reinicia, já com o papel novo. Use quando a necessidade mudar, em vez de dispensar e recrutar de novo.
 - orq dismiss "<nome>" — fecha o terminal de um recruta quando o trabalho dele termina (mantém o canvas limpo).
 - orq note write [--to "<nome/id>"] "<texto>" — escreve numa nota conectada (sem --to, na nota ligada à sua saída).
 - orq whoami — mostra seu próprio nome, papel e os blocos/agentes conectados a você (útil para um recruta saber quem é e a quem responde).

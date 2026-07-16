@@ -423,6 +423,87 @@ describe('OrchestrationServer', () => {
     expect(commands).toEqual([{ type: 'dismiss', target: 'X' }])
   })
 
+  // T7 (reassign): rota nova. Contrato igual aos demais verbos de gerência — valida target/role
+  // string (400), aplica o gating de Maestro (403) e emite o comando com o `from` (o renderer não
+  // usa o from aqui, mas mantê-lo no comando espelha o recruit e deixa a origem auditável).
+  it('POST /reassign emite um comando reassign', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor', from: 'm1' }])
+  })
+
+  it('POST /reassign sem from (legado) emite sem o campo', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor' }])
+  })
+
+  it('POST /reassign com target não-string retorna 400 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 42, role: 'Revisor' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /reassign com role ausente retorna 400 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /reassign de NÃO-Maestro (from com maestro:false) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /reassign de Maestro (from com maestro:true) emite normalmente (200)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor', from: 'm1' }])
+  })
+
   it('escopo de projeto (409) vem ANTES do gating de Maestro (403)', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands, {

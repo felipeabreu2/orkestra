@@ -63,6 +63,13 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // que re-spawna `ssh <sshHost>` do zero (o pty morto não é re-attachável). Efêmero, fora de
   // `data` → nunca entra no snapshot/undo. Reusa 100% do caminho de spawn existente.
   const [reconnectEpoch, setReconnectEpoch] = useState(0)
+  // T7 (reassign): epoch de reinício vindo do STORE — bumpado por restartTerminal quando um Maestro
+  // reatribui o papel deste terminal (o gatilho nasce fora deste componente, no useOrchestrationSync,
+  // então não pode ser um useState local como o reconnectEpoch do SSH acima). Entra na `key` do
+  // TerminalNode pelo mesmo motivo: remontar re-spawna o preset, agora com o ORKESTRA_ROLE novo no
+  // env do pty. Seletor lê só o número DESTE id (não o mapa inteiro) — mesma disciplina de
+  // hasAttention/generating: só re-renderiza quando o valor muda para o próprio nó.
+  const restartEpoch = useCanvasStore((s) => s.restartEpoch[id] ?? 0)
   const reconnect = useCallback((): void => {
     // mata qualquer pty zumbi do nó (no-op se já saiu) antes de remontar, evitando dois ptys.
     window.orkestra.pty.killForNode(id)
@@ -191,9 +198,11 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
           <div className="nodrag nowheel ork-node-body">
             <ErrorBoundary>
               {/* key inclui o epoch de reconexão: bumpá-lo remonta o TerminalNode → re-spawn do
-                  `ssh <sshHost>` (T3). onConnState liga o estado da conexão ao badge (T2). */}
+                  `ssh <sshHost>` (T3). onConnState liga o estado da conexão ao badge (T2).
+                  restartEpoch (T7) usa o MESMO mecanismo, disparado pelo store: reatribuir o papel
+                  remonta e re-spawna o agente com o ORKESTRA_ROLE novo. */}
               <TerminalNode
-                key={`${id}:${reconnectEpoch}`}
+                key={`${id}:${reconnectEpoch}:${restartEpoch}`}
                 nodeId={id}
                 preset={preset}
                 role={role}

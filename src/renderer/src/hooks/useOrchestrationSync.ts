@@ -182,6 +182,20 @@ export function useOrchestrationSync(): void {
         const terminals = store.nodes.filter((n) => n.type === 'terminal')
         const target = terminals.find((n) => (n.data?.name as string) === cmd.target)
         if (target) store.removeNode(target.id)
+      } else if (cmd.type === 'reassign') {
+        // T7: resolve o terminal pelo NOME (mesmo best-effort de dismiss/connect), troca o papel e
+        // reinicia SÓ o processo. updateTerminalRole toca apenas data.role — posição, nome e edges
+        // ficam intactos; restartTerminal mata o pty e bumpa o epoch de remount, e o TerminalNode
+        // remontado re-spawna com o ORKESTRA_ROLE novo no env (o papel viaja por env var, não por
+        // arquivo — nada a reescrever aqui). Ordem importa: o papel PRIMEIRO, senão o re-spawn
+        // pegaria o papel antigo (o TerminalNode lê `role` como prop do nó já atualizado).
+        // Nome desconhecido → silencioso, como os demais verbos por nome.
+        const terminals = store.nodes.filter((n) => n.type === 'terminal')
+        const target = terminals.find((n) => (n.data?.name as string) === cmd.target)
+        if (target) {
+          store.updateTerminalRole(target.id, cmd.role)
+          store.restartTerminal(target.id)
+        }
       } else if (cmd.type === 'connect') {
         const terminals = store.nodes.filter((n) => n.type === 'terminal')
         const source = terminals.find((n) => (n.data?.name as string) === cmd.source)

@@ -314,6 +314,37 @@ describe('runOrq', () => {
     expect(commands).toEqual([{ type: 'recruit', name: 'Dev', from: 't1' }])
   })
 
+  // T7 (reassign): troca o papel de um recruta mid-task. Mesmo padrão de `from` dos demais verbos de
+  // gerência (ORKESTRA_NODE_ID do Maestro) — aqui ele serve ao gating de T6 (403 se não for Maestro).
+  it('reassign chama POST /reassign com {target, role, from} e retorna código 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['reassign', 'Dev', 'Revisor'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor', from: 't1' }])
+  })
+
+  it('reassign sem papel devolve a linha de uso (code 1) sem chamar o servidor', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code, out } = await runOrq(['reassign', 'Dev'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(1)
+    expect(out).toContain('orq reassign')
+    expect(commands).toEqual([])
+  })
+
+  it('reassign de NÃO-Maestro (403) devolve a orientação do errOut e código != 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer(
+      { nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] },
+      commands
+    )
+    const { code, out } = await runOrq(['reassign', 'Dev', 'Revisor'], { ...env, ORKESTRA_NODE_ID: 'c1' })
+    expect(code).not.toBe(0)
+    expect(out).toContain('Maestro')
+    expect(commands).toEqual([])
+  })
+
   it('dismiss chama POST /dismiss com {target} e retorna código 0', async () => {
     const commands: OrchestrationCommand[] = []
     const env = await startServer({ nodes: [] }, commands)

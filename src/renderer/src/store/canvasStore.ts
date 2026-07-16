@@ -334,6 +334,18 @@ interface CanvasState {
   // atribui uma NOVA instância de Set (o zustand compara referência).
   generating: Set<string>
   setGenerating: (nodeId: string, on: boolean) => void
+  // T7 (reassign): epoch de REMOUNT por terminal. Bumpar o epoch de um id faz o TerminalFlowNode
+  // remontar seu TerminalNode (ele entra na `key`), e o TerminalNode remontado re-spawna o preset do
+  // zero — pegando o ORKESTRA_ROLE novo no env do pty (o wrapper `claude` o injeta via
+  // --append-system-prompt). Mesma mecânica do epoch de reconexão do SSH (TerminalFlowNode), mas no
+  // STORE em vez de useState local: o gatilho vem de FORA do componente (o comando reassign chega
+  // pelo useOrchestrationSync). Efêmero como attention/generating — NUNCA serializado (não entra em
+  // serialize()/hydrate() nem no histórico de undo; por isso vive aqui e não em `data` do nó).
+  restartEpoch: Record<string, number>
+  // Reinicia SÓ o processo do terminal `id`: mata o pty e bumpa o epoch (remount → re-spawn).
+  // Nada do nó é tocado — posição, nome, papel e conexões permanecem. No-op para id inexistente ou
+  // nó não-terminal.
+  restartTerminal: (id: string) => void
   addTerminalNode: (
     position?: { x: number; y: number } | undefined,
     // Fase 27 (Task 3): sshHost opcional — quando presente, o nó nasce em modo SSH (ver
@@ -507,6 +519,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       else next.delete(nodeId)
       return { generating: next }
     }),
+  restartEpoch: {},
+  restartTerminal: (id): void => {
+    // Guard de tipo: só terminais têm pty/TerminalNode para remontar (id inexistente → no-op, sem
+    // criar entrada no mapa). `window.orkestra` não existe nos testes (jsdom sem preload) — mesmo
+    // optional chaining de removeNode. Matar ANTES do bump espelha o reconnect do SSH: o pty morto
+    // faz o attach do remount falhar, e o TerminalNode cai no caminho de spawn (sem dois ptys).
+    if (get().nodes.find((n) => n.id === id)?.type !== 'terminal') return
+    window.orkestra?.pty?.killForNode(id)
+    set((state) => ({ restartEpoch: { ...state.restartEpoch, [id]: (state.restartEpoch[id] ?? 0) + 1 } }))
+  },
   addTerminalNode: (position, opts): void =>
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }

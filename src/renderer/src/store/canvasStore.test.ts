@@ -6,7 +6,7 @@ import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
 import type { Node } from '@xyflow/react'
 
 beforeEach(() => {
-  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set(), generating: new Set() })
+  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set(), generating: new Set(), restartEpoch: {} })
 })
 
 describe('canvasStore', () => {
@@ -317,6 +317,64 @@ describe('canvasStore', () => {
     const r2 = state.nodes.find((n) => n.id === id2)!
     expect(r2.position.x).toBeGreaterThan(r1.position.x) // segundo recruta desloca para o lado
     expect(state.edges.filter((e) => e.source === maestro.id)).toHaveLength(2)
+  })
+
+  // T7 (reassign): reatribuir troca SÓ o papel — posição, nome e conexões do nó ficam intactos.
+  // É a semântica que separa reassign de "dispensar e recrutar de novo".
+  it('reatribuir (updateTerminalRole) troca o papel preservando position, name e edges', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 }, { name: 'Dev', role: 'Dev', preset: 'claude' })
+    useCanvasStore.getState().addNoteNode({ x: 200, y: 6 })
+    const [dev, nota] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: dev.id, target: nota.id, sourceHandle: null, targetHandle: null })
+    const edgesAntes = useCanvasStore.getState().edges.length
+
+    useCanvasStore.getState().updateTerminalRole(dev.id, 'Revisor')
+
+    const state = useCanvasStore.getState()
+    const depois = state.nodes.find((n) => n.id === dev.id)!
+    expect((depois.data as { role?: string }).role).toBe('Revisor')
+    expect(depois.position).toEqual({ x: 5, y: 6 }) // não moveu
+    expect((depois.data as { name?: string }).name).toBe('Dev') // não renomeou
+    expect((depois.data as { preset?: string }).preset).toBe('claude')
+    expect(state.edges).toHaveLength(edgesAntes) // não desconectou
+    expect(state.edges[0].source).toBe(dev.id)
+    expect(state.edges[0].target).toBe(nota.id)
+  })
+
+  // T7: o RESTART do processo. Não há como exercitar o pty em jsdom (window.orkestra não existe —
+  // por isso o optional chaining no store), mas o epoch é o sinal OBSERVÁVEL que faz o
+  // TerminalFlowNode remontar o TerminalNode via `key` (mesmo mecanismo do reconnect de SSH). Aqui
+  // provamos que o epoch sobe e que NADA do nó (papel/posição/edges) é tocado por ele.
+  it('restartTerminal bumpa o epoch de remount do nó sem tocar em nada do nó', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 }, { name: 'Dev', role: 'Revisor' })
+    const dev = useCanvasStore.getState().nodes[0]
+    expect(useCanvasStore.getState().restartEpoch[dev.id] ?? 0).toBe(0)
+
+    useCanvasStore.getState().restartTerminal(dev.id)
+    expect(useCanvasStore.getState().restartEpoch[dev.id]).toBe(1)
+
+    useCanvasStore.getState().restartTerminal(dev.id)
+    expect(useCanvasStore.getState().restartEpoch[dev.id]).toBe(2)
+
+    const depois = useCanvasStore.getState().nodes[0]
+    expect(depois.position).toEqual({ x: 5, y: 6 })
+    expect((depois.data as { role?: string }).role).toBe('Revisor')
+  })
+
+  it('restartTerminal em id inexistente é no-op (não cria epoch nem quebra)', () => {
+    useCanvasStore.getState().restartTerminal('nao-existe')
+    expect(useCanvasStore.getState().restartEpoch['nao-existe']).toBeUndefined()
+  })
+
+  // O epoch é EFÊMERO (como attention/generating): reiniciar um agente não pode sujar o snapshot
+  // salvo nem o histórico de undo.
+  it('restartEpoch não entra no serialize (efêmero)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 }, { name: 'Dev' })
+    const dev = useCanvasStore.getState().nodes[0]
+    useCanvasStore.getState().restartTerminal(dev.id)
+    const snap = useCanvasStore.getState().serialize()
+    expect(snap).not.toHaveProperty('restartEpoch')
+    expect(snap.nodes[0].data).not.toHaveProperty('restartEpoch')
   })
 
   it('recruitBelow com fromId inexistente cai na cascata (sem edge, sem quebrar) e devolve id', () => {

@@ -56,6 +56,12 @@ export type OrchestrationCommand =
   | { type: 'recruit'; name: string; preset?: string; role?: string; from?: string }
   | { type: 'dismiss'; target: string }
   | { type: 'connect'; source: string; target: string }
+  // T7 (reassign): troca o papel de um recruta MID-TASK, preservando o nó (posição/nome/conexões) —
+  // só o PROCESSO reinicia, para o agente nascer com o novo ORKESTRA_ROLE no env (o wrapper `claude`
+  // o injeta via --append-system-prompt no spawn; ver installOrq.ts/registerPtyIpc.ts). `target` é o
+  // NOME do terminal a reatribuir (best-effort por nome, como dismiss/connect); `role` é o papel novo
+  // (v1: um dos PRESET_ROLES). `from` (ORKESTRA_NODE_ID do Maestro) serve ao gating de T6.
+  | { type: 'reassign'; target: string; role: string; from?: string }
   | { type: 'portalOpen'; target: string; url: string }
   // requestId (T1): carimbado pelo main ao relayar a ação para o renderer; quando presente, o
   // renderer devolve o booleano de sucesso via IPC 'portal:result' (fecha o round-trip). Ausente

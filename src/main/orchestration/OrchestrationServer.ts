@@ -271,6 +271,27 @@ export class OrchestrationServer {
       })
       return
     }
+    if (req.method === 'POST' && req.url === '/reassign') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; role?: unknown; from?: unknown }
+        // target e role são AMBOS obrigatórios: reatribuir sem papel não tem semântica (limpar o
+        // papel seria outro verbo), e o renderer precisa dos dois para resolver o nó e reiniciá-lo.
+        if (typeof parsed.target !== 'string' || typeof parsed.role !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        // T6: mesmo gating dos demais verbos de gerência (fail-open p/ `from` ausente/desconhecido).
+        // Ao contrário de /connect e /dismiss, o `from` VAI no comando emitido — espelha /recruit e
+        // deixa a origem da reatribuição auditável no renderer.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
+          return
+        }
+        this.emit({ type: 'reassign', target: parsed.target, role: parsed.role, from }, res)
+      })
+      return
+    }
     if (req.method === 'POST' && req.url === '/connect') {
       this.readJsonBody(req, res, (raw) => {
         const parsed = raw as { source?: unknown; target?: unknown; from?: unknown }

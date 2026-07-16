@@ -159,6 +159,14 @@ describe('installOrq', () => {
     expect(onboard).toContain('orq whoami')
   })
 
+  // T7: mesmo motivo do squad abaixo — o onboarding é o ÚNICO canal pelo qual o agente descobre um
+  // verbo. Sem esta linha o reassign ficaria implementado e invisível.
+  it('o onboarding cita o orq reassign (reatribuição de papel mid-task)', () => {
+    run()
+    const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')
+    expect(onboard).toContain('orq reassign')
+  })
+
   // T8: o `orq squad` existia, com testes verdes, mas não era citado em NENHUM texto que o agente
   // lê — ninguém o descobria. O onboarding é o único canal de descoberta dos verbos.
   it('o onboarding cita o orq squad (template de esquadrão do Maestro)', () => {

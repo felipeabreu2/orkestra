@@ -174,7 +174,7 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
                 <span>Maestro</span>
                 <span
                   className="ork-newterm-info"
-                  title="Concede a este agente os verbos de gerência: recrutar, conectar e dispensar outros terminais. Sem o Modo Maestro, o Orkestra recusa esses comandos."
+                  title="Concede a este agente os verbos de gerência: recrutar, conectar, reatribuir e dispensar outros terminais. Sem o Modo Maestro, o Orkestra recusa esses comandos."
                   aria-hidden="true"
                 >
                   <Icon name="Info" size={13} animation="none" />
