@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { OrchestrationServer } from './OrchestrationServer'
+import { OrchestrationServer, isMaestro } from './OrchestrationServer'
 import type { CanvasMirror, OrchestrationCommand } from '../../shared/orchestration'
+import { serializeRoleSidecar, parseRoleSidecar, buildRoleSidecar } from '../../shared/roleSidecar'
 
 let server: OrchestrationServer | undefined
 afterEach(async () => { await server?.stop(); server = undefined })
@@ -16,6 +17,8 @@ function makeServer(
     getPortalState?: (name: string) => { url: string; title: string; text: string; dom?: string } | null
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
+    readRoleSidecar?: (nodeId: string) => string | null
+    writeRoleSidecar?: (nodeId: string, json: string) => boolean
   } = {}
 ) {
   server = new OrchestrationServer({
@@ -28,6 +31,61 @@ function makeServer(
   })
   return server
 }
+
+// Auditoria (2026-07-16): o helper de gating não tinha NENHUM teste unitário — as rotas o
+// exercitavam só por dentro, e o caso `maestro: undefined` (todo terminal criado ANTES do toggle
+// existir, ou seja, todo snapshot legado) não era coberto em lugar nenhum. Foi assim que o desvio
+// entre o plano ("sem flag → bloqueia") e o código ("sem flag → permite") passou despercebido.
+// Estes testes FIXAM o fail-open como decisão consciente (ver docs/planejamento/modo-maestro.md,
+// T6): fechar o gating quebraria em silêncio os terminais que já estão no canvas do usuário, e
+// isto é UX de orquestração local, não fronteira de segurança. Se um destes ficar vermelho, a
+// pergunta certa é "quem mudou o comportamento?", não "como faço o teste passar?".
+describe('isMaestro (gating do Modo Maestro)', () => {
+  const node = (id: string, maestro?: boolean): CanvasMirror['nodes'][number] => ({
+    id,
+    type: 'terminal',
+    name: id,
+    ...(maestro === undefined ? {} : { maestro })
+  })
+  const mirror = (nodes: CanvasMirror['nodes']): CanvasMirror => ({ nodes, edges: [] })
+
+  it('nó EXPLICITAMENTE marcado maestro:true → permite', () => {
+    expect(isMaestro(mirror([node('m1', true)]), 'm1')).toBe(true)
+  })
+
+  it('nó EXPLICITAMENTE marcado maestro:false → bloqueia', () => {
+    expect(isMaestro(mirror([node('c1', false)]), 'c1')).toBe(false)
+  })
+
+  // O caso que motivou estes testes. `maestro: undefined` é o estado de TODO terminal serializado
+  // antes de o toggle existir. Permitir é deliberado (retrocompat com snapshots legados).
+  it('nó SEM a flag (maestro: undefined — snapshot legado) → PERMITE', () => {
+    expect(isMaestro(mirror([node('legado')]), 'legado')).toBe(true)
+  })
+
+  // Fail-open no desconhecido, mesma filosofia do escopo de projeto: um `from` que não resolve a
+  // nenhum nó do espelho (nó recém-fechado, espelho defasado, id inventado) não deve travar o verbo.
+  it('from que não resolve a nenhum nó do espelho → permite (fail-open)', () => {
+    expect(isMaestro(mirror([node('m1', true)]), 'fantasma')).toBe(true)
+  })
+
+  it('espelho vazio → permite (nada resolve)', () => {
+    expect(isMaestro(mirror([]), 'qualquer')).toBe(true)
+  })
+
+  // Sem `from` = orq legado/externo, que não injeta ORKESTRA_NODE_ID. Permite sem sequer olhar o
+  // espelho — nem mesmo quando há um maestro:false lá dentro.
+  it('sem from (orq legado/externo) → permite mesmo com nós maestro:false no espelho', () => {
+    expect(isMaestro(mirror([node('c1', false)]), undefined)).toBe(true)
+  })
+
+  it('resolve o nó pelo id certo quando há vários no espelho', () => {
+    const m = mirror([node('m1', true), node('c1', false), node('legado')])
+    expect(isMaestro(m, 'm1')).toBe(true)
+    expect(isMaestro(m, 'c1')).toBe(false)
+    expect(isMaestro(m, 'legado')).toBe(true)
+  })
+})
 
 describe('OrchestrationServer', () => {
   it('GET /list com token retorna o espelho', async () => {
@@ -1019,4 +1077,201 @@ describe('OrchestrationServer', () => {
     expect(res.status).toBe(409)
   })
 
+})
+
+// T4 (orq role): endpoints de leitura/escrita do papel. O I/O do sidecar é injetado (o servidor não
+// faz fs); os fakes abaixo carregam o texto REAL do serializeRoleSidecar de produção — um shape
+// inventado aqui provaria só que o teste concorda consigo mesmo.
+describe('OrchestrationServer — /role (T4)', () => {
+  const terminal = (id: string, name: string, role?: string): CanvasMirror['nodes'][number] => ({
+    id,
+    type: 'terminal',
+    name,
+    ...(role === undefined ? {} : { role })
+  })
+  const roleJson = (prompt: string): string =>
+    serializeRoleSidecar({ name: 'Revisor', color: 'var(--paper-orange)', prompt })
+
+  it('GET /role?name= devolve o sidecar do nó alvo (do disco)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: (id) => (id === 'n1' ? roleJson('papel em disco') : null)
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Rev`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      name: 'Revisor',
+      color: 'var(--paper-orange)',
+      prompt: 'papel em disco'
+    })
+  })
+
+  it('GET /role sem arquivo em disco deriva do papel do nó (mesmo prompt que o spawn injeta)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => null
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Rev`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(buildRoleSidecar('revisor'))
+  })
+
+  it('GET /role de um nome que não existe no espelho → 404', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], { readRoleSidecar: () => null })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Fantasma`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('POST /role {name,prompt} grava o prompt novo preservando name/color do sidecar', async () => {
+    const written: Array<[string, string]> = []
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('papel antigo'),
+      writeRoleSidecar: (id, json) => {
+        written.push([id, json])
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', prompt: 'papel novo' })
+    })
+    expect(res.status).toBe(200)
+    expect(written).toHaveLength(1)
+    expect(written[0][0]).toBe('n1')
+    // Volta pelo parser de produção: o que foi gravado tem de ser um sidecar válido de verdade.
+    expect(parseRoleSidecar(written[0][1])).toEqual({
+      name: 'Revisor',
+      color: 'var(--paper-orange)',
+      prompt: 'papel novo'
+    })
+  })
+
+  it('POST /role {name,from,to} troca UMA substring do prompt atual', async () => {
+    const written: string[] = []
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('revise o auth e o auth'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', from: 'auth', to: 'billing' })
+    })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('revise o billing e o auth')
+  })
+
+  it('POST /role com from ausente no prompt grava o texto original (idempotente, sem erro)', async () => {
+    const written: string[] = []
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('texto original'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', from: 'inexistente', to: 'x' })
+    })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('texto original')
+  })
+
+  it('POST /role sem prompt nem from/to → 400', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev' })
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /role de um nome que não existe no espelho → 404 (nada é gravado)', async () => {
+    let calls = 0
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Fantasma', prompt: 'x' })
+    })
+    expect(res.status).toBe(404)
+    expect(calls).toBe(0)
+  })
+
+  it('POST /role com falha de I/O na gravação → 500 (o agente NÃO recebe "ok" por algo não gravado)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('x'),
+      writeRoleSidecar: () => false
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', prompt: 'y' })
+    })
+    expect(res.status).toBe(500)
+  })
+
+  // Escopo de projeto: papel é contexto do agente e não pode vazar entre projetos — as duas rotas
+  // herdam o 409 do guard global (nenhuma exceção para /role).
+  it('/role com x-orkestra-project divergente do ativo retorna 409 (GET e POST)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      getActiveProjectId: () => 'proj-B',
+      readRoleSidecar: () => roleJson('x'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const headers = { 'x-orkestra-token': token, 'x-orkestra-project': 'proj-A', 'content-type': 'application/json' }
+    expect((await fetch(`http://127.0.0.1:${port}/role?name=Rev`, { headers })).status).toBe(409)
+    const post = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'Rev', prompt: 'y' })
+    })
+    expect(post.status).toBe(409)
+  })
+
+  // Decisão (T4): `role` NÃO entra no gating de Maestro. O caso de uso é auto-refino — o agente
+  // reescrevendo o PRÓPRIO papel —, não um verbo de gerência sobre terceiros; um recruta comum
+  // (maestro:false) precisa poder refinar o que ele é.
+  it('um terminal comum (maestro:false) pode escrever o papel — role não é verbo de gerência', async () => {
+    const s = makeServer(
+      { nodes: [{ id: 'n1', type: 'terminal', name: 'Rev', role: 'revisor', maestro: false }] },
+      [],
+      { readRoleSidecar: () => roleJson('x'), writeRoleSidecar: () => true }
+    )
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', prompt: 'y', from: undefined })
+    })
+    expect(res.status).toBe(200)
+  })
 })

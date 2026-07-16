@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { runOrq } from './orq'
 import { OrchestrationServer } from '../main/orchestration/OrchestrationServer'
 import type { CanvasMirror, OrchestrationCommand } from '../shared/orchestration'
+import { serializeRoleSidecar, parseRoleSidecar } from '../shared/roleSidecar'
 
 let server: OrchestrationServer | undefined
 afterEach(async () => { await server?.stop(); server = undefined })
@@ -19,6 +20,8 @@ async function startServer(
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
     runPortalAction?: (cmd: OrchestrationCommand) => Promise<{ ok: boolean } | null>
+    readRoleSidecar?: (nodeId: string) => string | null
+    writeRoleSidecar?: (nodeId: string, json: string) => boolean
   } = {}
 ) {
   server = new OrchestrationServer({
@@ -630,5 +633,87 @@ describe('runOrq — app sem janela ativa (503)', () => {
     const { code, out } = await runOrq(['note', 'write', '--to', 'X', 'oi'], env)
     expect(code).not.toBe(0)
     expect(out).toContain('sem janela ativa')
+  })
+})
+
+// T4 (orq role): ida-e-volta HTTP real do cliente — o parser puro é testado em ./role.test.ts.
+// O sidecar dos fakes é o texto REAL do serializeRoleSidecar de produção.
+describe('runOrq — role (T4)', () => {
+  const node = { id: 'n1', type: 'terminal', name: 'Rev', role: 'revisor' }
+  const roleJson = (prompt: string): string =>
+    serializeRoleSidecar({ name: 'Revisor', color: 'var(--paper-orange)', prompt })
+
+  it('role show imprime o prompt do papel', async () => {
+    const env = await startServer({ nodes: [node] }, [], {
+      readRoleSidecar: () => roleJson('revise o auth com cuidado')
+    })
+    const { code, out } = await runOrq(['role', 'show', 'Rev'], env)
+    expect(code).toBe(0)
+    expect(out).toBe('revise o auth com cuidado')
+  })
+
+  it('role write substitui o prompt inteiro', async () => {
+    const written: string[] = []
+    const env = await startServer({ nodes: [node] }, [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { code, out } = await runOrq(['role', 'write', 'Rev', 'prompt novo inteiro'], env)
+    expect(code).toBe(0)
+    expect(out).toBe('ok')
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('prompt novo inteiro')
+  })
+
+  it('role edit troca uma substring do prompt', async () => {
+    const written: string[] = []
+    const env = await startServer({ nodes: [node] }, [], {
+      readRoleSidecar: () => roleJson('revise o auth'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { code } = await runOrq(['role', 'edit', 'Rev', 'auth', 'billing'], env)
+    expect(code).toBe(0)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('revise o billing')
+  })
+
+  it('role sem subcomando imprime o uso com código 2 (como os demais comandos)', async () => {
+    const env = await startServer({ nodes: [node] }, [])
+    const { code, out } = await runOrq(['role'], env)
+    expect(code).toBe(2)
+    expect(out).toContain('orq role show')
+  })
+
+  // Descobribilidade: a string de uso do orq é a segunda porta pela qual o agente encontra um verbo
+  // (a primeira é o onboarding). O `orq squad` existiu invisível nas duas — este teste fecha uma.
+  it('a string de uso do orq lista o comando role', async () => {
+    const env = await startServer({ nodes: [node] }, [])
+    const { code, out } = await runOrq(['comando-que-nao-existe'], env)
+    expect(code).toBe(2)
+    expect(out).toContain('orq role show|write|edit')
+  })
+
+  it('role show de um terminal sem papel avisa em vez de imprimir vazio', async () => {
+    const env = await startServer({ nodes: [{ id: 'n2', type: 'terminal', name: 'Solto' }] }, [], {
+      readRoleSidecar: () => null
+    })
+    const { code, out } = await runOrq(['role', 'show', 'Solto'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('não tem papel')
+  })
+
+  // Escopo de projeto: papel não vaza entre projetos — o 409 vira a orientação padrão do errOut.
+  it('role show de um terminal de projeto NÃO ativo devolve a orientação de 409', async () => {
+    const env = await startServer({ nodes: [node] }, [], {
+      getActiveProjectId: () => 'proj-B',
+      readRoleSidecar: () => roleJson('x')
+    })
+    const { code, out } = await runOrq(['role', 'show', 'Rev'], { ...env, ORKESTRA_PROJECT_ID: 'proj-A' })
+    expect(code).not.toBe(0)
+    expect(out).toContain('NÃO está ativo')
   })
 })

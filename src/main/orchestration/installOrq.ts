@@ -15,8 +15,9 @@ Ferramentas do Orkestra — rode-as pela sua ferramenta de shell/Bash:
 - orq portal navigate "<nome>" "<url>" | click "<nome>" "<seletor>" | fill "<nome>" "<seletor>" "<texto>" | snapshot "<nome>" [--dom] — navega e controla um site (portal) conectado, como você faria num navegador. snapshot --dom lista os elementos interativos da página (seletores prontos para click/fill).
 - orq portal back "<nome>" | forward "<nome>" | reload "<nome>" | scroll "<nome>" <x> <y> — histórico, recarregar e rolagem do portal.
 - orq portal create "<nome>" "<url>" — cria um novo portal no canvas já navegando para a url.
+- orq role show "<nome>" | write "<nome>" "<prompt>" | edit "<nome>" "<trecho antigo>" "<trecho novo>" — lê e refina o prompt de um papel (normalmente o SEU, pelo seu próprio nome). Use quando o papel estiver vago ou desatualizado para a tarefa: write troca o prompt inteiro, edit troca só um trecho.
 
-Verbos de gerência (Modo Maestro) — só têm efeito se este terminal for um Maestro; caso contrário o Orkestra recusa o comando:
+Verbos de gerência (Modo Maestro) — são de quem coordena o canvas. O Orkestra só os recusa se este terminal estiver marcado como comum (Modo Maestro desligado no bloco); terminais sem essa marcação executam normalmente. Se vier uma recusa, peça ao usuário para ligar o Modo Maestro neste terminal:
 - orq recruit "<nome>" ["<preset>"] ["<papel>"] — cria um novo terminal-agente abaixo de você, já conectado a você (presets: shell/claude/codex/gemini; papéis: Dev/Revisor/Testador/Docs). Sem preset, o recruta herda o seu.
 - orq squad "<preset>" "<nota-spec>" — monta de uma vez um esquadrão inteiro (Dev + Revisor + Testador + Docs), cada um já conectado à nota-spec que você indicar. Use quando a tarefa pede uma equipe, em vez de vários recruit/connect na mão.
 - orq connect "<A>" "<B>" — liga dois blocos: dois terminais, ou um recruta a uma nota já conectada a você.

@@ -1,0 +1,65 @@
+/* T5 — "Descobrir Responsabilidades". Reusa o cromo do card de "Novo Terminal"
+   (.ork-modal-card/.ork-newterm/.ork-newterm-head/.ork-newterm-actions, NewTerminalModal.css) e só
+   acrescenta a lista de papéis descobertos. Tudo via var(--token) => claro/escuro. */
+
+.ork-rolediscover .ork-newterm-content {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.ork-rolediscover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ork-rolediscover-item {
+  padding: var(--space-2-5);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.ork-rolediscover-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+.ork-rolediscover-row input {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+}
+
+.ork-rolediscover-name {
+  color: var(--label);
+  font-size: var(--fs-base);
+}
+
+/* Prévia do prompt: 3 linhas e reticências — a lista é uma escolha, não um leitor de texto. */
+.ork-rolediscover-preview {
+  margin: var(--space-1-5) 0 0;
+  color: var(--label-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ork-rolediscover-empty,
+.ork-rolediscover-note {
+  margin: 0;
+  color: var(--label-2);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.ork-rolediscover-note {
+  margin-top: var(--space-3);
+  color: var(--label-3);
+}

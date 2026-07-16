@@ -159,6 +159,16 @@ describe('installOrq', () => {
     expect(onboard).toContain('orq whoami')
   })
 
+  // T4 (terminais-agentes): idem — o `orq squad` chegou a existir sem estar no onboarding nem na
+  // string de uso, e nenhum agente o descobriu. O `role` nasce com as duas portas abertas.
+  it('o onboarding cita o orq role (auto-refino do papel)', () => {
+    run()
+    const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')
+    expect(onboard).toContain('orq role show')
+    expect(onboard).toContain('write')
+    expect(onboard).toContain('edit')
+  })
+
   // T7: mesmo motivo do squad abaixo — o onboarding é o ÚNICO canal pelo qual o agente descobre um
   // verbo. Sem esta linha o reassign ficaria implementado e invisível.
   it('o onboarding cita o orq reassign (reatribuição de papel mid-task)', () => {

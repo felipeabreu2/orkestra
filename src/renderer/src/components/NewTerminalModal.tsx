@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { PRESETS, presetById } from '../../../shared/presets'
 import { PRESET_ROLES } from '../../../shared/roles'
+import type { RoleSidecar } from '../../../shared/roleSidecar'
 import { useCanvasStore } from '../store/canvasStore'
 import { Icon } from './Icon'
+import { RoleDiscoveryModal } from './RoleDiscoveryModal'
 import './NewTerminalModal.css'
 
 /** Ícone animado de cada preset — mapeia o id para um ícone do Lucide (nada de logotipos de
@@ -27,6 +29,12 @@ function PresetIcon({ id }: { id: string }): JSX.Element {
 // (chave ROLE_NONE_KEY); as demais usam o `id` de PRESET_ROLES.
 const ROLE_NONE_KEY = 'none'
 
+// Chave do segmented para um papel IMPORTADO (T5) — prefixada para nunca colidir com o `id` de um
+// preset, e normalizada como roleMeta (trim + lowercase).
+function importedRoleKey(name: string): string {
+  return `imp:${name.trim().toLowerCase()}`
+}
+
 export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Element {
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
   const [preset, setPreset] = useState('shell')
@@ -37,10 +45,27 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
   const [maestro, setMaestro] = useState(false)
   const [role, setRole] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
+  // T5: papéis IMPORTADOS (registro ~/.orkestra/roles.json) entram no segmented ao lado dos presets
+  // — é o que faz a importação valer aqui: escolher um deles grava `data.role`, e o spawn resolve o
+  // prompt no registro (registerPtyIpc → importedPromptFor) e o injeta em ORKESTRA_ROLE.
+  const [imported, setImported] = useState<RoleSidecar[]>([])
+  const [discovering, setDiscovering] = useState(false)
 
   useEffect(() => {
     nameRef.current?.focus()
     nameRef.current?.select()
+  }, [])
+
+  // Carrega o registro ao abrir o modal (o discover já devolve os importados junto — a varredura é
+  // limitada e best-effort no main; falhar aqui só significa segmented sem papéis importados).
+  useEffect(() => {
+    let alive = true
+    void window.orkestra.roles.discover().then((res) => {
+      if (alive) setImported(res.imported)
+    })
+    return () => {
+      alive = false
+    }
   }, [])
 
   const selectPreset = (id: string): void => {
@@ -67,13 +92,19 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
   // que a árvore desmonta enquanto a aba "Detalhes" está em foco.
   const roleRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const [roleThumb, setRoleThumb] = useState<{ left: number; width: number } | null>(null)
-  const activeRoleKey = role === '' ? ROLE_NONE_KEY : (PRESET_ROLES.find((r) => r.label === role)?.id ?? ROLE_NONE_KEY)
+  const activeRoleKey =
+    role === ''
+      ? ROLE_NONE_KEY
+      : (PRESET_ROLES.find((r) => r.label === role)?.id ??
+        (imported.find((r) => r.name === role) ? importedRoleKey(role) : ROLE_NONE_KEY))
 
+  // `imported` nas deps: a lista de botões cresce quando uma importação volta do modal de
+  // descoberta, e o thumb precisa remedir sobre o layout novo.
   useLayoutEffect(() => {
     if (tab !== 'appearance') return
     const el = roleRefs.current[activeRoleKey]
     if (el) setRoleThumb({ left: el.offsetLeft, width: el.offsetWidth })
-  }, [activeRoleKey, tab])
+  }, [activeRoleKey, tab, imported])
 
   return (
     <div className="ork-modal-backdrop" onClick={onClose}>
@@ -224,7 +255,35 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
                     </button>
                   )
                 })}
+                {/* T5: papéis IMPORTADOS dos sidecars — mesma mecânica dos presets. O `prompt` deles
+                    vive no registro do usuário e é resolvido no spawn (main), não aqui. */}
+                {imported.map((r) => {
+                  const active = role === r.name
+                  const k = importedRoleKey(r.name)
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      ref={(el) => {
+                        roleRefs.current[k] = el
+                      }}
+                      className={`ork-newterm-seg-item${active ? ' ork-newterm-seg-item--active' : ''}`}
+                      style={active ? { color: r.color } : undefined}
+                      onClick={() => setRole(r.name)}
+                      title={r.prompt}
+                    >
+                      <span className="ork-newterm-seg-dot" style={{ background: r.color }} aria-hidden="true" />
+                      {r.name}
+                    </button>
+                  )
+                })}
               </div>
+              {/* T5 — porta de entrada da descoberta: varre os sidecars dos agentes e importa os
+                  papéis escolhidos, que voltam já no segmented acima. */}
+              <button type="button" className="ork-btn ork-btn--ghost" onClick={() => setDiscovering(true)}>
+                <Icon name="Search" size={14} animation="none" />
+                Descobrir Responsabilidades
+              </button>
             </div>
           )}
         </div>
@@ -239,6 +298,14 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
           </button>
         </div>
       </div>
+      {/* T5 — IRMÃO do card, não filho: o card tem backdrop-filter, que vira bloco de contenção para
+          descendentes `position: fixed`; lá dentro o overlay da descoberta deixaria de cobrir a
+          janela. Fica dentro do backdrop (que não filtra nada) e depois do card na ordem do DOM, então
+          empilha por cima. O próprio RoleDiscoveryModal barra a propagação de click/Esc para não
+          fechar este modal junto. */}
+      {discovering && (
+        <RoleDiscoveryModal onClose={() => setDiscovering(false)} onImported={(next) => setImported(next)} />
+      )}
     </div>
   )
 }

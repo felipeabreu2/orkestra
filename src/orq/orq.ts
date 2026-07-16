@@ -2,6 +2,7 @@ import { interpretEscapes } from './escapes'
 import { describeSelf } from './whoami'
 import { planSquad } from './squad'
 import { formatListLine } from './list'
+import { parseRoleCommand, ROLE_USAGE } from './role'
 import type { CanvasMirror } from '../shared/orchestration'
 
 export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
@@ -233,6 +234,29 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       }
       return { code: ok === ops.length ? 0 : 1, out: `esquadrão montado: ${ok}/${ops.length} operações` }
     }
+    // T4 — auto-refino do papel: o agente lê e reescreve o prompt do PRÓPRIO papel (ou o de um
+    // colega, best-effort por nome, como o resto do orq). Toda a decisão de parsing mora no
+    // parseRoleCommand puro (./role); aqui só o transporte. Não é verbo de gerência — não passa
+    // pelo gating de Maestro (ver POST /role no OrchestrationServer).
+    if (cmd === 'role') {
+      const parsed = parseRoleCommand(argv)
+      if (parsed.action === 'usage') return { code: 2, out: ROLE_USAGE }
+      if (parsed.action === 'show') {
+        const res = await fetch(`${base}/role?name=${encodeURIComponent(parsed.name)}`, { headers })
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { prompt?: string }
+        const prompt = (data.prompt ?? '').trim()
+        // Papel livre (sem instrução) e terminal sem papel dão prompt vazio: dizer isso é melhor do
+        // que imprimir nada e deixar o agente achar que o comando falhou.
+        return { code: 0, out: prompt || 'orq: este terminal não tem papel definido (nada a mostrar).' }
+      }
+      const body =
+        parsed.action === 'write'
+          ? { name: parsed.name, prompt: parsed.prompt }
+          : { name: parsed.name, from: parsed.from, to: parsed.to }
+      const res = await fetch(`${base}/role`, { method: 'POST', headers, body: JSON.stringify(body) })
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+    }
     if (cmd === 'portal') {
       // sub aqui é a ação (open/navigate/click/fill/eval/snapshot/back/forward/reload/scroll/create);
       // rest[0] é o nome do portal alvo (para create, o nome do portal A CRIAR), o resto são os
@@ -347,7 +371,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" ["<preset>"] ["<papel>"] | orq squad "<preset>" "<nota-spec>" | orq reassign "<nome>" "<papel>" | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal snapshot "<nome>" [--dom]\nNota: recruit/squad/connect/reassign/dismiss são verbos de gerência (só têm efeito num Maestro) e são best-effort por nome; em recruit, o preset é opcional (omitido, o recruta herda o preset do Maestro); squad monta Dev+Revisor+Testador+Docs de uma vez, cada um conectado à nota-spec; reassign troca o papel de um recruta mid-task (o nó e as conexões ficam, só o processo do agente reinicia com o novo papel). Comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval/back/forward/reload/scroll/create seguem fire-and-forget. Use "orq portal snapshot "<nome>" --dom" para listar os elementos interativos (seletores prontos para click/fill), ou sem flag para o texto da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq role show|write|edit "<nome>" [...] | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" ["<preset>"] ["<papel>"] | orq squad "<preset>" "<nota-spec>" | orq reassign "<nome>" "<papel>" | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal snapshot "<nome>" [--dom]\nNota: recruit/squad/connect/reassign/dismiss são verbos de gerência (Modo Maestro): o Orkestra só os RECUSA se este terminal estiver marcado como comum (Modo Maestro desligado no bloco) — terminais sem essa marcação executam normalmente; se vier uma recusa, peça ao usuário para ligar o Modo Maestro aqui. São best-effort por nome; em recruit, o preset é opcional (omitido, o recruta herda o preset do Maestro); squad monta Dev+Revisor+Testador+Docs de uma vez, cada um conectado à nota-spec; reassign troca o papel de um recruta mid-task (o nó e as conexões ficam, só o processo do agente reinicia com o novo papel). role show/write/edit lê e refina o PROMPT de um papel (auto-refino: normalmente o seu, pelo seu próprio nome) — não é verbo de gerência, funciona em qualquer terminal; write troca o prompt inteiro, edit troca só um trecho. Comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval/back/forward/reload/scroll/create seguem fire-and-forget. Use "orq portal snapshot "<nome>" --dom" para listar os elementos interativos (seletores prontos para click/fill), ou sem flag para o texto da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

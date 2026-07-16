@@ -183,12 +183,16 @@ hoje. `ORKESTRA_ROLE` já vai no env deles — o follow-up é um wrapper espelha
 
 ---
 
-### T4 — `orq role show/write/edit` (auto-refino do papel pelo agente)  [P3 · M · Onda 3]
+### T4 — `orq role show/write/edit` (auto-refino do papel pelo agente)  [P3 · M · Onda 2]
+
+> **Rótulo corrigido (2026-07-16):** o cabeçalho dizia "Onda 3", mas o `00-ROADMAP.md` (fonte viva
+> de sequência) já colocava "papel-com-prompt → `role.json` portátil + `orq role`" na **Onda 2**. O
+> ROADMAP manda.
 
 - **Arquivos a tocar:**
   - `src/orq/orq.ts` — novo comando `role` com subcomandos `show/write/edit`.
   - `src/orq/orq.test.ts` (ou equivalente de teste do CLI) ((novo se ausente))
-  - `src/main/orchestration/OrchestrationServer.ts` + `src/main/index.ts` — endpoint(s) para ler/escrever o `role.json` do terminal alvo (reusa `resolvePtyByName` → subdir do nó).
+  - `src/main/orchestration/OrchestrationServer.ts` + `src/main/index.ts` — endpoint(s) para ler/escrever o `role.json` do terminal alvo (resolve o nó pelo nome no espelho → `~/.orkestra/agents/<nodeId>/role.json`).
 - **Passos TDD:**
   1. **Teste que falha:** um **parser puro** de argumentos `parseRoleCommand(argv)` (sem rede):
      - `['role','show','Revisor']` → `{ action:'show', name:'Revisor' }`.
@@ -198,13 +202,70 @@ hoje. `ORKESTRA_ROLE` já vai no env deles — o follow-up é um wrapper espelha
      - Para `edit`, um aplicador puro `applyRoleEdit(prompt, from, to)` substitui **uma** substring; `from` ausente no texto → retorna o texto original (idempotente, sem lançar).
   2. **Implementação:**
      - `parseRoleCommand` + `applyRoleEdit` puros; ramo `role` em `runOrq` chamando os endpoints (`GET /role?name=`, `POST /role` com `{name, prompt}` ou `{name, from, to}`), com o mesmo tratamento de `errOut` (409/503) dos demais comandos.
-     - Server: ler/gravar o `role.json` do subdir do terminal alvo; refletir a mudança no `data.role`/mirror quando fizer sentido.
+     - Server: ler/gravar o `role.json` do terminal alvo em `~/.orkestra/agents/<nodeId>/` (FORA do repo do usuário).
+     - **Decidido na implementação (2026-07-16):** NÃO refletir no `data.role`/mirror. `data.role` é a
+       CHAVE do papel (`dev`, `revisor`), não o prompt: gravar o texto refinado lá viraria um "papel
+       livre" gigante no badge do canvas e, pior, `buildRolePrompt` devolveria `''` para ele — o
+       `ORKESTRA_ROLE` do próximo spawn ficaria VAZIO e o agente perderia o papel inteiro.
   3. **Verde:** `npx vitest run src/orq/orq.test.ts` (parser + applyRoleEdit puros). Ida-e-volta HTTP → checklist manual.
 - **Critérios de aceite:**
   - `orq role show "X"` imprime o prompt; `write` substitui inteiro; `edit` troca uma substring (paridade com `maestri role`).
-  - **Checklist manual (`npm run dev`):** de dentro de um terminal-agente, `orq role write "<seu-papel>" "..."` altera o `role.json`; `orq role show` reflete; nova sessão do agente arranca com o prompt refinado.
+  - **Checklist manual (`npm run dev`):** de dentro de um terminal-agente, `orq role write "<seu-nome>" "..."` altera o `role.json`; `orq role show` reflete.
+  - **LACUNA CONHECIDA (2026-07-16) — RESOLVIDA pela T4b (ver abaixo):** o refinamento não sobrevivia a
+    uma nova sessão; o sidecar não era lido no spawn e ainda era sobrescrito a cada arranque. Fechado.
   - Erros de projeto-não-ativo (409) e sem-janela (503) tratados como no resto do `orq`.
 - **Notas:** depende de T1–T3 (papel com `prompt` + sidecar). Auto-modificação de contexto: documentar que o agente pode reescrever o **próprio** papel — manter escopo de projeto (`x-orkestra-project`) para não vazar entre projetos.
+- **Gating (decidido em 2026-07-16):** `role` **não** entra no gating de Maestro. O caso de uso é
+  auto-refino — o agente reescrevendo o próprio papel —, não um verbo de gerência sobre terceiros: um
+  recruta comum (`maestro:false`) precisa poder refinar o que ele é. O alvo é por nome (best-effort,
+  como o resto do orq), então um agente pode em tese escrever o papel de um colega; como o sidecar é
+  metadado (não altera o comportamento de ninguém — ver LACUNA acima), o raio de dano é um arquivo de
+  metadado, não escalação de privilégio. Se o T4b ligar o sidecar ao spawn, **reavaliar**.
+- **REAVALIAÇÃO do gating (2026-07-16, pós-T4b):** o T4b **ligou** o sidecar ao spawn — ele deixou de
+  ser metadado inerte e passou a ser o prompt efetivo do próximo arranque. O raio de dano de escrever
+  o `role.json` de um colega cresceu: não é mais "um arquivo de metadado", é o papel com que aquele
+  agente vai nascer. Não muda o veredito (auto-refino continua sendo o caso de uso, e um recruta
+  precisa poder refinar o que ele é), mas **o alvo por nome vira o ponto frágil**: um agente pode
+  escrever o papel de outro. Follow-up sugerido: restringir `role write/edit` ao **próprio**
+  `ORKESTRA_NODE_ID` (o alvo por nome fica só no `show`), ou exigir `maestro:true` para escrever em
+  terceiros. Fora do escopo do T4b, que não tocou em `OrchestrationServer.ts`/`orq.ts`.
+
+---
+
+### T4b — o refino do papel sobrevive ao spawn  [RESOLVIDA · 2026-07-16]
+
+Fecha a LACUNA CONHECIDA da T4. **Decisão:** o sidecar é a **fonte do prompt efetivo quando o `name`
+dele corresponde ao papel atual do nó**. Casar por `name` é o núcleo: o refino persiste enquanto o
+papel for o mesmo, mas trocar o papel do nó (Command Palette / `orq reassign`) deixa o sidecar antigo
+com outro `name` → não casa → o prompt é **regenerado** do papel novo. O refino não cola no papel
+errado; a troca de papel manda.
+
+> **Rejeitado (não reabrir):** "refletir a mudança no `data.role`/mirror". `data.role` é a CHAVE do
+> papel, não o prompt — ver a decisão registrada nos Passos TDD da T4.
+
+- **Arquivos tocados:**
+  - `src/shared/roleSidecar.ts` — `sidecarMatchesRole(sidecar, role)` (puro): resolve os **dois** lados
+    por `roleMeta` (id ou label, case-insensitive, trim) e compara o label canônico.
+  - `src/shared/roleSidecar.test.ts`, `src/main/pty/registerPtyIpc.test.ts` — testes (TDD, vermelho antes).
+  - `src/main/pty/registerPtyIpc.ts` — `readRoleSidecar` (best-effort, guardado por `isSafeNodeId` +
+    `parseRoleSidecar`); precedência no `pty:spawn`; `writeRoleSidecar` deixou de sobrescrever.
+- **Precedência do `ORKESTRA_ROLE`** (uma única leitura do sidecar, reusada na escrita):
+  `refinado (sidecar que casa) → buildRolePrompt(role) → importedPromptFor(role)`. A cadeia da T5
+  (papel importado) foi **preservada** — a novidade entra ANTES dela, não no lugar.
+- **Escrita não-destrutiva:** sidecar que casa e tem `prompt` → o texto é **preservado** (`name`/`color`
+  seguem vindo de `buildRoleSidecar`, metadado do papel). Regenera quando não existe, quando o `name`
+  diverge (papel trocado) ou quando o arquivo não parseia.
+- **`prompt` vazio não vence o preset:** um sidecar sem instrução é ausência de refino, não refino —
+  se vencesse, o agente nasceria sem papel. Coerente com a T5, que exclui papéis livres da descoberta.
+- **Invariantes mantidas:** `cwd` intocado (é `const` de propósito — reapontá-lo foi o P0 que cegava o
+  agente); nada escrito no repositório do usuário; sidecar só em `~/.orkestra/agents/<nodeId>/`;
+  `isSafeNodeId` guarda leitura **e** escrita; falha de I/O degrada sem derrubar o terminal.
+- **Cobertura:** refino honrado e preservado; papel trocado regenera; sem sidecar = comportamento de
+  antes; sidecar corrompido degrada sem lançar; papel importado com refino; `nodeId` inseguro não lê
+  nem escreve (o sidecar da "vítima" fica intocado). Suíte: **960 verdes**.
+- **QA manual pendente:** `npm run dev` → num terminal-agente, `orq role write "<seu-nome>" "..."`,
+  fechar e reabrir o terminal → o agente arranca com o texto refinado; trocar o papel do nó pela
+  Command Palette → o prompt volta ao do papel novo e o `role.json` é reescrito.
 
 ---
 

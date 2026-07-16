@@ -3,6 +3,8 @@ import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Project, ProjectIndex } from '../shared/project'
 import type { FileEntry } from '../shared/filetree'
+import type { RoleSidecar } from '../shared/roleSidecar'
+import type { DiscoverResult } from '../shared/discoverRoles'
 
 // PTY-9 (auditoria 2026-07-14): cada TerminalNode registra um listener 'pty:data' no ipcRenderer;
 // com muitos terminais no canvas passaríamos do teto default de 10 e o Node emitiria
@@ -123,6 +125,16 @@ const api = {
   // abriu ({ ok, editor }) — o renderer nunca toca em child_process/shell.
   ide: {
     open: (path: string): Promise<{ ok: boolean; editor?: string }> => ipcRenderer.invoke('ide:open', path)
+  },
+  // T5 ("Descobrir Responsabilidades"): o renderer não toca em `fs` — pergunta ao main quais papéis
+  // existem nos sidecars dos agentes (~/.orkestra/agents/*/role.json, varredura limitada) e manda
+  // importar os escolhidos para o registro do usuário (~/.orkestra/roles.json). `discover` devolve
+  // cada achado classificado (`new` = importável, `preset` = já existe no app, não duplicar) mais o
+  // que já está importado; `import` devolve o registro resultante. O main revalida tudo (a UI é
+  // conveniência, não gate).
+  roles: {
+    discover: (): Promise<DiscoverResult> => ipcRenderer.invoke('roles:discover'),
+    import: (chosen: RoleSidecar[]): Promise<RoleSidecar[]> => ipcRenderer.invoke('roles:import', chosen)
   },
   // Fase 9 (Portais): o PortalNode reporta {name,url,title,text} ao main a cada did-finish-load
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`

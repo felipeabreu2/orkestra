@@ -7,6 +7,8 @@ import type {
   PortalState
 } from '../../shared/orchestration'
 import { resolveContextNodes, formatContextBlocks } from '../../shared/contextResolver'
+import { serializeRoleSidecar } from '../../shared/roleSidecar'
+import { applyRoleEdit, resolveRoleSidecar } from '../../shared/roleEdit'
 
 // Fase 14 (Task 3): cap de tamanho do corpo dos POSTs — payloads acima disso respondem 413
 // antes de terminar de acumular (ver readJsonBody). 1 MB é folgado para os payloads reais
@@ -46,6 +48,14 @@ interface Opts {
   // vivo para receber (mesma semântica BLD-6 do onCommand → 503). Ausente (fakes de teste antigos,
   // orq legado) → o servidor cai no emit síncrono de sempre (fallback retrocompatível).
   runPortalAction?: (cmd: OrchestrationCommand) => Promise<PortalActionResult | null>
+  // T4 (orq role): I/O do sidecar `role.json` do nó (~/.orkestra/agents/<nodeId>/role.json),
+  // INJETADO — este servidor não faz fs, e assim as rotas /role são testáveis sem tocar no disco
+  // do usuário. `readRoleSidecar` devolve o conteúdo cru (null = sem arquivo/ilegível — as rotas
+  // caem no papel do espelho via resolveRoleSidecar); `writeRoleSidecar` devolve se gravou
+  // (false → 500, o agente não pode receber "ok" por algo que não foi gravado). Ausentes (fakes
+  // antigos) → 404, mesma degradação de ask/check.
+  readRoleSidecar?: (nodeId: string) => string | null
+  writeRoleSidecar?: (nodeId: string, json: string) => boolean
 }
 
 // T6 (gating do Modo Maestro): um nó só pode recrutar/conectar/dispensar se for um Maestro. Fail-open
@@ -186,6 +196,13 @@ export class OrchestrationServer {
     })()
   }
 
+  // T4: resolve o TERMINAL alvo do /role pelo nome no espelho (mesma regra best-effort por nome do
+  // resto do orq: nomes duplicados resolvem para o primeiro). Devolve o nó — as rotas precisam do
+  // `id` (chave do sidecar em disco) e do `role` (fallback quando não há arquivo).
+  private terminalByName(name: string): CanvasMirror['nodes'][number] | undefined {
+    return this.opts.getMirror().nodes.find((n) => n.type === 'terminal' && n.name === name)
+  }
+
   private handle(req: import('http').IncomingMessage, res: import('http').ServerResponse): void {
     if (!this.isAuthorized(req)) {
       res.writeHead(401).end('unauthorized')
@@ -289,6 +306,45 @@ export class OrchestrationServer {
           return
         }
         this.emit({ type: 'reassign', target: parsed.target, role: parsed.role, from }, res)
+      })
+      return
+    }
+    // T4 (auto-refino do papel): escreve o prompt do papel do terminal alvo no sidecar. Dois modos
+    // exclusivos — {name, prompt} (substitui inteiro) ou {name, from, to} (troca UMA substring, via
+    // applyRoleEdit; `from` ausente no texto → grava o original, idempotente).
+    //
+    // ATENÇÃO ao `from` daqui: nas OUTRAS rotas `from` é o id do nó CHAMADOR (gating/posicionamento);
+    // aqui é o trecho de texto a substituir (contrato do plano, paridade com `maestri role edit`).
+    // Não reuse este corpo como referência de gating.
+    //
+    // SEM gating de Maestro (decisão do T4): auto-refino é o agente reescrevendo o PRÓPRIO papel,
+    // não um verbo de gerência sobre terceiros — um recruta comum (maestro:false) precisa poder.
+    if (req.method === 'POST' && req.url === '/role') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { name?: unknown; prompt?: unknown; from?: unknown; to?: unknown }
+        const isWrite = typeof parsed.prompt === 'string'
+        const isEdit = typeof parsed.from === 'string' && typeof parsed.to === 'string'
+        // Exatamente um dos dois modos: nem nenhum (nada a fazer), nem os dois (qual vence?).
+        if (typeof parsed.name !== 'string' || isWrite === isEdit) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        const node = this.terminalByName(parsed.name)
+        if (!node || !this.opts.writeRoleSidecar) {
+          res.writeHead(404).end('not found')
+          return
+        }
+        const current = resolveRoleSidecar(this.opts.readRoleSidecar?.(node.id) ?? null, node)
+        // name/color do sidecar são PRESERVADOS: `role write/edit` mexe no prompt, não na identidade
+        // visual do papel (o badge do canvas continua vindo do papel do nó).
+        const prompt = isWrite
+          ? (parsed.prompt as string)
+          : applyRoleEdit(current.prompt, parsed.from as string, parsed.to as string)
+        if (!this.opts.writeRoleSidecar(node.id, serializeRoleSidecar({ ...current, prompt }))) {
+          res.writeHead(500).end('write failed')
+          return
+        }
+        res.writeHead(200).end('ok')
       })
       return
     }
@@ -489,6 +545,21 @@ export class OrchestrationServer {
         } else {
           res.writeHead(404).end('not found')
         }
+        return
+      }
+      if (url.pathname === '/role') {
+        // T4: papel ATUAL do terminal alvo. Fonte: sidecar em disco → papel do nó no espelho
+        // (resolveRoleSidecar), então `role show` responde mesmo em terminal que nunca gravou
+        // arquivo (spawn anterior ao T3a). Nome desconhecido → 404, como /check.
+        const node = this.terminalByName(url.searchParams.get('name') ?? '')
+        if (!node) {
+          res.writeHead(404).end('not found')
+          return
+        }
+        const sidecar = resolveRoleSidecar(this.opts.readRoleSidecar?.(node.id) ?? null, node)
+        res.writeHead(200, { 'content-type': 'application/json' })
+        // Mesmo serializador do arquivo: a resposta é o sidecar, byte a byte no shape do contrato.
+        res.end(serializeRoleSidecar(sidecar))
         return
       }
       if (url.pathname === '/context') {

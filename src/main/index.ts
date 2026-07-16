@@ -1,6 +1,9 @@
 import { app, BrowserWindow, ipcMain, dialog, Notification, shell, session } from 'electron'
 import { randomUUID } from 'crypto'
 import { join } from 'path'
+import { homedir } from 'os'
+import { mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { isSafeNodeId } from '../shared/roleSidecar'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
 import { registerPtyIpc } from './pty/registerPtyIpc'
@@ -11,6 +14,7 @@ import { FileTreeService } from './filetree/FileTreeService'
 import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
 import { registerIdeIpc } from './ide/registerIdeIpc'
 import { registerSshIpc } from './ssh/registerSshIpc'
+import { registerRolesIpc } from './roles/registerRolesIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { installOrq } from './orchestration/installOrq'
@@ -116,8 +120,35 @@ function resolvePtyByName(name: string): string | undefined {
   return node ? ptyManager.ptyIdForNode(node.id) : undefined
 }
 
+// T4 (orq role): I/O do sidecar `role.json` do agente, em ~/.orkestra/agents/<nodeId>/ — MESMO
+// caminho que o spawn grava (registerPtyIpc.writeRoleSidecar), FORA do repositório do usuário. O
+// isSafeNodeId é o mesmo guard anti-traversal de lá: o id vem do espelho do renderer, e ele é
+// componente de caminho. Leitura tolerante (arquivo ausente/ilegível → null, o servidor cai no
+// papel do espelho); escrita devolve se gravou (false → 500, o agente não recebe "ok" à toa).
+function roleSidecarPath(nodeId: string): string {
+  return join(homedir(), '.orkestra', 'agents', nodeId, 'role.json')
+}
+
 const orchestration = new OrchestrationServer({
   getMirror: () => mirror,
+  readRoleSidecar: (nodeId) => {
+    if (!isSafeNodeId(nodeId)) return null
+    try {
+      return readFileSync(roleSidecarPath(nodeId), 'utf-8')
+    } catch {
+      return null
+    }
+  },
+  writeRoleSidecar: (nodeId, json) => {
+    if (!isSafeNodeId(nodeId)) return false
+    try {
+      mkdirSync(join(homedir(), '.orkestra', 'agents', nodeId), { recursive: true })
+      writeFileSync(roleSidecarPath(nodeId), json, 'utf-8')
+      return true
+    } catch {
+      return false
+    }
+  },
   // O comando segue carimbado com o projeto ativo NO MOMENTO do relay: o renderer só aplica se
   // ainda estiver exibindo esse projeto (useOrchestrationSync) — cobre a janela de ms no meio de
   // uma troca em que o main já apontou para o projeto novo e o canvas antigo ainda está na tela.
@@ -432,6 +463,11 @@ app.whenReady().then(async () => {
   // Onda 2 (SSH Trilha B): handler ssh:scpDrop (spawn scp sem shell) para arrastar arquivo local
   // → terminal remoto. buildScpDrop valida host (isValidSshHost) e sanitiza o basename.
   registerSshIpc(ipcMain)
+  // T5 ("Descobrir Responsabilidades"): handlers roles:discover/roles:import — varrem os sidecars
+  // ~/.orkestra/agents/*/role.json (varredura limitada, degradação em falha de I/O) e mantêm o
+  // registro de papéis importados (~/.orkestra/roles.json) que o pty:spawn consulta para injetar o
+  // prompt de um papel que não é preset. Sem estado próprio (tudo em disco).
+  registerRolesIpc(ipcMain)
   // O `orq` + o wrapper `claude` (com onboarding) são instalados de forma SÍNCRONA e o PATH/
   // REAL_PATH entram no env ANTES de criar a janela. Assim os terminais HIDRATADOS — que spawnam
   // durante a hidratação do renderer, logo dentro de createWindow() — já nascem com o binDir no PATH
