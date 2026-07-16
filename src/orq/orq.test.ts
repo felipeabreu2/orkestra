@@ -441,6 +441,35 @@ describe('runOrq', () => {
     expect(out).toContain('#enviar')
   })
 
+  it('portal snapshot --dom ANTES do nome do portal também funciona (flag em qualquer posição)', async () => {
+    const getPortalState = vi
+      .fn()
+      .mockReturnValue({ url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' })
+    const env = await startServer({ nodes: [] }, [], { getPortalState })
+    const { code, out } = await runOrq(['portal', 'snapshot', '--dom', 'P'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('#enviar')
+    expect(getPortalState).toHaveBeenCalledWith('P')
+  })
+
+  it('portal snapshot --html é sinônimo de --dom, antes ou depois do nome', async () => {
+    const state = { url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' }
+
+    const depois = vi.fn().mockReturnValue(state)
+    const envDepois = await startServer({ nodes: [] }, [], { getPortalState: depois })
+    const r1 = await runOrq(['portal', 'snapshot', 'P', '--html'], envDepois)
+    expect(r1.code).toBe(0)
+    expect(r1.out).toContain('#enviar')
+    expect(depois).toHaveBeenCalledWith('P')
+
+    const antes = vi.fn().mockReturnValue(state)
+    const envAntes = await startServer({ nodes: [] }, [], { getPortalState: antes })
+    const r2 = await runOrq(['portal', 'snapshot', '--html', 'P'], envAntes)
+    expect(r2.code).toBe(0)
+    expect(r2.out).toContain('#enviar')
+    expect(antes).toHaveBeenCalledWith('P')
+  })
+
   it('portal snapshot sem --dom não inclui o dom (retrocompat)', async () => {
     const getPortalState = vi
       .fn()

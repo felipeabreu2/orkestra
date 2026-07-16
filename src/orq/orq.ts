@@ -308,11 +308,15 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
       if (sub === 'snapshot') {
-        // T4: --dom (aceito em qualquer posição, como o --wait do ask) pede a seção de elementos
-        // interativos (seletores utilizáveis direto em click/fill). Sem a flag, saída inalterada
-        // (só url/title/text) — retrocompat.
-        const dom = args.includes('--dom') || args.includes('--html')
-        const res = await fetch(`${base}/portal?name=${encodeURIComponent(target ?? '')}`, { headers })
+        // T4: --dom/--html (aceito em QUALQUER posição, como o --wait do ask) pede a seção de
+        // elementos interativos (seletores utilizáveis direto em click/fill). Pelo mesmo motivo do
+        // ask, a flag é filtrada de TODAS as palavras após a ação (`rest`) ANTES de separar o nome
+        // do portal — usar `target`/`args` (desestruturados posicionalmente acima) trataria "--dom"
+        // como o próprio nome do portal quando ele viesse logo após "snapshot". Sem a flag, a saída
+        // fica inalterada (só url/title/text) — retrocompat.
+        const dom = rest.includes('--dom') || rest.includes('--html')
+        const [name] = rest.filter((w) => w !== '--dom' && w !== '--html')
+        const res = await fetch(`${base}/portal?name=${encodeURIComponent(name ?? '')}`, { headers })
         if (!res.ok) return { code: 1, out: errOut(res) }
         const data = (await res.json()) as { url: string; title: string; text: string; dom?: string }
         let out = `url: ${data.url}\ntitle: ${data.title}\ntext: ${data.text}`
