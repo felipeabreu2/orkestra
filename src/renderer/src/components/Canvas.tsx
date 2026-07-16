@@ -33,6 +33,8 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
+import { readDroppedPaths } from '../terminal/dropPaths'
+import { isPathDrop, isDropOnNode, fileNodeDropPositions } from './canvasDrop'
 
 // REN-3 (auditoria 2026-07-14): cada nó renderiza dentro do seu próprio ErrorBoundary. Um
 // data.scene do Excalidraw (DrawNode) ou html do TipTap (NoteNode) corrompido faz o componente
@@ -523,6 +525,34 @@ export function Canvas(): JSX.Element {
         maxZoom={2}
         snapToGrid
         snapGrid={[20, 20]}
+        // T6 (árvore → canvas): soltar uma linha de arquivo da árvore em área VAZIA cria um
+        // FileNode ali. O React Flow repassa props de div desconhecidas para o seu wrapper, que
+        // é onde o drop borbulha — por isso os handlers vivem aqui e não num <div> extra.
+        //
+        // Não roubar o drop da T2: o TerminalNode escuta `drop` no PRÓPRIO elemento (listener
+        // nativo, sem stopPropagation) para escrever o caminho no pty, então o mesmo evento
+        // CHEGA aqui em seguida. Sem guard, um drop no terminal escreveria no pty E criaria um
+        // FileNode por baixo. isDropOnNode desambigua pelo alvo do evento (é o que o plano pede)
+        // — mais robusto que ler defaultPrevented, porque App.tsx já dá preventDefault global no
+        // drop (anti-navegação p/ file://), o que tornaria esse flag sempre ambíguo.
+        onDragOver={(e) => {
+          if (!isPathDrop(e.dataTransfer.types)) return
+          if (isDropOnNode(e.target as Element)) return // o nó (ex.: terminal) trata o seu drop
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }}
+        onDrop={(e) => {
+          if (!isPathDrop(e.dataTransfer.types)) return
+          if (isDropOnNode(e.target as Element)) return
+          e.preventDefault()
+          // Sem resolveFile: aqui só tratamos o payload interno (isPathDrop já garantiu), que
+          // traz o caminho absoluto pronto — o ramo de File externo do readDroppedPaths não roda.
+          const paths = readDroppedPaths(e.dataTransfer)
+          if (paths.length === 0) return
+          const origin = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+          const positions = fileNodeDropPositions(origin, paths.length)
+          paths.forEach((path, i) => addFileNode(positions[i], { path }))
+        }}
         // R4: botão direito no vazio abre o menu de "criar aqui" (posição convertida pro canvas);
         // no nó, o menu de ações do nó. onMoveStart fecha o menu ao começar um pan/zoom.
         onPaneContextMenu={(e) => {

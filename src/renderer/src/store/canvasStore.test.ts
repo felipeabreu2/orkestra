@@ -1199,6 +1199,30 @@ describe('nó de arquivo', () => {
     expect((n.data as { path?: string }).path).toBe('/a/b/nota.md')
     expect((n.data as { name?: string }).name).toBe('nota.md')
   })
+
+  // T6 (arrastar árvore → canvas): o nó nasce na posição do drop e o `path` precisa sobreviver
+  // ao round-trip serialize→hydrate — um FileNode reidratado sem data.path renderiza vazio (o
+  // FileNode só chama filetree.read se tiver d.path). serialize é genérico sobre `data`, mas o
+  // teste trava a regressão: basta alguém entrar na lista de `delete rest.*` para o clip morrer.
+  it('addFileNode respeita a posição pedida (o ponto do drop, sem cascata)', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addFileNode({ x: 317, y: 42 }, { path: '/a/b.ts' })
+    expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 317, y: 42 })
+  })
+
+  it('o path do FileNode sobrevive ao round-trip serialize → hydrate', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addFileNode({ x: 10, y: 20 }, { path: '/proj/src/main.ts' })
+    const snapshot = useCanvasStore.getState().serialize()
+    expect(snapshot.nodes[0].data).toMatchObject({ path: '/proj/src/main.ts', name: 'main.ts' })
+
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().hydrate(snapshot, 'p1')
+    const n = useCanvasStore.getState().nodes[0]
+    expect(n.type).toBe('file')
+    expect((n.data as { path?: string }).path).toBe('/proj/src/main.ts')
+    expect(n.position).toEqual({ x: 10, y: 20 })
+  })
 })
 
 // Fix de corrupção cross-project (2026-07-14): o hydrate passou a carregar também o ID do projeto
