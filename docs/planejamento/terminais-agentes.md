@@ -105,60 +105,65 @@ citados na análise conferem com o código real.
 
 ---
 
-### T2 — Injeção do papel no arranque do agente  [P1 · M/L · Onda 2]
+### T2 — Injeção do papel no arranque do agente  [P1 · M/L · Onda 2]  ✅ IMPLEMENTADO (estratégia C)
 
-Decisão de arquitetura (documentar no PR). Duas estratégias, com um **helper puro** comum e testável:
+> **⚠️ ESTE PLANO FOI CORRIGIDO APÓS AUDITORIA (2026-07-16).** As estratégias (A) e (B) descritas
+> originalmente foram **descartadas**; o que está no código é a estratégia **(C)**, abaixo. O texto
+> antigo prescrevia apontar o `cwd` do PTY para um subdiretório — isso foi implementado, chegou a
+> `main` e causou um **bug P0**: o agente com papel arrancava num diretório contendo apenas o
+> `CLAUDE.md`, **sem o código do usuário**, ficando efetivamente cego. Não reintroduza.
 
-- **(A) Sidecar/arquivo de contexto (recomendada, fiel ao Maestri, sem custo de tokens):** o main
-  grava um arquivo de instruções (`CLAUDE.md`/`AGENTS.md`) num **subdiretório de trabalho do
-  terminal** (ex.: `<cwd>/.orkestra/agents/<nodeId>/`) e aponta o `cwd` do PTY para lá; o Claude
-  Code/Codex lê o arquivo no startup — **abrir o CLI não gasta tokens**.
-- **(B) Prompt digitado (pragmática, funciona em qualquer CLI):** após o CLI abrir, digitar
-  `buildRolePrompt(role)` como 1ª mensagem. **Consome tokens** e polui o histórico — aceitável só
-  como fallback para presets sem suporte a arquivo de contexto.
+- **(C) Env var + wrapper `claude` (IMPLEMENTADA):** o main passa o papel ao PTY como
+  `ORKESTRA_ROLE` (junto de `ORKESTRA_NODE_ID`/`ORKESTRA_PROJECT_ID`), e o wrapper `claude`
+  (`installOrq.ts`) o concatena ao onboarding num único `--append-system-prompt`. **O `cwd` do PTY
+  é SEMPRE a raiz do projeto** — hoje é `const` em `registerPtyIpc.ts`, tornando a reatribuição
+  estruturalmente impossível. Nenhum arquivo é escrito no repo do usuário. Sem custo de tokens
+  (o papel entra no system prompt, não no histórico).
+- **(A) Sidecar/arquivo de contexto — DESCARTADA.** Exigia mudar o `cwd`, o que cega o agente
+  (Claude Code limita o acesso a arquivos ao `cwd`). Escrever o arquivo sem mudar o `cwd` não
+  resolve: o CLI lê o `CLAUDE.md` do `cwd` **para cima**, nunca de um subdiretório.
+- **(B) Prompt digitado — DESCARTADA.** Consome tokens e polui o histórico; (C) entrega o mesmo
+  resultado de graça. O helper `planRoleInjection` e o variante `{kind:'type'}` foram **removidos**
+  junto com `roleInjection.ts` — eram código morto após (C).
 
-- **Arquivos a tocar:**
-  - `src/shared/roleInjection.ts` ((novo)) — helper puro que decide **como** injetar.
-  - `src/shared/roleInjection.test.ts` ((novo))
-  - `src/main/pty/registerPtyIpc.ts` — allowlist `role` + materialização do arquivo/`cwd` (estratégia A).
-  - `src/renderer/src/components/TerminalNode.tsx` — propagar `role` ao `spawnOpts`.
-  - `src/renderer/src/components/TerminalFlowNode.tsx` — passar `role` como prop ao `TerminalNode`.
-- **Passos TDD:**
-  1. **Teste que falha** (`roleInjection.test.ts`): um helper puro
-     `planRoleInjection({ preset, role }): { kind: 'none' } | { kind: 'file'; filename: string; content: string } | { kind: 'type'; text: string }`.
-     Casos concretos:
-     - `planRoleInjection({ preset: 'shell', role: 'dev' })` → `{ kind: 'none' }` (shell não é agente).
-     - `planRoleInjection({ preset: 'claude', role: '' })` → `{ kind: 'none' }` (sem papel).
-     - `planRoleInjection({ preset: 'claude', role: 'dev' })` → `{ kind: 'file', filename: 'CLAUDE.md', content: <contém buildRolePrompt('dev')> }`.
-     - `planRoleInjection({ preset: 'gemini', role: 'revisor' })` → `{ kind: 'file', filename: 'AGENTS.md', … }` (mapa preset→arquivo).
-     - `content` **=== `buildRolePrompt(role)`** (reuso do builder de T1, sem reimplementar).
-  2. **Implementação:**
-     - `planRoleInjection` (puro) usando `buildRolePrompt`; mapa `preset → filename` (`claude→CLAUDE.md`, `codex/gemini→AGENTS.md`); `shell`/papel vazio/`prompt` vazio → `none`.
-     - Renderer: `TerminalFlowNode` passa `role` a `<TerminalNode … role={role} />`; `TerminalNode` inclui `role` em `spawnOpts` (junto de `preset`, para o main decidir a injeção).
-     - Main (`registerPtyIpc`): adicionar `role` (string validada — `typeof === 'string'`, comprimento máximo) ao **allowlist** do destructure; ao spawnar um preset de agente com `role`, chamar `planRoleInjection`; se `kind==='file'`, criar o subdir `<cwd>/.orkestra/agents/<nodeId>/`, escrever o arquivo, e passar esse subdir como `cwd` ao `PtyManager.spawn`. Estratégia (B) fica como fallback documentado.
-  3. **Verde:** `npx vitest run src/shared/roleInjection.test.ts` (unit do helper). A **fiação** PTY/IPC não tem teste unitário direto → **checklist manual** abaixo.
-- **Critérios de aceite:**
-  - Unit do `planRoleInjection` verde; `role` no allowlist do `pty:spawn` **por destructure** (nunca `{ ...o }`).
-  - **Checklist manual (`npm run dev`):**
-    - Criar terminal preset **Claude** com papel **Revisor** → existe `<cwd>/.orkestra/agents/<nodeId>/CLAUDE.md` com as instruções; o agente inicia já ciente do papel.
-    - Terminal **Shell** ou **sem papel** → **nenhum** arquivo criado, `cwd` inalterado.
-    - Trocar o papel via Command Palette e reabrir → o arquivo reflete o novo papel.
-    - Nenhum arquivo é escrito na raiz do projeto do usuário (só no subdir `.orkestra/agents/`).
+**Limitação conhecida:** `codex`/`gemini` não têm wrapper, então **não recebem injeção de papel**
+hoje. `ORKESTRA_ROLE` já vai no env deles — o follow-up é um wrapper espelhando o do `claude`.
+
+- **Arquivos tocados (estado real):**
+  - `src/shared/rolePrompt.ts` — `buildRolePrompt` (T1), fonte única do texto do papel.
+  - `src/main/pty/registerPtyIpc.ts` — allowlist `role` por destructure + `ORKESTRA_ROLE` no env; `cwd` é `const`.
+  - `src/main/orchestration/installOrq.ts` — `CLAUDE_WRAPPER` concatena onboarding + papel num `--append-system-prompt`.
+  - `src/renderer/src/components/TerminalNode.tsx` / `TerminalFlowNode.tsx` — propagam `role` ao `spawnOpts`.
+- **Critérios de aceite (todos verdes):**
+  - `role` no allowlist do `pty:spawn` **por destructure** (nunca `{ ...o }`), validado por tipo e cortado em `MAX_ROLE_LEN`.
+  - **O `cwd` do agente com papel é a raiz do projeto** — teste de regressão dedicado. Este é o critério que o bug P0 violava.
+  - O papel chega ao CLI via `ORKESTRA_ROLE` + wrapper — testado.
+  - **Escape no wrapper:** papel contendo `"`, `$(…)`, `;` ou backtick **não** vira execução de comando. O teste executa o wrapper via `sh` contra um `claude` falso que despeja o argv (não é grep de texto) e foi mutation-checked contra uma variante com `eval`.
+  - Nenhum arquivo escrito no repo do usuário.
   - `npm run typecheck` e `npm run lint` limpos.
 - **Notas / riscos:**
-  - **Segurança:** `role` do renderer é string livre → validar tamanho e nunca usar em caminho de shell; o subdir usa `nodeId` (gerado internamente), não o texto do papel.
-  - **`.gitignore`:** o subdir `.orkestra/agents/` não deve sujar o repo do usuário — adicionar sugestão de ignore (ou usar diretório fora do repo). Decidir no PR.
-  - **Mudança de `cwd`:** apontar o agente para um subdir altera onde ele opera (paths relativos). Avaliar se o Claude Code respeita `CLAUDE.md` de um subdir vs. raiz; se não, cair na estratégia (B) para esse preset.
-  - **Idempotência:** re-attach (troca de projeto) **não** reescreve o arquivo (o PTY sobrevive; a escrita só ocorre no spawn NOVO).
+  - **Segurança:** `role` é string livre do renderer → validar tamanho; no wrapper, `$ORKESTRA_ROLE` só aparece **dentro de aspas duplas** (sh expande mas não reinterpreta: sem word splitting, sem substituição de comando, sem glob). Nunca `eval`/`sh -c`.
+  - **Env herdado:** `ORKESTRA_ROLE` usa o idioma `|| undefined`, como `ORKESTRA_NODE_ID`, para apagar valor herdado num dev aninhado.
+  - **`.gitignore`:** **resolvido** — como (C) não escreve nada no repo, o problema deixou de existir. (O código antigo chegou a deixar `.orkestra/agents/<nodeId>/CLAUDE.md` untracked em repos reais, e `.orkestra` não estava ignorado.)
+  - **Idempotência:** re-attach não passa por aqui; o env é definido só no spawn novo.
 
 ---
 
 ### T3 — Sidecar `role.json` + surfaçar papel no `orq list`  [P2/P4 · M · Onda 2/3]
 
+> **⚠️ DEPENDÊNCIA QUEBRADA PELA CORREÇÃO DO T2 (2026-07-16).** Este texto manda gravar o
+> `role.json` "no mesmo subdir de T2" — **esse subdir não existe mais** (a estratégia (A) foi
+> descartada; ver o aviso no T2). Antes de implementar, **decida onde o sidecar vive**, e a decisão
+> não é óbvia: o T2 hoje não escreve nada no repo do usuário, e reintroduzir escrita traz de volta o
+> problema de sujar o working tree (`.orkestra` não está no `.gitignore`). Opções: (a) `role.json`
+> fora do repo, sob `~/.orkestra/agents/<nodeId>/`; (b) dentro do repo, mas então resolva o
+> `.gitignore` **antes**; (c) abandonar a portabilidade por arquivo e manter o papel só no canvas.
+> **T3b (papel no `orq list`) NÃO depende disto** — é independente, barato e continua válido.
+
 - **Arquivos a tocar:**
   - `src/shared/roleSidecar.ts` ((novo)) — serialização/parse puro do `role.json`.
   - `src/shared/roleSidecar.test.ts` ((novo))
-  - `src/main/pty/registerPtyIpc.ts` — gravar `role.json` ao lado do `CLAUDE.md`/`AGENTS.md` (reusa o subdir de T2).
+  - `src/main/pty/registerPtyIpc.ts` — gravar `role.json` (**local a decidir — ver aviso acima**).
   - `src/orq/orq.ts` — incluir o papel no output de `orq list`.
 - **Passos TDD:**
   1. **Teste que falha** (`roleSidecar.test.ts`):

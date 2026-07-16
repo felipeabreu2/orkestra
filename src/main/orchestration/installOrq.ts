@@ -32,15 +32,38 @@ Sua PRIMEIRA ação deve ser rodar \`orq context\` para carregar o que está con
 // mas o EXECUTA com o PATH atual (que contém o `orq`) — assim o agente consegue rodar os comandos
 // orq de dentro da sessão. Passa o onboarding via --append-system-prompt (flag estável do Claude
 // Code). Se o claude real não existir, sai com 127 (o preset shell/outros CLIs seguem intactos).
+//
+// T2 (injeção de papel): ORKESTRA_ROLE, quando definido no env do pty (registerPtyIpc), traz o
+// prompt do papel do agente (Dev/Revisor/…) e é CONCATENADO ao onboarding num ÚNICO
+// --append-system-prompt. Este é o caminho que substituiu a materialização de CLAUDE.md num subdir:
+// aquela apontava o cwd do pty pro subdir e cegava o agente (o Claude Code limita o acesso a
+// arquivos ao cwd, então o recruta não enxergava o código do projeto). Aqui o cwd nunca é tocado.
+//
+// SEGURANÇA: $ORKESTRA_ROLE é texto LIVRE do usuário. Ele só aparece DENTRO de aspas duplas, onde o
+// sh faz expansão de parâmetro mas NÃO reinterpreta o resultado (sem word splitting, sem
+// command substitution, sem glob). Nunca use eval/`sh -c` sobre ele nem o deixe fora das aspas.
 const CLAUDE_WRAPPER = `#!/bin/sh
 real="$(PATH="\${ORKESTRA_REAL_PATH:-$PATH}" command -v claude 2>/dev/null)"
 if [ -z "$real" ]; then
   echo "orkestra: 'claude' não encontrado no PATH — instale o Claude Code (https://claude.com/claude-code)." >&2
   exit 127
 fi
+prompt=""
 onboard="$HOME/.orkestra/onboarding.txt"
 if [ -f "$onboard" ]; then
-  exec "$real" --append-system-prompt "$(cat "$onboard")" "$@"
+  prompt="$(cat "$onboard")"
+fi
+if [ -n "\${ORKESTRA_ROLE:-}" ]; then
+  if [ -n "$prompt" ]; then
+    prompt="$prompt
+
+$ORKESTRA_ROLE"
+  else
+    prompt="$ORKESTRA_ROLE"
+  fi
+fi
+if [ -n "$prompt" ]; then
+  exec "$real" --append-system-prompt "$prompt" "$@"
 else
   exec "$real" "$@"
 fi

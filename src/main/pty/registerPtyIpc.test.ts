@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registerPtyIpc } from './registerPtyIpc'
@@ -277,11 +277,13 @@ describe('registerPtyIpc', () => {
     expect(call[2].cwd).toBe(process.env.HOME ?? process.cwd())
   })
 
-  // T2 (injeção de papel): um preset de agente com papel materializa o arquivo de contexto
-  // (CLAUDE.md/AGENTS.md) num subdir isolado por nodeId e aponta o cwd do pty pra lá — o CLI lê
-  // o papel no startup sem gastar tokens. role/preset entram por allowlist (destructure), nunca
-  // via { ...o }.
-  it('pty:spawn com preset agente + papel grava o arquivo de contexto e aponta o cwd pro subdir', async () => {
+  // T2 (injeção de papel) — REGRA INEGOCIÁVEL: o cwd do pty é SEMPRE a raiz do projeto. A versão
+  // original materializava CLAUDE.md num subdir `.orkestra/agents/<nodeId>/` e apontava o cwd pra
+  // lá; como o Claude Code limita o acesso a arquivos ao cwd, todo agente COM PAPEL nascia CEGO —
+  // via o CLAUDE.md gerado e mais nada, nem o código do usuário. O papel agora viaja por
+  // ORKESTRA_ROLE no env e é injetado pelo wrapper `claude` (installOrq), que já faz o mesmo com o
+  // onboarding. role/preset entram por allowlist (destructure), nunca via { ...o }.
+  it('pty:spawn com preset agente + papel mantém o cwd na RAIZ do projeto (não cega o agente)', async () => {
     const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
     const ipc = fakeIpcMain()
@@ -294,18 +296,52 @@ describe('registerPtyIpc', () => {
         nodeId: 'terminal-abc123',
         cwd: base
       })
-      const expectedDir = join(base, '.orkestra', 'agents', 'terminal-abc123')
       const call = spawner.mock.calls[0]
-      expect(call[2].cwd).toBe(expectedDir)
-      const file = join(expectedDir, 'CLAUDE.md')
-      expect(existsSync(file)).toBe(true)
-      expect(readFileSync(file, 'utf8')).toBe(buildRolePrompt('dev'))
+      expect(call[2].cwd).toBe(base)
+      // e nada de subdir de contexto: o papel não passa mais por arquivo.
+      expect(existsSync(join(base, '.orkestra'))).toBe(false)
     } finally {
       rmSync(base, { recursive: true, force: true })
     }
   })
 
-  it('pty:spawn shell (ou sem papel) não escreve arquivo nem muda o cwd', async () => {
+  it('pty:spawn com papel passa o prompt de papel no env (ORKESTRA_ROLE) para o wrapper injetar', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+
+    const base = mkdtempSync(join(tmpdir(), 'ork-role-'))
+    try {
+      await ipc.handlers.get('pty:spawn')!({}, {
+        preset: 'claude',
+        role: 'dev',
+        nodeId: 'terminal-abc123',
+        cwd: base
+      })
+      expect(spawner.mock.calls[0][2].env.ORKESTRA_ROLE).toBe(buildRolePrompt('dev'))
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('pty:spawn sem papel (ou papel sem prompt) APAGA ORKESTRA_ROLE herdado do process.env', async () => {
+    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+    const mgr = new PtyManager(spawner)
+    const ipc = fakeIpcMain()
+    registerPtyIpc(ipc as any, mgr, () => null)
+    const orig = process.env.ORKESTRA_ROLE
+    process.env.ORKESTRA_ROLE = 'papel-vazado-de-um-dev-aninhado'
+    try {
+      await ipc.handlers.get('pty:spawn')!({}, { preset: 'claude', nodeId: 'terminal-sem-papel' })
+      expect(spawner.mock.calls[0][2].env.ORKESTRA_ROLE).toBeUndefined()
+    } finally {
+      if (orig === undefined) delete process.env.ORKESTRA_ROLE
+      else process.env.ORKESTRA_ROLE = orig
+    }
+  })
+
+  it('pty:spawn shell com papel não escreve arquivo nem muda o cwd (papel só via env)', async () => {
     const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
     const mgr = new PtyManager(spawner)
     const ipc = fakeIpcMain()
