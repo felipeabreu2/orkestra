@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+// jsdom porque o rótulo/indexação de nota derivam o texto do `data.html` via `htmlToText`
+// (DOMParser inerte, SEC-1) — o mesmo caminho da produção.
 import { describe, it, expect, vi } from 'vitest'
 import { buildPaletteItems, nodeLabel, type PaletteActions } from './paletteCommands'
 
@@ -25,6 +28,22 @@ describe('nodeLabel', () => {
   it('usa o nome do terminal, senão o tipo', () => {
     expect(nodeLabel({ id: 't1', type: 'terminal', data: { name: 'Dev' } })).toBe('Dev')
     expect(nodeLabel({ id: 'n1', type: 'note', data: {} })).toContain('Nota')
+  })
+
+  // A nota real guarda o corpo em `data.html` (TipTap) — nunca em `data.content`. O rótulo tem que
+  // mostrar a prévia a partir do html, senão TODA nota aparece como "Nota" sem prévia.
+  it('nota: prévia derivada do data.html (shape real de produção)', () => {
+    expect(nodeLabel({ id: 'n1', type: 'note', data: { html: '<p>Plano de deploy</p>', color: undefined } })).toBe(
+      'Nota: Plano de deploy'
+    )
+  })
+
+  it('nota: cai em data.content quando não há html (nota legada)', () => {
+    expect(nodeLabel({ id: 'n1', type: 'note', data: { content: 'legado' } })).toBe('Nota: legado')
+  })
+
+  it('nota: nota vazia (html: "") continua "Nota"', () => {
+    expect(nodeLabel({ id: 'n1', type: 'note', data: { html: '', color: undefined } })).toBe('Nota')
   })
 })
 
@@ -160,7 +179,7 @@ describe('buildPaletteItems', () => {
   })
 
   it('nó não-terminal selecionado não oferece renomear/definir papel', () => {
-    const note = { id: 'n1', type: 'note', data: { content: 'oi' }, selected: true }
+    const note = { id: 'n1', type: 'note', data: { html: '<p>oi</p>', color: undefined }, selected: true }
     const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [note], actions: noopActions() })
     expect(items.some((i) => i.id.startsWith('ctx:rename:'))).toBe(false)
     expect(items.some((i) => i.id.startsWith('ctx:role:'))).toBe(false)
@@ -191,10 +210,14 @@ describe('buildPaletteItems', () => {
 
   // T2: o item de navegação de uma nota carrega o corpo INTEIRO em searchText (para a busca
   // fuzzy indexar o conteúdo), mantendo o label curto (truncado por nodeLabel).
+  //
+  // O shape é o REAL: `data.html` (o que addNoteNode/updateNoteHtml produzem). O teste antigo
+  // fabricava `data.content`, um shape que a produção nunca gera — ficava verde enquanto a busca
+  // pelo corpo estava quebrada para toda nota de verdade.
   it('item node de nota indexa o corpo inteiro em searchText (label segue truncado)', () => {
     const content =
       'reunião sobre kubernetes e deploy contínuo — precisamos revisar o pipeline de CI e os manifests do cluster de produção'
-    const note = { id: 'n1', type: 'note', data: { content } }
+    const note = { id: 'n1', type: 'note', data: { html: `<p>${content}</p>`, color: undefined } }
     const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [], actions: noopActions() })
     const item = items.find((i) => i.id === 'node:n1')
     expect(item?.label.startsWith('Nota: ')).toBe(true)
@@ -202,6 +225,13 @@ describe('buildPaletteItems', () => {
     expect(item?.searchText).toContain('kubernetes')
     expect(item?.searchText).toContain('produção')
     expect(item?.searchText).toBe(content)
+  })
+
+  // Retrocompat: nota antiga (pré-TipTap) ainda indexa pelo `data.content`.
+  it('item node de nota legada (data.content) ainda indexa o corpo', () => {
+    const note = { id: 'n1', type: 'note', data: { content: 'anotação legada sobre kubernetes' } }
+    const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [], actions: noopActions() })
+    expect(items.find((i) => i.id === 'node:n1')?.searchText).toBe('anotação legada sobre kubernetes')
   })
 
   // T2: tipos que não são nota não recebem searchText (só notas indexam corpo).

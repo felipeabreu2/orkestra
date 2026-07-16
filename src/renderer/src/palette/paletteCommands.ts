@@ -1,4 +1,5 @@
 import { nextEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
+import { noteText } from '../notes/noteText'
 
 export interface PaletteItem {
   id: string
@@ -59,7 +60,9 @@ export function nodeLabel(n: PaletteNode): string {
   if (n.type === 'terminal') return (n.data?.name as string) || 'Terminal'
   if (n.type === 'portal') return (n.data?.name as string) || 'Portal'
   if (n.type === 'note') {
-    const c = ((n.data?.content as string) || '').trim().replace(/\s+/g, ' ')
+    // O corpo real da nota vive em `data.html` (TipTap) — `noteText` centraliza a extração (e o
+    // fallback para o `data.content` das notas antigas).
+    const c = noteText(n.data).replace(/\s+/g, ' ').trim()
     return c ? `Nota: ${c.slice(0, 24)}` : 'Nota'
   }
   if (n.type === 'filetree') return 'Arquivos'
@@ -168,7 +171,7 @@ export function buildPaletteItems(ctx: PaletteContext): PaletteItem[] {
     const item: PaletteItem = { id: `node:${n.id}`, label: nodeLabel(n), kind: 'node', run: () => actions.focusNode(n.id) }
     // T2: notas indexam o corpo inteiro em `searchText` (o `label` continua truncado por nodeLabel).
     if (n.type === 'note') {
-      item.searchText = ((n.data?.content as string) || '').trim()
+      item.searchText = noteText(n.data)
     }
     items.push(item)
   }

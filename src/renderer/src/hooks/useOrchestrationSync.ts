@@ -8,6 +8,8 @@ import { isSafePortalUrl } from '../../../shared/portalUrl'
 import { getPortal, notifyPortalDriving } from '../portalRegistry'
 import { markdownToHtml } from '../markdown/markdownToHtml'
 import { htmlToText } from '../context/contextBlock'
+import { deriveNoteName } from '../notes/noteName'
+import { resolveNoteTarget } from '../notes/noteTarget'
 
 // Resolve um portal pelo nome atual no espelho local do canvas -> node.id -> webview (via o
 // registry que o PortalNode popula ao montar). Mesmo padrão nome->nó->recurso usado no main para
@@ -78,8 +80,11 @@ export function buildMirror(nodes: Node[], edges: Edge[]): CanvasMirror {
       id: n.id,
       type: n.type ?? 'terminal',
       name: (n.type === 'note'
-        ? // Notas #10: nome personalizado (data.name) vence; sem ele, a 1ª linha do conteúdo.
-          (n.data?.name as string)?.trim() || htmlToText((n.data?.html as string) ?? '') || 'Nota'
+        ? // Notas #10: nome personalizado (data.name) vence; sem ele, a 1ª linha do conteúdo. A
+          // regra vive só em deriveNoteName (notes/noteName.ts) — nada de reimplementar inline
+          // aqui, senão o helper testado e o `orq list` divergem (era o caso: o inline mandava o
+          // texto INTEIRO truncado, o helper corta na 1ª linha).
+          deriveNoteName({ name: n.data?.name as string | undefined, html: n.data?.html as string | undefined })
         : (n.data?.name as string) ?? (n.data?.content as string) ?? n.type ?? 'nó'
       ).slice(0, 40),
       // content = conteúdo LEGÍVEL do bloco, para `orq context` entregar ao agente: texto da nota
@@ -148,15 +153,11 @@ export function useOrchestrationSync(): void {
       if (projectId != null && store.activeProjectId != null && projectId !== store.activeProjectId) return
       if (cmd.type === 'updateNote') {
         const notes = store.nodes.filter((n) => n.type === 'note')
-        // Alvo: por id/nome explícito; senão a nota ligada à SAÍDA do terminal `from` (edge
-        // from→nota); senão a primeira nota (retrocompat). A nota agora é TipTap (html): converte o
-        // markdown que o agente escreveu.
-        const wanted = cmd.target?.toLowerCase().trim()
-        let target = wanted
-          ? notes.find(
-              (n) => n.id === cmd.target || htmlToText((n.data?.html as string) ?? '').toLowerCase().startsWith(wanted)
-            )
-          : undefined
+        // Alvo: por id/nome explícito (resolveNoteTarget — id → data.name exato → prefixo do
+        // texto, ordem determinística, Notas §5); senão a nota ligada à SAÍDA do terminal `from`
+        // (edge from→nota); senão a primeira nota (retrocompat). A nota agora é TipTap (html):
+        // converte o markdown que o agente escreveu.
+        let target = resolveNoteTarget(notes, cmd.target)
         if (!target && cmd.from) {
           const edge = store.edges.find((e) => e.source === cmd.from && notes.some((n) => n.id === e.target))
           target = edge ? notes.find((n) => n.id === edge.target) : undefined
