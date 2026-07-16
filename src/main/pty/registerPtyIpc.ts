@@ -108,10 +108,13 @@ export function registerPtyIpc(
     // ORKESTRA_PROJECT_ID: projeto dono deste terminal (ver comentário em getProjectId acima).
     const baseEnv = getEnv()
     const projectId = getProjectId?.()
+    // Sempre define as duas chaves — `undefined` instrui o PtyManager a APAGAR um valor herdado de
+    // process.env (dev aninhado: app iniciado de dentro de um terminal do Orkestra), evitando que
+    // um pty sem projeto/nó herde a etiqueta de outro projeto.
     const env = {
       ...baseEnv,
-      ...(nodeId ? { ORKESTRA_NODE_ID: nodeId } : {}),
-      ...(projectId ? { ORKESTRA_PROJECT_ID: projectId } : {})
+      ORKESTRA_NODE_ID: nodeId || undefined,
+      ORKESTRA_PROJECT_ID: projectId || undefined
     }
     // Auto-início do agente: chama o wrapper do Orkestra pelo CAMINHO ABSOLUTO, não pelo nome. O
     // wrapper (~/.orkestra/bin/claude) injeta o onboarding, mas o `.zshrc` do usuário costuma

@@ -35,7 +35,8 @@ export class PtyManager {
     cwd?: string
     cols?: number
     rows?: number
-    env?: Record<string, string>
+    // `undefined` num valor = apagar a variável herdada de process.env (ver filtro no spawn).
+    env?: Record<string, string | undefined>
     nodeId?: string
     // Comando de preset (ex.: "claude") a ser digitado no shell assim que ele emitir seu
     // primeiro output (rc já carregado) — ver writer one-shot logo após o registro de exit.
@@ -46,7 +47,12 @@ export class PtyManager {
     const file = opts.file ?? defaultShell()
     const pty = this.spawner(file, opts.args ?? [], {
       cwd: opts.cwd ?? process.env.HOME ?? process.cwd(),
-      env: { ...process.env, ...opts.env },
+      // Chaves com valor undefined em opts.env APAGAM a herdada de process.env (ex.: um
+      // ORKESTRA_PROJECT_ID vazado de um dev aninhado quando não há projeto ativo) — node-pty
+      // serializa `undefined` como a string "undefined", então o filtro é obrigatório.
+      env: Object.fromEntries(
+        Object.entries({ ...process.env, ...opts.env }).filter(([, v]) => v !== undefined)
+      ) as Record<string, string>,
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24
     })

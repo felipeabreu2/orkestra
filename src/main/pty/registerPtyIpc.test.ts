@@ -112,14 +112,22 @@ describe('registerPtyIpc', () => {
   })
 
   it('pty:spawn sem getProjectId (ou sem projeto ativo) não injeta ORKESTRA_PROJECT_ID', async () => {
-    const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
-    const mgr = new PtyManager(spawner)
-    const ipc = fakeIpcMain()
-    registerPtyIpc(ipc as any, mgr, () => null)
+    // Regressão: se o PRÓPRIO app foi iniciado de dentro de um terminal do Orkestra (dev aninhado),
+    // process.env traz um ORKESTRA_PROJECT_ID herdado — o pty NÃO pode vazá-lo quando não há
+    // projeto ativo, senão o orq etiqueta requests com um projeto alheio (escopo cross-project).
+    vi.stubEnv('ORKESTRA_PROJECT_ID', 'vazado-do-ambiente')
+    try {
+      const spawner = vi.fn<PtySpawner>(() => makeFakePty().pty)
+      const mgr = new PtyManager(spawner)
+      const ipc = fakeIpcMain()
+      registerPtyIpc(ipc as any, mgr, () => null)
 
-    await ipc.handlers.get('pty:spawn')!({}, {})
+      await ipc.handlers.get('pty:spawn')!({}, {})
 
-    expect(spawner.mock.calls[0][2].env.ORKESTRA_PROJECT_ID).toBeUndefined()
+      expect(spawner.mock.calls[0][2].env.ORKESTRA_PROJECT_ID).toBeUndefined()
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('pty:spawn resolve "claude" para o caminho absoluto do wrapper (ORKESTRA_BIN)', async () => {
