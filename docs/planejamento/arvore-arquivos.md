@@ -154,25 +154,37 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 
 ---
 
-### T4 — Editor de código embutido  [P3 · M · Onda 2 · §4.4] — ✅ **ENTREGUE como `textarea` (por decisão); CodeMirror → Onda 3**
+### T4 — Editor de código embutido  [P3 · M · Onda 2 → 3 · §4.4] — ✅ **ENTREGUE; CodeMirror migrado na Onda 3**
 
-**Status (2026-07-16):** entregue e fechado. O editor embutido existe, salva com segurança e destrava a T5 (citar seleção). Ele é um **`<textarea>` monospace, não o CodeMirror** — isso é uma **decisão consciente**, não uma pendência (ver "Decisão" abaixo). Não reabrir esta tarefa: o que falta virou escopo da Onda 3.
+**Status (2026-07-16, atualizado no mesmo dia):** entregue e fechado **com CodeMirror**. A história em duas etapas, porque as duas importam para quem ler depois:
 
-**O que foi entregue:**
-- `src/renderer/src/components/FileEditor.tsx` — painel de edição dentro do nó: `<textarea>` monospace, ⌘/Ctrl+S para salvar, seleção capturada no `onSelect` (sobrevive ao blur, é o que a T5 cita).
+1. Na Onda 2 o editor saiu como **`<textarea>`** — decisão consciente, com a parte difícil (persistência atômica e segurança de escrita) feita direito, e o CodeMirror adiado para a Onda 3 pela razão registrada abaixo.
+2. O usuário então **escolheu abrir a Onda 3 justamente pela Árvore**, e a migração foi feita. O `<textarea>` não existe mais.
+
+**O que foi entregue (estado atual):**
+- `src/renderer/src/editor/languageForPath.ts` — puro, **sem import de CodeMirror**: `path → LanguageId`. Fallback `plain` para extensão desconhecida, sem extensão, dotfile (`.gitignore`) e caminho degenerado. Olha só o *basename*, então `/repo/v1.2/Makefile` não vira "extensão 2".
+- `src/renderer/src/editor/cmLanguage.ts` — `LanguageId → Extension`, com `Record` exaustivo: adicionar um id sem parser vira **erro de typecheck**, não editor mudo em runtime.
+- `src/renderer/src/editor/cmTheme.ts` — tema sobre os tokens do projeto. `EditorView.theme` só injeta CSS, então usa `var(--token)` direto e claro↔escuro acompanha o flip de `data-theme` **sozinho**, sem observer e sem recriar o view (ao contrário do xterm, que pinta em canvas). Tokens `--syn-*` novos em `tokens.css` nos dois temas (paleta Xcode Default), porque os `--paper-*` são idênticos nos dois e ilegíveis no claro.
+- `src/renderer/src/components/FileEditor.tsx` — sobre `EditorView`: realce, find/replace, ir-para-linha, ⌘/Ctrl+S.
+- `src/main/filetree/FileTreeService.ts` — `write(path, content)` **atômico** (inalterado pela migração).
 - `src/main/filetree/FileTreeService.ts` — `write(path, content)` **atômico**: grava num `.orktmp`, `fsync` do handle, `rename` por cima do alvo. Espelha o padrão endurecido de `ProjectManager.writeJson` — um leitor concorrente vê o arquivo velho ou o novo inteiro, nunca metade.
 - **Guard de traversal no MAIN** (`isUnderRoot`, via `resolve` + comparação de prefixo): escrita fora da raiz do projeto é barrada no processo privilegiado, não só na UI. Binário e arquivos truncados (>256 KB) não abrem para edição.
 - `registerFileTreeIpc.ts` + `src/preload/index.ts` — handler/bridge `filetree:write`.
 
-**Decisão (2026-07-16): o `textarea` fica; o CodeMirror é Onda 3.** O `textarea` já entrega o loop que a Onda 2 prometia — ler → editar → salvar → citar seleção para o agente conectado — com a parte difícil (persistência e segurança de escrita) feita direito. O CodeMirror, **isolado**, custa ~1-2 dias (dep grande, impacto de bundle a medir) e rende só conforto de edição. Ele rende de verdade **junto** do **modo Diff**, do **git de escrita** e do **watch de filesystem** — que já são a Onda 3 ("Árvore como IDE colaborativo") e dependem do mesmo componente de edição. Fazer junto evita montar o editor duas vezes.
+**Decisão original (2026-07-16), mantida como registro:** o `textarea` entregava o loop que a Onda 2 prometia — ler → editar → salvar → citar seleção — e o CodeMirror isolado renderia só conforto, valendo mais junto do Diff/git/watch. A decisão continuou correta; o que mudou foi o usuário optar por **começar a Onda 3 pela Árvore**, o que tornou o "junto" o agora.
 
-**O que o CodeMirror trará na Onda 3** (escopo movido, não perdido):
-- realce de sintaxe por linguagem, find/replace (`@codemirror/search`), ir-para-linha (destrava a T10: busca → abrir na linha), múltiplos cursores, auto-close;
-- `src/renderer/src/editor/languageForPath.ts` **(novo)** + `.test.ts` — extensão → linguagem, puro/testável (`'a.ts'` → `'typescript'`, `'x.py'` → `'python'`, desconhecida → `'plain'`);
-- `package.json` — `codemirror` + `@codemirror/*` (state/view/commands/search/language + linguagens comuns); medir bundle (`web-perf`) antes de fechar a dep;
-- `FileEditor.tsx` troca o `textarea` pelo `EditorView` **mantendo** o contrato atual (⌘S → `filetree.write`, seleção → T5).
+**Achados da migração (registrados porque não são óbvios):**
+- **Citar seleção (T5) sobreviveu sem tocar em `quoteSelection.ts`:** `view.state.selection.main.{from,to}` são offsets de caractere no mesmo texto que `selectionStart/End` davam. A migração na verdade **removeu** um problema — sumiu o `onSelect/onMouseUp` que existia só para a seleção sobreviver ao blur (agora ela vive no `EditorState`), e `from ≤ to` já vem normalizado, coisa que o textarea podia devolver invertido.
+- **Bug real corrigido — ⌘G disparava duas ações:** o `searchKeymap` liga ⌘G a find-next, e o handler global de ⌘G do `Canvas.tsx` (agrupar) roda **antes** do guard `isTypingTarget` de propósito; o keydown do CM borbulha até `window` mesmo com `preventDefault`. Um ⌘G buscaria **e** agruparia nós. Removido só o `Mod-g` do keymap do editor; próxima/anterior seguem em F3/⇧F3 e no Enter do painel. ⌘D/⌘C/⌘V/⌘Z/Backspace estão protegidos (o `isInputDOMNode` do React Flow cobre `contenteditable`).
+- **Armadilha de teste:** `EditorState.create` dá ao parser só ~20 ms e então `takeTree()` devolve árvore **parcial** — testes de realce ficam flaky sob workers paralelos. Use `ensureSyntaxTree(state, len, 10_000)`. Não afeta produção (o CM segue o parse em idle).
+- **Bundle:** +1.102 kB no chunk principal, mas esse chunk **sai não-minificado**, então o número é fonte crua. Custo isolado do CodeMirror medido com esbuild: **605 KB minificado / 207 KB gzip**. Sendo Electron lendo do disco local, o custo é disco+parse, não rede.
+- `EditorView.lineWrapping` ligado de propósito: num nó de 300px a quebra ganha da rolagem horizontal. Reversível numa linha.
 
-**Critérios de aceite (atendidos):** abrir arquivo texto no editor, editar, salvar e ver refletido no `read`/disco; binário/>256 KB tratados com aviso; escrita fora da raiz bloqueada.
+**Já entregue pela migração:** realce por linguagem, find/replace (`@codemirror/search`) e ir-para-linha — este último **destrava a T10** (busca → abrir na linha), que antes dependia dele e por isso apontava para a Onda 3.
+
+**Critérios de aceite (atendidos):** abrir arquivo texto no editor, editar, salvar e ver refletido no `read`/disco; binário/>256 KB tratados com aviso; escrita fora da raiz bloqueada; realce, find/replace e ir-para-linha funcionando; tema seguindo os tokens em claro e escuro.
+
+**Cobertura:** o `vitest` deste projeto coleta `src/**/*.test.ts` e **não `.tsx`** — `FileEditor.tsx` não tem cobertura automática. Compensado empurrando o testável para fora dele: `languageForPath` (puro), `cmLanguage` (testado com **parser real**, nomes de nó extraídos da saída real) e `cmTheme` (um teste lê o fonte e exige que todo `var(--x)` exista em `tokens.css` — um typo lá não quebraria o runtime, só voltaria em silêncio ao tema default do CM). O resto é QA manual.
 
 **Notas / riscos:** `write` rompeu o design read-only do `FileTreeService` — por isso o guard de raiz é obrigatório e vive no main. O guard atual é **lexical pós-`resolve`**: não resolve symlinks; isso e o guard completo de mutação (criar/mover/excluir) são a Onda 3 · T13.
 

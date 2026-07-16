@@ -150,9 +150,9 @@
   word-break: break-all;
 }
 
-/* Editor embutido (Onda 2 · T4): barra de ações fixa + textarea rolável ocupando o resto do corpo.
-   Reaproveita .ork-filetree-copybtn (ghost) para os controles; o textarea é monospace, sem realce
-   de sintaxe (decisão da fase 1 — ver FileEditor.tsx). */
+/* Editor embutido (Onda 3 · T4): barra de ações fixa + CodeMirror rolável ocupando o resto do
+   corpo. Era um <textarea> monospace sem realce (Onda 2); virou EditorView com realce de sintaxe,
+   find/replace e ir-para-linha — ver FileEditor.tsx. */
 .ork-filetree-editor {
   flex: 1;
   min-height: 0;
@@ -164,6 +164,9 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  /* 4 ações (salvar/citar/buscar/linha) num nó de 300px de largura: se o usuário estreitar o nó,
+     a barra quebra em duas linhas em vez de vazar por fora do card. */
+  flex-wrap: wrap;
   gap: var(--space-1-5);
   padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--border);
@@ -206,21 +209,15 @@
   color: var(--text-3);
 }
 
-.ork-filetree-textarea {
+/* Host do EditorView (CodeMirror). Só o CONTINÊINER mora aqui: cor, fonte, cursor, seleção,
+   gutter e painéis de busca vêm do tema em editor/cmTheme.ts, escrito sobre os mesmos tokens
+   (var(--…)) — por isso claro↔escuro acompanha o app sem JS. Este bloco só resolve o layout: o
+   editor precisa de ALTURA para o próprio scroller funcionar dentro do flex do nó. */
+.ork-filetree-cm {
   flex: 1;
   min-height: 0;
-  width: 100%;
-  resize: none;
-  box-sizing: border-box;
-  border: none;
-  outline: none;
-  padding: var(--space-2);
-  background: transparent;
-  color: var(--text-1);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-  white-space: pre;
-  overflow: auto;
-  tab-size: 2;
+  overflow: hidden;
+}
+.ork-filetree-cm .cm-editor {
+  height: 100%;
 }

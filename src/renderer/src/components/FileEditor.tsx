@@ -1,17 +1,46 @@
-import { useCallback, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { EditorState, type Extension } from '@codemirror/state'
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  drawSelection,
+  rectangularSelection,
+  crosshairCursor
+} from '@codemirror/view'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { search, searchKeymap, openSearchPanel, gotoLine } from '@codemirror/search'
+import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { useCanvasStore } from '../store/canvasStore'
 import { getTerminalPty } from '../terminal/terminalRegistry'
 import { buildContextBlock } from '../context/contextBlock'
 import { resolveConnectedTerminal, selectionLineRange, quoteLabel } from './quoteSelection'
+import { languageForPath } from '../editor/languageForPath'
+import { languageExtension } from '../editor/cmLanguage'
+import { orkestraCodeMirrorTheme } from '../editor/cmTheme'
 import { Icon } from './Icon'
 
-// Onda 2 · T4/T5 — editor embutido do FileTreeNode. Deliberadamente um <textarea> monospace, NÃO
-// CodeMirror: ver o retorno da task para a justificativa (evitar dep pesada + install de rede +
-// bundle; realce de sintaxe é refinamento posterior — a fase 1 pede visualizar/EDITAR conteúdo, que
-// o textarea entrega). Duas ações: SALVAR (⌘/Ctrl+S → filetree.write atômico no main, que valida o
-// caminho sob a raiz) e CITAR A SELEÇÃO → agente conectado (escreve "[contexto — arquivo:Lx-y]\n…"
-// no pty do terminal ligado por aresta a esta árvore, sem disparar Enter). A parte pura (resolver o
-// terminal, montar o rótulo) vive em quoteSelection.ts (testada); aqui é só a UI/efeitos.
+// Onda 3 · T4 — editor embutido do FileTreeNode sobre CODEMIRROR (era um <textarea>; a troca é a
+// primeira tarefa da Onda 3, "Árvore como IDE colaborativo"). O que o CodeMirror traz: realce de
+// sintaxe por linguagem, find/replace (⌘F) e ir-para-linha (⌘⌥G, o binding do searchKeymap) —
+// este último destrava o "abrir na linha" da busca (T10).
+//
+// O CONTRATO com o resto do app é o mesmo do textarea e não pode regredir:
+//   • SALVAR (⌘/Ctrl+S) → filetree.write, que grava atômico e valida o caminho sob a raiz NO MAIN;
+//   • CITAR SELEÇÃO → escreve "[contexto — arquivo:Lx-y]\n…" no pty do terminal ligado por aresta,
+//     sem Enter de disparo;
+//   • binário/truncado não chegam aqui — o FileTreeNode só monta este componente para texto íntegro
+//     (salvar um arquivo truncado destruiria o resto).
+//
+// SELEÇÃO (o ponto de maior risco da migração): o textarea dava `selectionStart/End`; o CodeMirror
+// dá `view.state.selection.main.{from,to}`. As duas são offsets de caractere no MESMO texto, então
+// `selectionLineRange`/`quoteLabel` (puros, testados em quoteSelection.test.ts) seguem valendo sem
+// alteração — só a leitura muda. E some um problema: não precisamos mais capturar a seleção em
+// onSelect/onMouseUp para sobreviver ao blur, porque o EditorState guarda a seleção mesmo com o
+// editor desfocado (o clique no botão "citar" não a apaga).
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -27,14 +56,18 @@ interface FileEditorProps {
 }
 
 export function FileEditor({ nodeId, path, root, initialContent, onSaved }: FileEditorProps): JSX.Element {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const viewRef = useRef<EditorView | null>(null)
+
+  // Espelho reativo do doc: o CodeMirror é a fonte de verdade do texto, mas React precisa de estado
+  // para re-renderizar o rótulo do botão (salvar*/salvo). Só o comprimento do doc trafega aqui, não
+  // é um segundo editor.
   const [value, setValue] = useState(initialContent)
   // Baseline do que está EM DISCO (atualiza a cada save bem-sucedido) — dirty = value !== savedContent.
   const [savedContent, setSavedContent] = useState(initialContent)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [saveError, setSaveError] = useState('')
   const [quoteMsg, setQuoteMsg] = useState('')
-  // Seleção capturada no onSelect (sobrevive ao blur do textarea quando o botão citar recebe o clique).
-  const selRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 })
 
   const nodes = useCanvasStore((s) => s.nodes)
   const edges = useCanvasStore((s) => s.edges)
@@ -52,24 +85,39 @@ export function FileEditor({ nodeId, path, root, initialContent, onSaved }: File
   const dirty = value !== savedContent
 
   const save = useCallback(async (): Promise<void> => {
-    if (value === savedContent) return
+    // Lê o doc do EditorView, não do state do React: o atalho ⌘S dispara dentro do CodeMirror e o
+    // espelho `value` pode estar um keystroke atrás (o updateListener agenda um setState).
+    const atual = viewRef.current?.state.doc.toString() ?? value
+    if (atual === savedContent) return
     setSaveState('saving')
     setSaveError('')
     try {
-      await window.orkestra.filetree.write(path, value, root)
-      setSavedContent(value)
+      await window.orkestra.filetree.write(path, atual, root)
+      setSavedContent(atual)
       setSaveState('saved')
-      onSaved?.(value)
+      onSaved?.(atual)
     } catch (err) {
       setSaveState('error')
       setSaveError(err instanceof Error ? err.message : String(err))
     }
   }, [value, savedContent, path, root, onSaved])
 
+  // O keymap é montado UMA vez (na criação do EditorView) e capturaria a primeira versão de `save`
+  // para sempre — salvando conteúdo velho contra uma baseline velha. Este ref mantém o atalho
+  // apontando para o `save` do render atual.
+  const saveRef = useRef(save)
+  saveRef.current = save
+
   // Cita a seleção atual → escreve o bloco de contexto no pty do terminal conectado (sem Enter).
   const quote = useCallback((): void => {
-    const { start, end } = selRef.current
-    const selected = value.slice(Math.min(start, end), Math.max(start, end))
+    const view = viewRef.current
+    if (!view) return
+    const doc = view.state.doc.toString()
+    // `selection.main` = seleção primária (o CM tem múltiplos cursores; citamos a principal).
+    // `from`/`to` já vêm normalizados (from <= to), diferente do textarea, onde a seleção podia vir
+    // invertida se o usuário arrastasse para trás.
+    const { from, to } = view.state.selection.main
+    const selected = doc.slice(from, to)
     if (!selected.trim()) {
       setQuoteMsg('selecione um trecho primeiro')
       return
@@ -83,7 +131,7 @@ export function FileEditor({ nodeId, path, root, initialContent, onSaved }: File
       setQuoteMsg('o terminal conectado ainda não tem processo')
       return
     }
-    const range = selectionLineRange(value, start, end)
+    const range = selectionLineRange(doc, from, to)
     const block = buildContextBlock(quoteLabel(path, range), selected)
     if (!block) {
       setQuoteMsg('selecione um trecho primeiro')
@@ -91,19 +139,75 @@ export function FileEditor({ nodeId, path, root, initialContent, onSaved }: File
     }
     window.orkestra.pty.write(ptyId, block)
     setQuoteMsg('citação enviada ao agente')
-  }, [value, connectedTerminal, path])
+  }, [connectedTerminal, path])
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-      e.preventDefault()
-      void save()
+  // Monta o EditorView uma única vez. O FileTreeNode passa key={previewPath}, então trocar de
+  // arquivo remonta o componente — `path`/`initialContent` não mudam sob os pés deste efeito.
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+
+    const extensions: Extension[] = [
+      lineNumbers(),
+      foldGutter(),
+      highlightActiveLine(),
+      highlightActiveLineGutter(),
+      highlightSpecialChars(),
+      history(),
+      drawSelection(),
+      rectangularSelection(),
+      crosshairCursor(),
+      indentOnInput(),
+      bracketMatching(),
+      EditorState.allowMultipleSelections.of(true),
+      search({ top: true }),
+      keymap.of([
+        // ⌘S antes de tudo: o defaultKeymap não usa Mod-s, mas a prioridade explícita deixa claro
+        // que salvar nunca é sequestrado por outra extensão.
+        {
+          key: 'Mod-s',
+          preventDefault: true,
+          run: () => {
+            void saveRef.current()
+            return true
+          }
+        },
+        // ⌘F busca, ⌘⌥G ir-para-linha, ⌘D próxima ocorrência.
+        // SEM o Mod-g do searchKeymap (próxima ocorrência): ⌘G neste app é do CANVAS (agrupar), e
+        // o handler global do Canvas roda ANTES do guard isTypingTarget de propósito ("é comando,
+        // não texto"). Como o keydown do CodeMirror BORBULHA até o window mesmo com
+        // preventDefault, deixar o binding aqui faria um único ⌘G buscar a próxima ocorrência E
+        // agrupar os nós selecionados. Próxima/anterior continuam em F3/⇧F3 e no Enter do painel.
+        ...searchKeymap.filter((b) => b.key !== 'Mod-g'),
+        ...defaultKeymap,
+        ...historyKeymap,
+        ...foldKeymap,
+        indentWithTab
+      ]),
+      // Linguagem por extensão do arquivo: languageForPath (puro/testado) → languageExtension.
+      // Desconhecida → 'plain' → sem realce, e o arquivo abre igual.
+      languageExtension(languageForPath(path)),
+      orkestraCodeMirrorTheme,
+      EditorView.lineWrapping,
+      EditorView.updateListener.of((u) => {
+        if (!u.docChanged) return
+        setValue(u.state.doc.toString())
+        setSaveState((s) => (s === 'idle' ? s : 'idle'))
+        setQuoteMsg((m) => (m ? '' : m))
+      })
+    ]
+
+    const view = new EditorView({
+      state: EditorState.create({ doc: initialContent, extensions }),
+      parent: host
+    })
+    viewRef.current = view
+    return () => {
+      view.destroy()
+      viewRef.current = null
     }
-  }
-
-  const captureSelection = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
-    const el = e.currentTarget
-    selRef.current = { start: el.selectionStart, end: el.selectionEnd }
-  }
+    // deps vazias de propósito: montar uma vez. Ver o comentário acima do efeito.
+  }, [])
 
   return (
     <div className="ork-filetree-editor">
@@ -128,7 +232,36 @@ export function FileEditor({ nodeId, path, root, initialContent, onSaved }: File
           }
         >
           <Icon name="MessageSquare" size={13} animation="none" />
-          citar seleção
+          citar
+        </button>
+        {/* Busca e ir-para-linha também têm atalho (⌘F / ⌘⌥G), mas o editor vive dentro de um nó do
+            canvas: sem botão, ninguém descobre que existem. Os dois comandos precisam do editor
+            focado para agir sobre ele — daí o view.focus() antes. */}
+        <button
+          className="nodrag ork-filetree-editbtn"
+          onClick={() => {
+            const view = viewRef.current
+            if (!view) return
+            view.focus()
+            openSearchPanel(view)
+          }}
+          title="Buscar / substituir (⌘F)"
+        >
+          <Icon name="Search" size={13} animation="none" />
+          buscar
+        </button>
+        <button
+          className="nodrag ork-filetree-editbtn"
+          onClick={() => {
+            const view = viewRef.current
+            if (!view) return
+            view.focus()
+            gotoLine(view)
+          }}
+          title="Ir para a linha (⌘⌥G)"
+        >
+          <Icon name="CornerDownRight" size={13} animation="none" />
+          linha
         </button>
         <span className="ork-filetree-editor-status" aria-live="polite">
           {saveState === 'saving'
@@ -138,20 +271,9 @@ export function FileEditor({ nodeId, path, root, initialContent, onSaved }: File
               : quoteMsg || (saveState === 'saved' ? 'salvo no disco' : '')}
         </span>
       </div>
-      <textarea
-        className="nodrag nowheel ork-filetree-textarea"
-        value={value}
-        spellCheck={false}
-        onChange={(e) => {
-          setValue(e.target.value)
-          if (saveState !== 'idle') setSaveState('idle')
-          if (quoteMsg) setQuoteMsg('')
-        }}
-        onKeyDown={onKeyDown}
-        onSelect={captureSelection}
-        onKeyUp={captureSelection}
-        onMouseUp={captureSelection}
-      />
+      {/* nodrag: selecionar texto não pode arrastar o nó no canvas. nowheel: a roda rola o editor,
+          não dá zoom no canvas. Mesmo par usado pelo textarea anterior e pelo editor de notas. */}
+      <div ref={hostRef} className="nodrag nowheel ork-filetree-cm" />
     </div>
   )
 }
