@@ -918,7 +918,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         generating = new Set(generating)
         for (const rid of removed) generating.delete(rid)
       }
-      return { ...hist, nodes: applyNodeChanges(changes, state.nodes), attention, generating }
+      // Canvas #12 (T3): mesmo auto-dissolver do removeNode (× / palette), agora no caminho do
+      // React Flow (Delete/Backspace) — sem isso, apagar um filho pela tecla deixava o grupo órfão.
+      // Só num 'remove': um position/select/dimensions não pode dissolver um grupo magro que o
+      // usuário ainda está montando. Reusa o helper puro (nada de regra duplicada aqui) — ele já
+      // é idempotente e devolve a MESMA referência quando não há grupo magro.
+      const applied = applyNodeChanges(changes, state.nodes)
+      const nodes = removed.length > 0 ? dissolveThinGroups(applied) : applied
+      return { ...hist, nodes, attention, generating }
     })
   },
   onEdgesChange: (changes): void =>

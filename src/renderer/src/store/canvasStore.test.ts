@@ -1557,4 +1557,47 @@ describe('nome de nota/grupo e auto-dissolver (Notas #10 / Canvas #12)', () => {
     expect(b.parentId).toBeUndefined()
     expect(b.position).toEqual({ x: 130, y: 140 })
   })
+
+  it('onNodesChange remove auto-dissolve o grupo que ficou com 1 filho (Canvas #12 T3 — Delete/Backspace)', () => {
+    useCanvasStore.setState({
+      nodes: [
+        { id: 'g', type: 'group', position: { x: 100, y: 100 }, data: {} },
+        { id: 'a', type: 'note', position: { x: 10, y: 20 }, parentId: 'g', extent: 'parent', data: {} },
+        { id: 'b', type: 'note', position: { x: 30, y: 40 }, parentId: 'g', extent: 'parent', data: {} }
+      ] as Node[]
+    })
+    useCanvasStore.getState().onNodesChange([{ id: 'a', type: 'remove' }])
+    const nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeUndefined()
+    const b = nodes.find((n) => n.id === 'b')!
+    expect(b.parentId).toBeUndefined()
+    expect(b.extent).toBeUndefined()
+    expect(b.position).toEqual({ x: 130, y: 140 })
+  })
+
+  it('onNodesChange sem change de remove NÃO dissolve grupo magro preexistente', () => {
+    useCanvasStore.setState({
+      nodes: [
+        { id: 'g', type: 'group', position: { x: 100, y: 100 }, data: {} },
+        { id: 'a', type: 'note', position: { x: 10, y: 20 }, parentId: 'g', extent: 'parent', data: {} }
+      ] as Node[]
+    })
+    useCanvasStore
+      .getState()
+      .onNodesChange([{ id: 'a', type: 'position', position: { x: 15, y: 25 } }])
+    let nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeDefined()
+    expect(nodes.find((n) => n.id === 'a')!.parentId).toBe('g')
+
+    useCanvasStore.getState().onNodesChange([{ id: 'a', type: 'select', selected: true }])
+    nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeDefined()
+
+    useCanvasStore
+      .getState()
+      .onNodesChange([{ id: 'g', type: 'dimensions', dimensions: { width: 200, height: 200 } }])
+    nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeDefined()
+    expect(nodes.find((n) => n.id === 'a')!.parentId).toBe('g')
+  })
 })
