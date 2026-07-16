@@ -33,7 +33,7 @@ find-replace + cores nas notas; escopo de projeto fail-closed no servidor.
 | 4 | Notas | [notas.md](notas.md) | 🟡 modelo diferente | 1, 3 | Nome personalizado; rumo a `.md` em disco (memória durável) |
 | 5 | Conexões | [conexoes.md](conexoes.md) | 🟢 alta | 1–2 | **Travessia transitiva** da cadeia de notas no `/context` |
 | 6 | Modo Maestro | [modo-maestro.md](modo-maestro.md) | 🟡 encanamento pronto | 1–2 | Onboarding dos verbos; `recruit` posiciona/auto-conecta; `whoami`; toggle/gating |
-| 7 | Árvore de Arquivos | [arvore-arquivos.md](arvore-arquivos.md) | 🟡 read-only | 1–3 | Arrastar arquivo→terminal; bug `relativeToRoot`; citar seleção + editor `textarea` (CodeMirror → Onda 3) |
+| 7 | Árvore de Arquivos | [arvore-arquivos.md](arvore-arquivos.md) | ✅ plano concluído (2026-07-16) | 1–3 | Mini-IDE completo: CodeMirror, git leitura+escrita, watch, busca (`>`), mutação c/ lixeira — 13/13 tarefas |
 | 8 | Portais | [portais.md](portais.md) | 🟢 sólida | 1–3 | Feedback `click/fill`; `screenshot`; `orq portal create`; pipelines web sem MCP |
 | 9 | Solução de Problemas | [solucao-problemas.md](solucao-problemas.md) | 🟡 resiliência forte | 3 | Hibernação de projeto; export de diagnóstico; limite de memória por terminal |
 | 10 | Ombro | [ombro.md](ombro.md) | 🟡 metade sem-LLM | 1–2 | Notificação clicável; HUD de atenção; detector "travou vs terminou" |
@@ -90,7 +90,7 @@ Objetivo: converter as alavancas em recursos que já superam o Maestri.
 
 Objetivo: recursos que definem a categoria e exigem investimento dedicado.
 
-- **Árvore como IDE colaborativo** — **editor CodeMirror** (realce de sintaxe, find/replace, ir-para-linha) + git de escrita (commit/branch/diff), modo Diff, watch de filesystem, citar diff → agente. O CodeMirror desceu da Onda 2 por decisão (2026-07-16): isolado custa ~1-2 dias e rende pouco sobre o `textarea` que já salva bem; junto do modo Diff, do git de escrita e do watch — que dependem do mesmo componente de edição — evita retrabalho. → [arvore-arquivos](arvore-arquivos.md)
+- ✅ **Árvore como IDE colaborativo** (concluído 2026-07-16) — editor CodeMirror (realce, find/replace, ir-para-linha), git de escrita (commit/branch/switch), modo Diff + citar diff → agente, watch de filesystem, **busca por nome/conteúdo (`>`) com abrir-na-linha** e **menu de contexto com mutação** (criar/renomear-mover/excluir via Lixeira, pathGuard resolvendo symlinks). 13/13 tarefas do plano. → [arvore-arquivos](arvore-arquivos.md)
 - **Portais multimodais** — `screenshot` (`capturePage`) + `console`/rede → pipelines de automação web sem MCP. → [portais](portais.md)
 - **Cadeia de notas como memória navegável** — UI de navegação + rumo a notas `.md` em disco (durável, versionável). → [notas](notas.md) + [conexoes](conexoes.md)
 - **Resiliência como produto** — hibernação de projeto, export de diagnóstico, limite de memória por terminal, painel de saúde dos agentes. → [solucao-problemas](solucao-problemas.md)
