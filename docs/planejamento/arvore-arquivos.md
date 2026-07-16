@@ -9,7 +9,7 @@
 Evoluir o nó **Árvore de Arquivos** (`filetree`) do canvas de um explorador **somente-leitura em modo lista** para um mini-IDE embutido, na direção do Maestri, **sem sair do canvas**. O plano é incremental e prioriza **valor × esforço**:
 
 - **Onda 1 (ganhos rápidos, reaproveitam infra existente):** corrigir o **bug do overlay de git status** quando a raiz da árvore é um subdiretório do repo, e a ponte de **maior ROI** — arrastar um arquivo da árvore direto para o terminal de um agente (contexto). Ambos entregam valor com baixíssimo risco.
-- **Onda 2 (§4.4 do brief):** editor de código embutido (CodeMirror) e "**citar seleção → agente conectado**", fechando o loop ler → editar → perguntar ao agente.
+- **Onda 2 (§4.4 do brief):** editor de código embutido (entregue como `textarea` com escrita atômica — CodeMirror movido para a Onda 3, ver T4) e "**citar seleção → agente conectado**", fechando o loop ler → editar → perguntar ao agente.
 - **Onda 3 (mini-IDE completo):** git de escrita (commit/branch), modo **Diff**, **watch** de filesystem com auto-refresh, **busca** na árvore (nome/conteúdo), citar diff → agente e menu de contexto com mutação.
 
 O norte do produto: transformar o explorador de um utilitário passivo em **ferramenta de orquestração de agentes** (arquivo → contexto, trecho → prompt).
@@ -35,7 +35,7 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 | `src/main/ide/openInEditor.ts` (+ `registerIdeIpc.ts`) | `openInEditor(path, deps)` puro: allowlist `code|cursor|subl|zed|idea|webstorm|pycharm`, fallback p/ file manager. Hoje `ide.open` recebe a **pasta** do projeto. | Estender p/ abrir **arquivo** no duplo-clique |
 | `src/shared/filetree.ts` | `interface FileEntry { name; path; isDir }`. | Tipos compartilhados |
 
-**Infra ausente (relevante):** não há CodeMirror/Monaco (notas usam TipTap, terminais xterm); não há ripgrep/grep no main; não há watcher de fs. Vitest já configurado (`npm test` = `vitest run`), jsdom disponível, `shadcn` em devDeps.
+**Infra ausente (relevante):** não há CodeMirror/Monaco (notas usam TipTap, terminais xterm, e o editor da árvore é um `textarea` — ver T4); não há ripgrep/grep no main; não há watcher de fs. Vitest já configurado (`npm test` = `vitest run`), jsdom disponível, `shadcn` em devDeps.
 
 ---
 
@@ -46,7 +46,8 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 | **BUG:** overlay de git status some em arquivo aninhado quando raiz ≠ toplevel do repo (`relativeToRoot`) | **P1** | Alto (correção) | M | 1 |
 | Arrastar arquivo da árvore → terminal do agente (#4, **maior ROI**) | **P1** | Alto | M | 1 |
 | Abrir arquivo selecionado no editor externo (duplo-clique) | P1 | Médio | S | 1 |
-| Editor de código embutido (CodeMirror) | P3 | Alto | L | 2 |
+| Editor de código embutido (`textarea` + `write` atômico) | P3 | Alto | M | 2 |
+| Editor CodeMirror (realce, find/replace, ir-para-linha) — movido da Onda 2 por decisão (T4) | P3 | Médio | L | 3 |
 | Citar seleção do editor → agente conectado | P3 | Alto | M | 2 |
 | Arrastar árvore → canvas (preview node) | P2 | Médio | M | 2 |
 | Persistir expansão por instância (estado por nó) | P2 | Médio | S | 2 |
@@ -153,26 +154,27 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 
 ---
 
-### T4 — Editor de código embutido (CodeMirror)  [P3 · L · Onda 2 · §4.4]
+### T4 — Editor de código embutido  [P3 · M · Onda 2 · §4.4] — ✅ **ENTREGUE como `textarea` (por decisão); CodeMirror → Onda 3**
 
-**Objetivo:** painel de edição dentro do nó (realce por linguagem, find/replace, múltiplos cursores, auto-close, ir-para-linha), salvando via novo `filetree.write`.
+**Status (2026-07-16):** entregue e fechado. O editor embutido existe, salva com segurança e destrava a T5 (citar seleção). Ele é um **`<textarea>` monospace, não o CodeMirror** — isso é uma **decisão consciente**, não uma pendência (ver "Decisão" abaixo). Não reabrir esta tarefa: o que falta virou escopo da Onda 3.
 
-**Arquivos a tocar:**
-- `package.json` — adicionar `codemirror` + pacotes `@codemirror/*` (state/view/commands/search/language + linguagens comuns). Decisão de dep documentada.
-- `src/main/filetree/FileTreeService.ts` — método `write(path, content)` (escrita atômica tmp+rename, espelhando o padrão de `ProjectManager.writeJson`; validar que `path` está sob a raiz permitida).
-- `src/main/filetree/FileTreeService.test.ts` — teste de `write` (grava, relê, idempotente; rejeita path fora da raiz).
-- `src/main/filetree/registerFileTreeIpc.ts` + `src/preload/index.ts` — handler/bridge `filetree:write`.
-- `src/renderer/src/components/FileEditor.tsx` **(novo)** — wrapper CodeMirror; `src/renderer/src/components/FileTreeNode.tsx` — alterna preview↔editor (ícone no rodapé/menu de visualização).
-- `src/renderer/src/editor/languageForPath.ts` **(novo)** + `.test.ts` — mapeia extensão → linguagem (puro/testável).
+**O que foi entregue:**
+- `src/renderer/src/components/FileEditor.tsx` — painel de edição dentro do nó: `<textarea>` monospace, ⌘/Ctrl+S para salvar, seleção capturada no `onSelect` (sobrevive ao blur, é o que a T5 cita).
+- `src/main/filetree/FileTreeService.ts` — `write(path, content)` **atômico**: grava num `.orktmp`, `fsync` do handle, `rename` por cima do alvo. Espelha o padrão endurecido de `ProjectManager.writeJson` — um leitor concorrente vê o arquivo velho ou o novo inteiro, nunca metade.
+- **Guard de traversal no MAIN** (`isUnderRoot`, via `resolve` + comparação de prefixo): escrita fora da raiz do projeto é barrada no processo privilegiado, não só na UI. Binário e arquivos truncados (>256 KB) não abrem para edição.
+- `registerFileTreeIpc.ts` + `src/preload/index.ts` — handler/bridge `filetree:write`.
 
-**Passos TDD:**
-1. **Teste que falha:** `languageForPath('a.ts')` → `'typescript'`, `languageForPath('x.py')` → `'python'`, extensão desconhecida → `'plain'`. Main: `write` grava e `read` devolve o novo conteúdo; `write` fora da raiz **rejeita**.
-2. **Implementação:** `FileEditor` monta CodeMirror com a extensão de linguagem resolvida; botão "salvar" (⌘S) chama `filetree.write`; find/replace via `@codemirror/search`.
-3. **Verde:** `npx vitest run src/renderer/src/editor/languageForPath.test.ts src/main/filetree/FileTreeService.test.ts`.
+**Decisão (2026-07-16): o `textarea` fica; o CodeMirror é Onda 3.** O `textarea` já entrega o loop que a Onda 2 prometia — ler → editar → salvar → citar seleção para o agente conectado — com a parte difícil (persistência e segurança de escrita) feita direito. O CodeMirror, **isolado**, custa ~1-2 dias (dep grande, impacto de bundle a medir) e rende só conforto de edição. Ele rende de verdade **junto** do **modo Diff**, do **git de escrita** e do **watch de filesystem** — que já são a Onda 3 ("Árvore como IDE colaborativo") e dependem do mesmo componente de edição. Fazer junto evita montar o editor duas vezes.
 
-**Critérios de aceite:** abrir arquivo texto no editor, editar, salvar e ver refletido no `read`/disco; binário/>256 KB tratados com aviso; escrita fora da raiz bloqueada.
+**O que o CodeMirror trará na Onda 3** (escopo movido, não perdido):
+- realce de sintaxe por linguagem, find/replace (`@codemirror/search`), ir-para-linha (destrava a T10: busca → abrir na linha), múltiplos cursores, auto-close;
+- `src/renderer/src/editor/languageForPath.ts` **(novo)** + `.test.ts` — extensão → linguagem, puro/testável (`'a.ts'` → `'typescript'`, `'x.py'` → `'python'`, desconhecida → `'plain'`);
+- `package.json` — `codemirror` + `@codemirror/*` (state/view/commands/search/language + linguagens comuns); medir bundle (`web-perf`) antes de fechar a dep;
+- `FileEditor.tsx` troca o `textarea` pelo `EditorView` **mantendo** o contrato atual (⌘S → `filetree.write`, seleção → T5).
 
-**Notas / riscos:** CodeMirror é a maior nova dependência; medir impacto no bundle (`web-perf`). `write` rompe o design read-only — validação de caminho é obrigatória (mesma allowlist-de-raiz de segurança dos writes do `ProjectManager`).
+**Critérios de aceite (atendidos):** abrir arquivo texto no editor, editar, salvar e ver refletido no `read`/disco; binário/>256 KB tratados com aviso; escrita fora da raiz bloqueada.
+
+**Notas / riscos:** `write` rompeu o design read-only do `FileTreeService` — por isso o guard de raiz é obrigatório e vive no main. O guard atual é **lexical pós-`resolve`**: não resolve symlinks; isso e o guard completo de mutação (criar/mover/excluir) são a Onda 3 · T13.
 
 ---
 
@@ -293,7 +295,7 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 2. **Implementação:** filtro por nome primeiro (sem backend); depois `searchContent` para o modo `>`.
 3. **Verde:** `npx vitest run src/renderer/src/components/fileTreeFilter.test.ts`.
 
-**Critérios de aceite:** filtro por nome instantâneo sobre o carregado; `>` varre conteúdo e lista arquivo+linha; clicar abre o arquivo (na T4, posicionado na linha).
+**Critérios de aceite:** filtro por nome instantâneo sobre o carregado; `>` varre conteúdo e lista arquivo+linha; clicar abre o arquivo (posicionado na linha **só quando o CodeMirror chegar, na Onda 3** — o `textarea` da T4 não posiciona cursor por linha).
 
 **Notas / riscos:** busca por conteúdo pode ser cara — limitar profundidade/tamanho e ignorar binários; integrar `rg` é evolução futura.
 
@@ -365,13 +367,13 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 
 - **Ordem recomendada:** T1 → T2 → T3 (Onda 1, independentes entre si e sem novas deps) antes de qualquer coisa da Onda 2/3.
 - **T5/T12** dependem do canal "nó ligado por edge → terminal" (`resolveConnectedTerminal` + `terminalRegistry` + `buildContextBlock`); **T12** também depende do modo Diff (**T8**).
-- **T4** introduz **CodeMirror** (nova dep pesada) — avaliar bundle (`web-perf`) e decidir cedo, pois habilita T5/T10 (abrir na linha).
+- **CodeMirror** (nova dep pesada) saiu da T4 e é **Onda 3**, junto do modo Diff (**T8**), do git de escrita (**T11**) e do watch (**T9**) — avaliar bundle (`web-perf`) ao encarar aquele bloco. O "abrir na linha" da **T10** fica esperando por ele (o `textarea` da T4 não posiciona cursor por linha); T5 já está destravada pelo `textarea`.
 - **T4/T11/T13** rompem o design **read-only** do `FileTreeService`: exigem escrita atômica e **validação de caminho sob a raiz** (`pathGuard`) — risco de segurança se negligenciado (renderer é privilegiado, com `pty.spawn`).
 - **Symlinks & cross-platform:** o fix da T1 evita comparar paths absolutos com o toplevel do git; watchers (T9) e paths git no Windows (separadores) precisam de atenção — o app é macOS-primeiro (node-pty), então validar macOS primeiro.
 - **Contrato IPC:** T1 muda o shape de `filetree.gitStatus` — atualizar preload/tipos e as 3 asserções do teste existente (listadas na T1) num único passo para não quebrar o suite.
 - **React Flow ↔ HTML5 DnD:** T2/T6 misturam `draggable` nativo com o pan/drag do React Flow — validar no `npm run dev` que não há conflito (o `nodrag`/`stopPropagation` isola).
 
-**Verificação por tarefa:** `npx vitest run <arquivo>` (arquivos citados em cada T) + `npm run typecheck` + `npm run lint`. Validação de UX/DnD/CodeMirror em `npm run dev`.
+**Verificação por tarefa:** `npx vitest run <arquivo>` (arquivos citados em cada T) + `npm run typecheck` + `npm run lint`. Validação de UX/DnD/editor em `npm run dev`.
 
 ---
 

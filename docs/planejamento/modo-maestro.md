@@ -69,7 +69,7 @@ não encanamento.
      - `orq dismiss "<nome>"` — fecha o terminal de um recruta quando o trabalho dele termina.
      - `orq note write [--to "<nome/id>"] "<texto>"` — escreve numa nota (sem `--to`, na nota ligada à sua saída).
      - `orq whoami` — mostra seu próprio nome, papel e conexões (ver T2).
-     - Incluir a ressalva: *"Estes verbos de gerência só têm efeito se este terminal for um **Maestro**; caso contrário o Orkestra recusa o comando"* (alinha com o gating de T6, que é a aplicação real da permissão — a documentação é incondicional por simplicidade).
+     - Incluir a ressalva de permissão. **Texto revisto em 2026-07-16** (o original — *"só têm efeito se este terminal for um Maestro; caso contrário o Orkestra recusa o comando"* — era **falso** para terminais legados, que não têm a flag e são permitidos pelo fail-open de T6): a ressalva deve dizer que o Orkestra **só recusa quando o terminal está marcado como comum** (Modo Maestro desligado no bloco) e que terminais **sem** essa marcação executam normalmente. Ver a decisão de fail-open em T6.
   3) **Verde** — `npx vitest run src/main/orchestration/installOrq.test.ts`.
 - **Critérios de aceite:**
   - `~/.orkestra/onboarding.txt` (reescrito a cada boot) contém `orq recruit`, `orq connect`, `orq dismiss`, `orq note write`, `orq whoami`.
@@ -145,7 +145,7 @@ não encanamento.
 - **Arquivos a tocar:** `src/main/orchestration/OrchestrationServer.ts`, `src/main/orchestration/OrchestrationServer.test.ts`, `src/shared/orchestration.ts` (`from` em `connect`/`dismiss`), `src/orq/orq.ts`, `src/orq/orq.test.ts`.
 - **Passos TDD:**
   1) **Testes que falham:**
-     - Helper puro `isMaestro(mirror, fromId): boolean` (novo, em `OrchestrationServer.ts` ou `src/shared/`): nó com `maestro:true` → true; sem flag → false; `fromId` desconhecido → **true** (fail-open legado). Testar isolado.
+     - Helper puro `isMaestro(mirror, fromId): boolean` (novo, em `OrchestrationServer.ts` ou `src/shared/`): nó com `maestro:true` → true; nó com `maestro:false` → **false**; **sem flag (`undefined`) → true**; `fromId` desconhecido → **true**; sem `fromId` → **true** (fail-open legado). Testar isolado. *(A linha "sem flag → false" desta spec foi **substituída** em 2026-07-16 — ver "Decisão: fail-open" abaixo.)*
      - `OrchestrationServer.test.ts`: `POST /recruit` com `from` cujo nó tem `maestro:false` no mirror → **403** e **não** emite comando; com `maestro:true` → 200 e emite; **sem** `from` (legado) → 200 (fail-open). Repetir para `/connect` e `/dismiss`.
      - `orq.test.ts`: quando o servidor responde **403**, `orq recruit` retorna `code != 0` com `out` contendo orientação ("este terminal não é um Maestro — peça ao usuário para ativar o Modo Maestro").
   2) **Implementação:**
@@ -159,6 +159,16 @@ não encanamento.
   - Retrocompat: `from` ausente (orq externo) mantém o comportamento atual (fail-open) — nenhum teste existente quebra.
   - Auth (401) e escopo de projeto (409) continuam **antes** do gating (ordem: 401 → 409 → 403).
 - **Notas:** o gating real é o servidor (o onboarding de T1 é só documentação; não é enforcement). Depende de `maestro` no mirror (T5) e de `from` nos três comandos (T3 cobre recruit; aqui adiciona connect/dismiss). Decisão de design: fail-open no desconhecido evita travar orq externo/legado — coerente com o resto do servidor.
+
+#### Decisão (2026-07-16): fail-open em `maestro: undefined` — **substitui** a spec original desta tarefa
+
+A spec original desta T6 dizia **"sem flag → false"** (terminal sem a flag bloqueia). O código implementado faz o **oposto** — `isMaestro` é `node.maestro !== false`, ou seja, `maestro: undefined` → **permitido**. Auditado em 2026-07-16 e **mantido por decisão consciente**. A spec acima fica registrada só como histórico; **este parágrafo é a verdade vigente**.
+
+- **Comportamento vigente** (`src/main/orchestration/OrchestrationServer.ts`): bloqueia **somente** quando o nó existe no espelho e está **explicitamente** marcado `maestro: false`. `maestro: undefined`, nó desconhecido, espelho vazio e `from` ausente → **permite**.
+- **Por que:** o toggle de Maestro (T5) nasceu depois dos terminais. Todo terminal já serializado em snapshot de canvas do usuário tem `maestro: undefined`. Fechar o gating faria esses terminais **pararem de recrutar/conectar/dispensar/reatribuir sem aviso** — uma regressão silenciosa no canvas de quem já usa o app, em troca de nada. Além disso, isto é **UX de orquestração local, não fronteira de segurança**: quem controla o agente já controla o pty; o gating existe para o usuário não ver recrutas brotando de terminais que ele não elegeu coordenador, não para conter um adversário. O default seguro, aqui, é o que não quebra o canvas existente.
+- **Consequência aceita:** um terminal legado recruta sem ser Maestro. Para tornar um terminal comum de fato bloqueado, o usuário precisa marcá-lo (o modal de criação já grava `maestro: false` quando o toggle está desligado).
+- **Fixado em teste:** `OrchestrationServer.test.ts` → `describe('isMaestro (gating do Modo Maestro)')` cobre `true`/`false`/`undefined`/desconhecido/sem-`from`. O caso **`undefined` → permite** é assert explícito: se alguém "corrigir" o gating de volta para a spec original, o teste fica vermelho **de propósito**. Não conserte o teste — traga a decisão de volta à mesa.
+- **Também alinhado:** o `ONBOARDING` de T1, que afirmava ao agente que os verbos "só têm efeito se este terminal for um Maestro" (falso para legados). Ver T1.
 
 ### T7 — `reassign`: trocar papel e reiniciar processo mid-task  [P2 · M · Onda 2]
 - **Arquivos a tocar:** `src/orq/orq.ts`, `src/orq/orq.test.ts`, `src/main/orchestration/OrchestrationServer.ts`, `src/main/orchestration/OrchestrationServer.test.ts`, `src/shared/orchestration.ts`, `src/renderer/src/hooks/useOrchestrationSync.ts`, `src/renderer/src/store/canvasStore.ts`, `src/renderer/src/store/canvasStore.test.ts`.
@@ -207,7 +217,7 @@ não encanamento.
 - **Mirror sem posição (verificado):** o `MirrorNode` não carrega `position`; o posicionamento do recruta vive no store do renderer. Corrige a nota da análise ("o servidor já tem `from` no mirror"): o servidor relaya o **id** `from`, a **posição** está no renderer.
 - **`addTerminalNode` não devolve id:** T3 exige extrair a criação do nó num helper compartilhado que devolva o nó/id (para `recruitBelow` conectar). Refator pequeno mas tocar `addTerminalNode` pede rodar `canvasStore.test.ts` inteiro.
 - **Reinício de processo (T7) é o maior risco:** não há fluxo de restart hoje. Precisa de um mecanismo novo no `TerminalNode`/store (kill + re-mount/autostart). Isolar as partes puras (testáveis) do reinício (verificação manual).
-- **Gating incondicional no onboarding vs. enforcement:** T1 documenta os verbos para **todos** os agentes (quick win); o enforcement real é T6 (server-side). Sem T6, um agente comum poderia recrutar. Aceitável na Onda 1 (o encanamento já era aberto); T6 fecha na Onda 2. Não inverter a ordem sem avisar o usuário.
+- **Gating incondicional no onboarding vs. enforcement:** T1 documenta os verbos para **todos** os agentes (quick win); o enforcement real é T6 (server-side). Sem T6, um agente comum poderia recrutar. Aceitável na Onda 1 (o encanamento já era aberto); T6 fecha na Onda 2. Não inverter a ordem sem avisar o usuário. **Atualização (2026-07-16):** T6 fecha o gating **apenas para terminais explicitamente marcados como comuns** — legados (`maestro: undefined`) seguem permitidos por decisão (ver "Decisão: fail-open" em T6), e o texto do onboarding foi corrigido para não prometer o contrário.
 - **Retrocompatibilidade:** todo `from`/`maestro` é **opcional** com fail-open — nenhum orq externo/legado nem snapshot antigo deve quebrar. Todos os testes de 400/401/409 existentes precisam continuar verdes.
 - **Multi-agente (codex/gemini):** o onboarding só chega ao `claude` (wrapper). Um Maestro `codex` não receberia o texto de T1 — mitigar com onboarding multi-agente (Onda 3, #6) ou aceitar que a v1 do Maestro é Claude-first.
 - **Gates de verificação:** ao fim de cada tarefa rodar `npx vitest run <arquivos>`, e ao fim da onda `npm run typecheck` + `npm run lint` (config `vitest.config.ts`: `include: ['src/**/*.test.ts']`, env `node`; testes de store usam `// @vitest-environment jsdom` e `window.orkestra?.pty` com optional chaining). Validação de integração pty (recruit/reassign) exige `npm run dev` (fora do escopo automatizado).

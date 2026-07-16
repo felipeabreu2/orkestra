@@ -33,7 +33,7 @@ find-replace + cores nas notas; escopo de projeto fail-closed no servidor.
 | 4 | Notas | [notas.md](notas.md) | 🟡 modelo diferente | 1, 3 | Nome personalizado; rumo a `.md` em disco (memória durável) |
 | 5 | Conexões | [conexoes.md](conexoes.md) | 🟢 alta | 1–2 | **Travessia transitiva** da cadeia de notas no `/context` |
 | 6 | Modo Maestro | [modo-maestro.md](modo-maestro.md) | 🟡 encanamento pronto | 1–2 | Onboarding dos verbos; `recruit` posiciona/auto-conecta; `whoami`; toggle/gating |
-| 7 | Árvore de Arquivos | [arvore-arquivos.md](arvore-arquivos.md) | 🟡 read-only | 1–3 | Arrastar arquivo→terminal; bug `relativeToRoot`; editor + citar seleção |
+| 7 | Árvore de Arquivos | [arvore-arquivos.md](arvore-arquivos.md) | 🟡 read-only | 1–3 | Arrastar arquivo→terminal; bug `relativeToRoot`; citar seleção + editor `textarea` (CodeMirror → Onda 3) |
 | 8 | Portais | [portais.md](portais.md) | 🟢 sólida | 1–3 | Feedback `click/fill`; `screenshot`; `orq portal create`; pipelines web sem MCP |
 | 9 | Solução de Problemas | [solucao-problemas.md](solucao-problemas.md) | 🟡 resiliência forte | 3 | Hibernação de projeto; export de diagnóstico; limite de memória por terminal |
 | 10 | Ombro | [ombro.md](ombro.md) | 🟡 metade sem-LLM | 1–2 | Notificação clicável; HUD de atenção; detector "travou vs terminou" |
@@ -83,14 +83,14 @@ Objetivo: converter as alavancas em recursos que já superam o Maestri.
 - **Modo Maestro completo** — toggle + gating, `reassign` mid-task, template de esquadrão (Dev+Revisor+Testador+Docs), aresta `agent` "carregada" (contexto roteado por conexão). → [modo-maestro](modo-maestro.md) + [conexoes](conexoes.md)
 - **Ombro evoluído** — HUD de atenção, detector "travou vs terminou", prévia da última linha, agregação anti-spam. → [ombro](ombro.md)
 - **Portais dirigíveis** — `orq portal create` + `back/forward/reload/scroll` + `snapshot --html` + indicador "agente dirigindo". → [portais](portais.md)
-- **Árvore, fase 1** — editor CodeMirror embutido + "citar seleção → agente conectado". → [arvore-arquivos](arvore-arquivos.md)
+- **Árvore, fase 1** — "citar seleção → agente conectado" + editor embutido `textarea` (escrita atômica com fsync, guard de traversal no main). O **CodeMirror foi movido para a Onda 3** por decisão (2026-07-16) — ver Onda 3, "Árvore como IDE colaborativo". → [arvore-arquivos](arvore-arquivos.md)
 - **SSH** — drag-drop via `scp` + feedback de conexão. → [ssh-remoto](ssh-remoto.md)
 
 ### 🌊 Onda 3 — Apostas grandes (valor estratégico)
 
 Objetivo: recursos que definem a categoria e exigem investimento dedicado.
 
-- **Árvore como IDE colaborativo** — git de escrita (commit/branch/diff), modo Diff, watch de filesystem, citar diff → agente. → [arvore-arquivos](arvore-arquivos.md)
+- **Árvore como IDE colaborativo** — **editor CodeMirror** (realce de sintaxe, find/replace, ir-para-linha) + git de escrita (commit/branch/diff), modo Diff, watch de filesystem, citar diff → agente. O CodeMirror desceu da Onda 2 por decisão (2026-07-16): isolado custa ~1-2 dias e rende pouco sobre o `textarea` que já salva bem; junto do modo Diff, do git de escrita e do watch — que dependem do mesmo componente de edição — evita retrabalho. → [arvore-arquivos](arvore-arquivos.md)
 - **Portais multimodais** — `screenshot` (`capturePage`) + `console`/rede → pipelines de automação web sem MCP. → [portais](portais.md)
 - **Cadeia de notas como memória navegável** — UI de navegação + rumo a notas `.md` em disco (durável, versionável). → [notas](notas.md) + [conexoes](conexoes.md)
 - **Resiliência como produto** — hibernação de projeto, export de diagnóstico, limite de memória por terminal, painel de saúde dos agentes. → [solucao-problemas](solucao-problemas.md)
@@ -122,10 +122,10 @@ graph LR
     MM[Maestro completo]
     HUD[Ombro HUD]
     PD[Portais dirigíveis]
-    ED[Editor + citar seleção]
+    ED[Citar seleção + editor textarea]
   end
   subgraph Onda3[Onda 3 — apostas]
-    IDE[Árvore IDE completo]
+    IDE[Árvore IDE completo + CodeMirror]
     PM[Portais multimodais]
     MEM[Notas como memória]
     RES[Resiliência produto]
@@ -148,7 +148,7 @@ graph LR
 - **Onboarding dos verbos** (#1, Onda 1) destrava tudo do Maestro para o agente — fazer **primeiro**.
 - **Travessia transitiva** (#5) é a base tanto do Maestro (contexto roteado) quanto da **memória de notas** (Onda 3).
 - **Feedback `click/fill`** → **Portais dirigíveis** → **Portais multimodais** é uma trilha contínua.
-- **Arquivo→terminal** → **editor + citar seleção** → **Árvore IDE** é a outra trilha contínua.
+- **Arquivo→terminal** → **citar seleção + editor `textarea`** → **Árvore IDE (com CodeMirror)** é a outra trilha contínua. O CodeMirror é o começo da etapa de Onda 3, não o fim da de Onda 2.
 
 ---
 
