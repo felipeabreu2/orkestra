@@ -10,6 +10,14 @@ describe('buildContextBlock', () => {
   it('conteúdo vazio vira string vazia (nada a injetar)', () => {
     expect(buildContextBlock('nota', '   ')).toBe('')
   })
+  // Onda 3 · T12: citar um hunk do modo Diff reusa ESTE mesmo montador — o que muda é só o rótulo
+  // ("diff — <arquivo>", montado por diffQuoteLabel). Nada de Enter: o \n final é a quebra do texto,
+  // o usuário revisa e dispara. Um `+`/`-` no começo do conteúdo não é escapado nem interpretado.
+  it('monta o bloco de um hunk de diff, rotulado e sem Enter final', () => {
+    expect(buildContextBlock('diff — src/a.ts', '@@ -1 +1 @@\n-old\n+new')).toBe(
+      '[contexto — diff — src/a.ts]\n@@ -1 +1 @@\n-old\n+new\n'
+    )
+  })
 })
 
 describe('htmlToText', () => {

@@ -290,3 +290,22 @@
 .ork-filetree-diffline--meta {
   color: var(--text-3);
 }
+
+/* Onda 3 · T12: hunk SELECIONADO para citar ao agente. O realce é uma barra na borda esquerda, não
+   um fundo: as linhas do hunk já carregam o fundo semântico de add/del (§4.13), e um segundo véu
+   por cima embaralharia "isto foi adicionado" com "isto está selecionado". Marca o bloco inteiro,
+   que é a unidade citável. */
+.ork-filetree-diffline--picked {
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.ork-filetree-diffline--picked.ork-filetree-diffline--add {
+  background: color-mix(in srgb, var(--ok) 12%, color-mix(in srgb, var(--accent) 10%, transparent));
+}
+.ork-filetree-diffline--picked.ork-filetree-diffline--del {
+  background: color-mix(in srgb, var(--err) 12%, color-mix(in srgb, var(--accent) 10%, transparent));
+}
+/* O corpo do diff é clicável (clique = seleciona o hunk), então o cursor tem de avisar. */
+.ork-filetree-diffline {
+  cursor: pointer;
+}

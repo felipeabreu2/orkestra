@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useCanvasStore } from '../store/canvasStore'
 import type { FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
 import { gitKeyForEntry } from './fileTreeGit'
-import { parseDiffLines } from './fileTreeDiff'
+import { parseDiffLines, diffHunkAt, diffQuoteLabel, type DiffLine, type DiffHunk } from './fileTreeDiff'
 import { FileEditor } from './FileEditor'
+import { resolveConnectedTerminal } from './quoteSelection'
+import { getTerminalPty } from '../terminal/terminalRegistry'
+import { buildContextBlock } from '../context/contextBlock'
 import { ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
 import { openEntryInEditor } from '../ui/openInEditor'
 import './nodes.css'
@@ -158,19 +161,42 @@ interface PreviewState {
 // Onda 3 · T8 — modo Diff: render textual do `git diff` das alterações não commitadas, com realce
 // simples por tipo de linha (a classificação vive em ./fileTreeDiff, puro/testável). Não é um
 // diff-viewer lado-a-lado: é o mesmo texto que o terminal mostraria, legível dentro do nó.
-function DiffView({ text, truncated }: { text: string; truncated: boolean }): JSX.Element {
-  const lines = parseDiffLines(text)
+//
+// Onda 3 · T12: clicar numa linha SELECIONA o hunk que a contém (realçado inteiro), que é a unidade
+// citável ao agente — ver a decisão documentada em ./fileTreeDiff. Cabeçalhos de arquivo não são
+// citáveis (diffHunkAt devolve null), então clicar neles não seleciona nada.
+function DiffView({
+  lines,
+  truncated,
+  selected,
+  onPickHunk
+}: {
+  lines: DiffLine[]
+  truncated: boolean
+  selected: DiffHunk | null
+  onPickHunk: (key: number) => void
+}): JSX.Element {
   if (lines.length === 0) {
     return <div className="ork-filetree-msg">(sem alterações não commitadas)</div>
   }
   return (
     <>
       <pre className="ork-filetree-diff">
-        {lines.map((l) => (
-          <div key={l.key} className={`ork-filetree-diffline ork-filetree-diffline--${l.kind}`}>
-            {l.text === '' ? ' ' : l.text}
-          </div>
-        ))}
+        {lines.map((l) => {
+          const dentro = selected != null && l.key >= selected.startKey && l.key <= selected.endKey
+          return (
+            <div
+              key={l.key}
+              className={`ork-filetree-diffline ork-filetree-diffline--${l.kind}${
+                dentro ? ' ork-filetree-diffline--picked' : ''
+              }`}
+              onClick={() => onPickHunk(l.key)}
+              title="Clique para selecionar este hunk"
+            >
+              {l.text === '' ? ' ' : l.text}
+            </div>
+          )
+        })}
       </pre>
       {/* Truncado é um aviso HONESTO, não um detalhe: o resto do diff existe e não está aqui —
           o teto (MAX_DIFF_LINES no main) evita que um refactor gigante trave o canvas. */}
@@ -236,6 +262,11 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const [mode, setMode] = useState<'list' | 'diff'>('list')
   const [diff, setDiff] = useState<{ text: string; truncated: boolean } | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
+  // Onda 3 · T12: linha clicada no diff → o hunk que a contém é o bloco citável. Guardamos a KEY
+  // (índice da linha), não o hunk: o diff pode ser rebuscado (atualizar/troca de raiz) e um objeto
+  // guardado ficaria descrito por um texto que não está mais na tela. O hunk é derivado abaixo.
+  const [pickedLine, setPickedLine] = useState<number | null>(null)
+  const [diffQuoteMsg, setDiffQuoteMsg] = useState('')
   // Bump manual do botão "atualizar": git status/branch/diff não têm watch (T9), então o refresh é
   // explícito. Um nonce (em vez de 3 callbacks) mantém as três leituras em sincronia num clique.
   const [gitNonce, setGitNonce] = useState(0)
@@ -310,6 +341,10 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   // Onda 3 · T8: o diff só é buscado quando o modo Diff está ATIVO (não paga o custo de um
   // `git diff` a cada refresh de quem só usa a lista) e é rebuscado ao trocar de raiz/atualizar.
   useEffect(() => {
+    // T12: a seleção de hunk é sempre descartada junto do diff que a originou — as keys são índices
+    // de linha, e um diff novo (outro arquivo mudou, atualizar, troca de raiz) as invalida.
+    setPickedLine(null)
+    setDiffQuoteMsg('')
     if (!root || mode !== 'diff') {
       setDiff(null)
       return undefined
@@ -332,6 +367,53 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
       cancelled = true
     }
   }, [root, mode, gitNonce])
+
+  // Linhas classificadas do diff (T8) — memoizadas porque agora servem a DOIS consumidores: o
+  // render e o recorte do hunk citado (T12).
+  const diffLines = useMemo(() => parseDiffLines(diff?.text ?? ''), [diff])
+  const pickedHunk = useMemo(
+    () => (pickedLine == null ? null : diffHunkAt(diffLines, pickedLine)),
+    [diffLines, pickedLine]
+  )
+
+  // T12 reusa o canal da T5 (o mesmo do FileEditor): terminal ligado por aresta → pty → bloco de
+  // contexto. Só o QUE se cita muda (um hunk, não uma seleção de texto); o caminho de envio é o
+  // mesmo, incluindo o filtro por nós do tipo terminal (só eles têm pty).
+  const nodes = useCanvasStore((s) => s.nodes)
+  const edges = useCanvasStore((s) => s.edges)
+  const terminalIds = useMemo(
+    () => new Set(nodes.filter((n) => n.type === 'terminal').map((n) => n.id)),
+    [nodes]
+  )
+  const connectedTerminal = useMemo(
+    () => resolveConnectedTerminal(id, edges, terminalIds),
+    [id, edges, terminalIds]
+  )
+
+  // Cita o hunk selecionado → escreve o bloco no pty do terminal conectado, SEM Enter (o usuário
+  // revisa e dispara). Mesma sequência de guardas do FileEditor.quote, mesmo vocabulário de aviso.
+  const quoteHunk = (): void => {
+    if (!pickedHunk) {
+      setDiffQuoteMsg('clique num hunk primeiro')
+      return
+    }
+    if (!connectedTerminal) {
+      setDiffQuoteMsg('nenhum terminal conectado a esta árvore')
+      return
+    }
+    const ptyId = getTerminalPty(connectedTerminal)
+    if (!ptyId) {
+      setDiffQuoteMsg('o terminal conectado ainda não tem processo')
+      return
+    }
+    const block = buildContextBlock(diffQuoteLabel(pickedHunk.file), pickedHunk.text)
+    if (!block) {
+      setDiffQuoteMsg('clique num hunk primeiro')
+      return
+    }
+    window.orkestra.pty.write(ptyId, block)
+    setDiffQuoteMsg('citação enviada ao agente')
+  }
 
   const toggleDir = (dir: FileEntry): void => {
     const isOpen = expanded.has(dir.path)
@@ -546,9 +628,49 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
           {/* Onda 3 · T8: modo Diff ocupa o corpo no lugar da lista (o preview de arquivo, quando
               aberto, continua tendo precedência sobre os dois). */}
           {root && !previewPath && mode === 'diff' && (
-            <div className="nodrag nowheel ork-filetree-previewbody">
-              {diffLoading && <div className="ork-filetree-msg">carregando…</div>}
-              {!diffLoading && diff && <DiffView text={diff.text} truncated={diff.truncated} />}
+            <div className="ork-filetree-preview">
+              {/* Onda 3 · T12: barra de citar do modo Diff. Mesmo padrão/vocabulário do FileEditor —
+                  sem árvore ligada a um terminal, "citar" fica DESABILITADO (não há para onde
+                  enviar) e o title explica o que fazer para habilitar. Só aparece quando há diff. */}
+              {!diffLoading && diffLines.length > 0 && (
+                <div className="ork-filetree-editor-actions">
+                  <button
+                    className="nodrag ork-filetree-editbtn"
+                    onClick={quoteHunk}
+                    disabled={!connectedTerminal || !pickedHunk}
+                    title={
+                      !connectedTerminal
+                        ? 'Ligue esta árvore a um terminal para citar ao agente'
+                        : !pickedHunk
+                          ? 'Clique num hunk do diff para selecioná-lo'
+                          : `Enviar o hunk de ${pickedHunk.file} ao agente conectado`
+                    }
+                  >
+                    <Icon name="MessageSquare" size={13} animation="none" />
+                    citar hunk
+                  </button>
+                  <span className="ork-filetree-editor-status" aria-live="polite">
+                    {diffQuoteMsg || (pickedHunk ? `hunk de ${pickedHunk.file}` : 'clique num hunk')}
+                  </span>
+                </div>
+              )}
+              <div className="nodrag nowheel ork-filetree-previewbody">
+                {diffLoading && <div className="ork-filetree-msg">carregando…</div>}
+                {!diffLoading && diff && (
+                  <DiffView
+                    lines={diffLines}
+                    truncated={diff.truncated}
+                    selected={pickedHunk}
+                    onPickHunk={(key) => {
+                      // Clicar num cabeçalho de arquivo (não citável) não derruba a seleção atual —
+                      // seria um "sumiu do nada" para quem só errou o alvo por uma linha.
+                      if (!diffHunkAt(diffLines, key)) return
+                      setPickedLine(key)
+                      setDiffQuoteMsg('')
+                    }}
+                  />
+                )}
+              </div>
             </div>
           )}
           {root && !previewPath && mode === 'list' && (
