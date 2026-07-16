@@ -1,7 +1,7 @@
-import { readdir, stat, open } from 'node:fs/promises'
+import { readdir, stat, open, rename, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import type { FileEntry } from '../../shared/filetree'
 
 const execFileAsync = promisify(execFile)
@@ -12,6 +12,18 @@ const BINARY_SNIFF_BYTES = 8 * 1024
 function compareEntries(a: FileEntry, b: FileEntry): number {
   if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+}
+
+// Guarda de caminho para `write` (Onda 2 · T4): só permite gravar DENTRO da raiz da árvore. Normaliza
+// os dois lados com `resolve` (colapsa `..`/`.`/separadores redundantes), então compara o prefixo
+// terminado em separador — assim `/r/a` casa mas `/r-outro` e `/r/../x` NÃO. Defesa em profundidade:
+// o renderer é privilegiado (tem pty.spawn), então uma escrita com path envenenado (traversal fora da
+// raiz) precisa ser barrada no MAIN, nunca só na UI. NB: comparação puramente lexical/pós-resolve —
+// não resolve symlinks (isso, e o guard completo de mutação criar/mover/excluir, são Onda 3 · T13).
+export function isInsideRoot(root: string, target: string): boolean {
+  const nRoot = resolve(root)
+  const nTarget = resolve(target)
+  return nTarget === nRoot || nTarget.startsWith(nRoot + sep)
 }
 
 // Remove aspas C-style que `git status --porcelain` usa em paths com caracteres especiais (ex.:
@@ -25,10 +37,12 @@ function cleanGitPath(raw: string): string {
   return trimmed
 }
 
-// Fase 19 (Task 1): leitura pura de filesystem + git status para o nó de árvore de arquivos do
-// canvas (renderer, Task 2). READ-ONLY por design — nenhum método aqui escreve em disco ou muta o
-// repo git; cobre só o que um file-explorer de IDE padrão precisa (listar, ler conteúdo, ver
-// status de git). Erros de fs (dir/arquivo inexistente, sem permissão) propagam como rejeição da
+// Fase 19 (Task 1): filesystem + git status para o nó de árvore de arquivos do canvas (renderer).
+// list/read/gitStatus são só leitura; `write` (Onda 2 · T4) é a ÚNICA mutação — grava um arquivo de
+// forma atômica e valida (isInsideRoot) que o caminho está sob a raiz da árvore antes de tocar o
+// disco. Ainda NÃO muta o repo git (commit/branch) nem cria/renomeia/exclui (Onda 3). Cobre o que um
+// file-explorer/editor de IDE padrão precisa. Erros de fs (dir/arquivo inexistente, sem permissão,
+// escrita fora da raiz) propagam como rejeição da
 // Promise — quem chama (registerFileTreeIpc) não os trata, e o invoke() do renderer os recebe
 // como rejeição, que é onde de fato existe uma ação de recuperação (mostrar erro na árvore).
 export class FileTreeService {
@@ -70,6 +84,39 @@ export class FileTreeService {
       return { content: '', binary: true, truncated: false }
     }
     return { content: buffer.toString('utf-8'), binary: false, truncated: size > MAX_READ_BYTES }
+  }
+
+  // Onda 2 (T4): grava `content` (UTF-8) em `filePath` de forma ATÔMICA (tmp + rename), espelhando o
+  // padrão endurecido de ProjectManager.writeJson: escreve num `.orktmp`, `fsync` do handle (fecha a
+  // janela de queda-de-energia em que o rename de metadado persiste antes do conteúdo), e só então
+  // `rename` por cima do alvo — um leitor concorrente vê ou o arquivo velho ou o novo inteiro, nunca
+  // um estado truncado. `root` é a raiz da árvore no renderer: gravar FORA dela é recusado por
+  // `isInsideRoot` (defesa contra path traversal — este é o primeiro método que ESCREVE, rompendo o
+  // read-only, então a validação de caminho é obrigatória). Rejeita (Promise) em erro; o `.orktmp` é
+  // removido no catch para não deixar lixo. Só o renderer decide QUANDO gravar (botão salvar); aqui
+  // não há undo/backup (o arquivo é do usuário, versionado pelo git dele) — só a garantia de atômico.
+  async write(filePath: string, content: string, root: string): Promise<void> {
+    if (!isInsideRoot(root, filePath)) {
+      throw new Error(`Escrita recusada: caminho fora da raiz permitida (${filePath})`)
+    }
+    const tmp = `${filePath}.orktmp`
+    const handle = await open(tmp, 'w')
+    try {
+      await handle.writeFile(content, 'utf-8')
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    try {
+      await rename(tmp, filePath)
+    } catch (err) {
+      try {
+        await unlink(tmp)
+      } catch {
+        /* limpeza best-effort: se o tmp já sumiu, seguimos com o erro original */
+      }
+      throw err
+    }
   }
 
   // `git status --porcelain` -> { entries: { path: 'M' | 'A' | '??' | ... }, prefix }. Os paths que

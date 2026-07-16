@@ -149,3 +149,78 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* Editor embutido (Onda 2 · T4): barra de ações fixa + textarea rolável ocupando o resto do corpo.
+   Reaproveita .ork-filetree-copybtn (ghost) para os controles; o textarea é monospace, sem realce
+   de sintaxe (decisão da fase 1 — ver FileEditor.tsx). */
+.ork-filetree-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ork-filetree-editor-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Botão de ação do editor (salvar/citar) = ghost com ícone, mesmo idioma do copiar-caminho. */
+.ork-filetree-editbtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  padding: 3px var(--space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-filetree-editbtn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+.ork-filetree-editbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ork-filetree-editor-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+
+.ork-filetree-textarea {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  padding: var(--space-2);
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}

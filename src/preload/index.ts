@@ -100,7 +100,11 @@ const api = {
     // compõe a chave de `entries` como `prefix + relativoÀRaiz(root, path)` (ver fileTreeGit.ts),
     // pois o git devolve os paths sempre relativos ao TOPLEVEL, não ao `dir` consultado.
     gitStatus: (dir: string): Promise<{ prefix: string; entries: Record<string, string> }> =>
-      ipcRenderer.invoke('filetree:gitStatus', dir)
+      ipcRenderer.invoke('filetree:gitStatus', dir),
+    // Onda 2 (T4): grava `content` em `path` (escrita atômica no main). `root` é a raiz da árvore —
+    // o main RECUSA gravar fora dela (isInsideRoot). Pode rejeitar (path fora da raiz, erro de fs).
+    write: (path: string, content: string, root: string): Promise<void> =>
+      ipcRenderer.invoke('filetree:write', path, content, root)
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),

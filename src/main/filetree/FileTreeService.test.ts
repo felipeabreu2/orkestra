@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FileTreeService } from './FileTreeService'
+import { FileTreeService, isInsideRoot } from './FileTreeService'
 
 describe('FileTreeService', () => {
   let dir: string
@@ -75,6 +75,37 @@ describe('FileTreeService', () => {
     expect(r.content).toBe('')
     expect(r.binary).toBe(false)
     expect(r.truncated).toBe(false)
+  })
+
+  it('write grava o conteúdo e read devolve exatamente o que foi escrito (idempotente)', async () => {
+    const p = join(dir, 'src', 'a.ts')
+    await svc.write(p, 'export const a = 2\n', dir)
+    const r1 = await svc.read(p)
+    expect(r1.content).toBe('export const a = 2\n')
+    // idempotente: gravar de novo o mesmo conteúdo mantém a leitura estável
+    await svc.write(p, 'export const a = 2\n', dir)
+    const r2 = await svc.read(p)
+    expect(r2.content).toBe('export const a = 2\n')
+  })
+
+  it('write cria um arquivo NOVO dentro da raiz', async () => {
+    const p = join(dir, 'src', 'novo.ts')
+    await svc.write(p, 'const x = 1\n', dir)
+    expect((await svc.read(p)).content).toBe('const x = 1\n')
+  })
+
+  it('write REJEITA um caminho fora da raiz (path traversal) e não deixa .orktmp', async () => {
+    const outside = join(dir, '..', 'fora.txt')
+    await expect(svc.write(outside, 'x', dir)).rejects.toThrow(/fora da raiz/)
+    expect(existsSync(`${outside}.orktmp`)).toBe(false)
+  })
+
+  it('isInsideRoot: aceita dentro/igual, recusa traversal e prefixo-irmão', () => {
+    expect(isInsideRoot('/r', '/r/a/b')).toBe(true)
+    expect(isInsideRoot('/r', '/r')).toBe(true)
+    expect(isInsideRoot('/r', '/r/../x')).toBe(false)
+    expect(isInsideRoot('/r', '/r-outro/a')).toBe(false)
+    expect(isInsideRoot('/r', '/outro')).toBe(false)
   })
 
   it('gitStatus vazio p/ dir sem git; reporta modificados num repo', async () => {

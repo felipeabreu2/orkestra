@@ -5,15 +5,16 @@ import { useCanvasStore } from '../store/canvasStore'
 import type { FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
 import { gitKeyForEntry } from './fileTreeGit'
+import { FileEditor } from './FileEditor'
 import { ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
 import './nodes.css'
 import './FileTreeNode.css'
 
-// Fase 19 (Task 2): explorador de arquivos padrão de IDE, como um nó do canvas. Lê tudo via
+// Fase 19 (Task 2): explorador de arquivos padrão de IDE, como um nó do canvas. Lê/escreve tudo via
 // window.orkestra.filetree.*/projects.* (IPC) — este arquivo nunca importa fs/child_process.
-// READ-ONLY: list (lazy, por diretório) + gitStatus (overlay de cor) + read (preview truncado/
-// binário). Sem editor embutido nem drag-para-terminal (refinamentos de ondas futuras, ver o
-// brief da Fase 19).
+// list (lazy, por diretório) + gitStatus (overlay de cor) + read (preview truncado/binário) +
+// EDITOR embutido (Onda 2 · T4, ver FileEditor.tsx: editar/salvar via filetree.write atômico) +
+// CITAR seleção → agente conectado (T5). Arrastar arquivo→terminal já veio na Onda 1.
 
 // Último segmento não-vazio do path (funciona pra POSIX "/a/b/" e Windows "C:\\a\\b\\") — mesmo
 // helper (não compartilhado) já usado em ProjectsSidebar.tsx.
@@ -200,6 +201,8 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState('')
   const [copied, setCopied] = useState(false)
+  // Onda 2 · T4: alterna entre o preview somente-leitura (<pre>) e o editor embutido (FileEditor).
+  const [editing, setEditing] = useState(false)
 
   // Recarrega a raiz (e zera cache/expansão/preview de uma pasta anterior) sempre que `root`
   // muda — troca de pasta pelo header, ou a resolução do fallback (projeto ativo) terminar.
@@ -272,6 +275,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     setPreviewPath(file.path)
     setPreviewContent(null)
     setPreviewError('')
+    setEditing(false)
     setPreviewLoading(true)
     window.orkestra.filetree
       .read(file.path)
@@ -289,6 +293,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     setPreviewPath(null)
     setPreviewContent(null)
     setPreviewError('')
+    setEditing(false)
   }
 
   const copyPath = (): void => {
@@ -375,6 +380,25 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
                 <span className="ork-filetree-preview-path" title={previewPath}>
                   {basename(previewPath)}
                 </span>
+                {/* Onda 2 · T4: alterna Ver ↔ Editar. Só habilitado para texto completo — binário
+                    (não editável) e truncado (só temos os primeiros 256KB; salvar destruiria o resto)
+                    ficam em leitura. */}
+                {previewContent && !previewContent.binary && (
+                  <button
+                    className="nodrag ork-filetree-copybtn"
+                    onClick={() => setEditing((v) => !v)}
+                    disabled={previewContent.truncated}
+                    title={
+                      previewContent.truncated
+                        ? 'Arquivo truncado — edição desabilitada (só lemos os primeiros 256KB)'
+                        : editing
+                          ? 'Voltar para visualização'
+                          : 'Editar este arquivo'
+                    }
+                  >
+                    {editing ? 'ver' : 'editar'}
+                  </button>
+                )}
                 <button
                   className="nodrag ork-filetree-copybtn"
                   onClick={copyPath}
@@ -383,21 +407,34 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
                   {copied ? 'copiado!' : 'copiar caminho'}
                 </button>
               </div>
-              <div className="nodrag nowheel ork-filetree-previewbody">
-                {previewLoading && <div className="ork-filetree-msg">carregando…</div>}
-                {previewError && <div className="ork-filetree-msg ork-filetree-msg--err">{previewError}</div>}
-                {previewContent &&
-                  (previewContent.binary ? (
-                    <div className="ork-filetree-msg">(arquivo binário)</div>
-                  ) : (
-                    <>
-                      {previewContent.truncated && (
-                        <div className="ork-filetree-msg ork-filetree-msg--warn">(truncado)</div>
-                      )}
-                      <pre className="ork-filetree-pre">{previewContent.content}</pre>
-                    </>
-                  ))}
-              </div>
+              {editing && previewContent && !previewContent.binary && !previewContent.truncated ? (
+                <FileEditor
+                  key={previewPath}
+                  nodeId={id}
+                  path={previewPath}
+                  root={root}
+                  initialContent={previewContent.content}
+                  onSaved={(content) =>
+                    setPreviewContent({ content, truncated: false, binary: false })
+                  }
+                />
+              ) : (
+                <div className="nodrag nowheel ork-filetree-previewbody">
+                  {previewLoading && <div className="ork-filetree-msg">carregando…</div>}
+                  {previewError && <div className="ork-filetree-msg ork-filetree-msg--err">{previewError}</div>}
+                  {previewContent &&
+                    (previewContent.binary ? (
+                      <div className="ork-filetree-msg">(arquivo binário)</div>
+                    ) : (
+                      <>
+                        {previewContent.truncated && (
+                          <div className="ork-filetree-msg ork-filetree-msg--warn">(truncado)</div>
+                        )}
+                        <pre className="ork-filetree-pre">{previewContent.content}</pre>
+                      </>
+                    ))}
+                </div>
+              )}
             </div>
           )}
           {root && !previewPath && (
