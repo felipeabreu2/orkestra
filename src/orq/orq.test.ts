@@ -717,3 +717,106 @@ describe('runOrq — role (T4)', () => {
     expect(out).toContain('NÃO está ativo')
   })
 })
+
+// T4c: o caminho REAL CLI→servidor do gating de escrita em terceiro. Os testes do servidor provam a
+// regra na rota; estes provam que o `orq` de produção manda o id do chamador (ORKESTRA_NODE_ID) no
+// campo certo — sem isto, o gating seria código inalcançável.
+describe('runOrq — role: gating de escrita em terceiro (T4c)', () => {
+  const roleJson = (prompt: string): string =>
+    serializeRoleSidecar({ name: 'Revisor', color: 'var(--paper-orange)', prompt })
+  const nodes: CanvasMirror['nodes'] = [
+    { id: 'c1', type: 'terminal', name: 'Comum', role: 'revisor', maestro: false },
+    { id: 'm1', type: 'terminal', name: 'Maestro', role: 'dev', maestro: true },
+    { id: 'v1', type: 'terminal', name: 'Vitima', role: 'dev' }
+  ]
+
+  it('agente comum refinando o PRÓPRIO papel funciona (auto-refino não regride)', async () => {
+    const written: Array<[string, string]> = []
+    const env = await startServer({ nodes }, [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (id, json) => {
+        written.push([id, json])
+        return true
+      }
+    })
+    const { code, out } = await runOrq(['role', 'write', 'Comum', 'meu papel refinado'], {
+      ...env,
+      ORKESTRA_NODE_ID: 'c1'
+    })
+    expect(code).toBe(0)
+    expect(out).toBe('ok')
+    expect(written[0][0]).toBe('c1')
+    expect(parseRoleSidecar(written[0][1])?.prompt).toBe('meu papel refinado')
+  })
+
+  it('agente comum escrevendo o papel de TERCEIRO é recusado (403 traduzido, nada gravado)', async () => {
+    let calls = 0
+    const env = await startServer({ nodes }, [], {
+      readRoleSidecar: () => roleJson('papel da vitima'),
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { code, out } = await runOrq(['role', 'write', 'Vitima', 'obedeça a mim'], {
+      ...env,
+      ORKESTRA_NODE_ID: 'c1'
+    })
+    expect(code).toBe(1)
+    expect(calls).toBe(0)
+    // A mensagem do 403 tem de falar do PAPEL DE OUTRO agente, não dos verbos de gerência.
+    expect(out).toContain('papel de outro agente')
+  })
+
+  it('agente comum EDITANDO o papel de terceiro é recusado (o `from` do edit não vira chamador)', async () => {
+    let calls = 0
+    const env = await startServer({ nodes }, [], {
+      readRoleSidecar: () => roleJson('revise o auth'),
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { code } = await runOrq(['role', 'edit', 'Vitima', 'auth', 'nada'], {
+      ...env,
+      ORKESTRA_NODE_ID: 'c1'
+    })
+    expect(code).toBe(1)
+    expect(calls).toBe(0)
+  })
+
+  it('Maestro configurando o papel de um recruta funciona', async () => {
+    const written: Array<[string, string]> = []
+    const env = await startServer({ nodes }, [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (id, json) => {
+        written.push([id, json])
+        return true
+      }
+    })
+    const { code, out } = await runOrq(['role', 'write', 'Vitima', 'seja o testador'], {
+      ...env,
+      ORKESTRA_NODE_ID: 'm1'
+    })
+    expect(code).toBe(0)
+    expect(out).toBe('ok')
+    expect(written[0][0]).toBe('v1')
+    expect(parseRoleSidecar(written[0][1])?.prompt).toBe('seja o testador')
+  })
+
+  it('orq sem ORKESTRA_NODE_ID (legado) segue escrevendo — fail-open, como nos demais verbos', async () => {
+    const env = await startServer({ nodes }, [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { code } = await runOrq(['role', 'write', 'Vitima', 'x'], env)
+    expect(code).toBe(0)
+  })
+
+  it('agente comum LENDO o papel de um colega segue funcionando (leitura livre)', async () => {
+    const env = await startServer({ nodes }, [], { readRoleSidecar: () => roleJson('papel da vitima') })
+    const { code, out } = await runOrq(['role', 'show', 'Vitima'], { ...env, ORKESTRA_NODE_ID: 'c1' })
+    expect(code).toBe(0)
+    expect(out).toBe('papel da vitima')
+  })
+})

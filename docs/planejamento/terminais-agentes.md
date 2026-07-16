@@ -215,20 +215,59 @@ hoje. `ORKESTRA_ROLE` já vai no env deles — o follow-up é um wrapper espelha
     uma nova sessão; o sidecar não era lido no spawn e ainda era sobrescrito a cada arranque. Fechado.
   - Erros de projeto-não-ativo (409) e sem-janela (503) tratados como no resto do `orq`.
 - **Notas:** depende de T1–T3 (papel com `prompt` + sidecar). Auto-modificação de contexto: documentar que o agente pode reescrever o **próprio** papel — manter escopo de projeto (`x-orkestra-project`) para não vazar entre projetos.
-- **Gating (decidido em 2026-07-16):** `role` **não** entra no gating de Maestro. O caso de uso é
-  auto-refino — o agente reescrevendo o próprio papel —, não um verbo de gerência sobre terceiros: um
-  recruta comum (`maestro:false`) precisa poder refinar o que ele é. O alvo é por nome (best-effort,
-  como o resto do orq), então um agente pode em tese escrever o papel de um colega; como o sidecar é
-  metadado (não altera o comportamento de ninguém — ver LACUNA acima), o raio de dano é um arquivo de
-  metadado, não escalação de privilégio. Se o T4b ligar o sidecar ao spawn, **reavaliar**.
-- **REAVALIAÇÃO do gating (2026-07-16, pós-T4b):** o T4b **ligou** o sidecar ao spawn — ele deixou de
-  ser metadado inerte e passou a ser o prompt efetivo do próximo arranque. O raio de dano de escrever
-  o `role.json` de um colega cresceu: não é mais "um arquivo de metadado", é o papel com que aquele
-  agente vai nascer. Não muda o veredito (auto-refino continua sendo o caso de uso, e um recruta
-  precisa poder refinar o que ele é), mas **o alvo por nome vira o ponto frágil**: um agente pode
-  escrever o papel de outro. Follow-up sugerido: restringir `role write/edit` ao **próprio**
-  `ORKESTRA_NODE_ID` (o alvo por nome fica só no `show`), ou exigir `maestro:true` para escrever em
-  terceiros. Fora do escopo do T4b, que não tocou em `OrchestrationServer.ts`/`orq.ts`.
+- **Gating — decisão ORIGINAL (2026-07-16), SUPERADA pela T4c abaixo (histórico, não é a regra
+  vigente):** `role` **não** entrava no gating de Maestro. O caso de uso é auto-refino — o agente
+  reescrevendo o próprio papel —, não um verbo de gerência sobre terceiros: um recruta comum
+  (`maestro:false`) precisa poder refinar o que ele é. O alvo é por nome (best-effort, como o resto do
+  orq), então um agente podia em tese escrever o papel de um colega; como o sidecar era metadado (não
+  alterava o comportamento de ninguém — ver LACUNA acima), o raio de dano era um arquivo de metadado,
+  não escalação de privilégio. **A decisão registrou: "se o T4b ligar o sidecar ao spawn, reavaliar".**
+- **REAVALIAÇÃO do gating (2026-07-16, pós-T4b) — FEITA e FECHADA pela T4c.** O T4b **ligou** o
+  sidecar ao spawn: ele deixou de ser metadado inerte e virou o prompt efetivo do próximo arranque. A
+  premissa da decisão original caiu — escrever o `role.json` de um colega não é mais "um arquivo de
+  metadado", é escolher as instruções com que aquele agente vai arrancar. Com o alvo por nome e sem
+  gating, **qualquer recruta comum controlava o comportamento de outro agente: escalação de
+  privilégio** num canvas multi-agente. Resolvido na T4c.
+
+---
+
+### T4c — fecha a escalação de privilégio do `orq role`  [RESOLVIDA · 2026-07-16]
+
+Conclui a reavaliação prometida pela T4. A brecha era **emergente**: T4 (sem gating) e T4b (sidecar →
+spawn) estavam corretas isoladamente; a combinação é que escalou privilégio.
+
+**REGRA VIGENTE (é esta que vale, não a "decisão original" da T4):**
+
+| Operação | Quem pode |
+|---|---|
+| `role show` (ler qualquer papel) | **livre** — qualquer agente, sem gating |
+| `role write/edit` no **próprio** papel (`caller === nó alvo`) | **livre** — Maestro ou não (auto-refino, o caso de uso central da T4) |
+| `role write/edit` no papel de **terceiro** | exige **`maestro: true`** → senão **403** |
+
+- **Identidade do chamador:** `ORKESTRA_NODE_ID`, enviado pelo `orq` no campo **`caller`** do corpo do
+  `POST /role`. **Não pode se chamar `from`**: no corpo do `role edit`, `from` já é o *trecho de texto
+  a substituir* (contrato da T4). Essa colisão é a armadilha da rota — há teste que a amarra
+  (`edit` em terceiro por não-Maestro → 403, provando que o `from` do edit não vira chamador).
+- **Leitura livre — por quê:** ler o papel de um colega não muda o comportamento de ninguém (o raio de
+  dano é assimétrico em relação à escrita), e "saber com quem falo" é valor declarado do projeto —
+  a mesma motivação que surfaçou o papel no `orq list` (T3b), que já é livre para todos. Gatear o
+  `show` custaria esse valor sem fechar nada: o `/list` já expõe o papel de todo mundo.
+- **Fail-open preservado (deliberado):** `canWriteRole` delega ao `isMaestro` para o caso de terceiro,
+  herdando o fail-open dele — `caller` ausente (orq legado/externo, sem `ORKESTRA_NODE_ID`) ou nó
+  desconhecido no espelho → **permite**; terminal legado (`maestro: undefined`, todo snapshot anterior
+  ao toggle) → **permite**. `isMaestro` **não** foi alterado (decisão consciente do usuário, fixada em
+  testes unitários — ver `docs/planejamento/modo-maestro.md`). Só bloqueia o `maestro: false` explícito.
+- **Ordem dos portões:** 401 → 409 (escopo de projeto) → 400/404 → **403**. O 403 é o último: alvo
+  inexistente responde 404 mesmo a um não-Maestro (o espelho já é legível via `/list` — o 404 não vaza
+  nada novo).
+- **Arquivos tocados:**
+  - `src/main/orchestration/OrchestrationServer.ts` — `canWriteRole(mirror, callerId, targetId)`
+    (exportada, pura) + o portão no `POST /role`, após a resolução do nó alvo.
+  - `src/orq/orq.ts` — o ramo `role` envia `caller`; `errOut` ganhou um 403 parametrizável (o texto
+    default fala dos verbos de gerência, que não é o motivo do 403 aqui); string de uso corrigida
+    (ela afirmava que `role` "não é verbo de gerência, funciona em qualquer terminal").
+  - `src/main/orchestration/OrchestrationServer.test.ts`, `src/orq/orq.test.ts` — testes (TDD,
+    vermelho antes), incluindo o caminho REAL CLI→servidor (não só o helper puro).
 
 ---
 

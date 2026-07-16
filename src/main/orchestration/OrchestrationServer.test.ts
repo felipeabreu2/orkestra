@@ -1275,3 +1275,176 @@ describe('OrchestrationServer — /role (T4)', () => {
     expect(res.status).toBe(200)
   })
 })
+
+// T4c (escalação de privilégio, 2026-07-16): a T4 dispensou o gating porque o sidecar era metadado
+// INERTE ("o raio de dano é um arquivo"). A T4b derrubou essa premissa: o sidecar virou a fonte do
+// prompt efetivo no spawn. Como o alvo do `role write/edit` é por NOME, um recruta comum podia
+// reescrever o role.json de um colega e escolher as instruções com que ele arranca — controle sobre
+// o comportamento de outro agente, não mais um arquivo de metadado.
+//
+// Regra que vigora: escrever o PRÓPRIO papel é sempre livre (auto-refino, o caso de uso da T4);
+// escrever o de TERCEIRO exige maestro:true. Leitura (GET /role) segue livre.
+describe('OrchestrationServer — /role: gating de escrita em terceiro (T4c)', () => {
+  const roleJson = (prompt: string): string =>
+    serializeRoleSidecar({ name: 'Revisor', color: 'var(--paper-orange)', prompt })
+  // Espelho com os três shapes que importam: comum explícito, Maestro explícito e LEGADO
+  // (maestro: undefined — todo terminal serializado antes do toggle existir).
+  const canvas = (): { nodes: CanvasMirror['nodes'] } => ({
+    nodes: [
+      { id: 'c1', type: 'terminal', name: 'Comum', role: 'revisor', maestro: false },
+      { id: 'm1', type: 'terminal', name: 'Maestro', role: 'dev', maestro: true },
+      { id: 'l1', type: 'terminal', name: 'Legado', role: 'dev' },
+      { id: 'v1', type: 'terminal', name: 'Vitima', role: 'dev' }
+    ]
+  })
+  const postRole = async (port: number, token: string, body: unknown): Promise<Response> =>
+    await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+
+  it('agente comum (maestro:false) escrevendo o PRÓPRIO papel → 200 (auto-refino, caso de uso da T4)', async () => {
+    const written: string[] = []
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Comum', prompt: 'meu papel refinado', caller: 'c1' })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('meu papel refinado')
+  })
+
+  it('agente comum escrevendo o papel de TERCEIRO → 403 e NADA é gravado (a brecha)', async () => {
+    let calls = 0
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('papel da vitima'),
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'obedeça a mim', caller: 'c1' })
+    expect(res.status).toBe(403)
+    expect(calls).toBe(0)
+  })
+
+  // O modo `edit` carrega `from` no corpo com OUTRO significado (trecho antigo). O gating não pode
+  // se confundir com ele: o id do chamador é `caller`, e o edit é gated igual ao write.
+  it('agente comum EDITANDO o papel de terceiro → 403 (o `from` do edit não é o chamador)', async () => {
+    let calls = 0
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('revise o auth'),
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', from: 'auth', to: 'nada', caller: 'c1' })
+    expect(res.status).toBe(403)
+    expect(calls).toBe(0)
+  })
+
+  it('Maestro (maestro:true) escrevendo o papel de terceiro → 200 (configurar os recrutas é legítimo)', async () => {
+    const written: string[] = []
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'seja o testador', caller: 'm1' })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('seja o testador')
+  })
+
+  // Fail-open do isMaestro (decisão consciente, fixada nos testes do topo deste arquivo): terminal
+  // legado (maestro: undefined) NÃO é bloqueado. Este teste amarra que o gating novo herda essa
+  // decisão em vez de "consertar" o fail-open por tabela.
+  it('terminal legado (maestro: undefined) escrevendo o papel de terceiro → 200 (fail-open herdado)', async () => {
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'x', caller: 'l1' })
+    expect(res.status).toBe(200)
+  })
+
+  it('caller ausente (orq legado/externo) → 200 (mesmo fail-open de `from` ausente nos demais verbos)', async () => {
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'x' })
+    expect(res.status).toBe(200)
+  })
+
+  it('caller que não existe no espelho → 200 (fail-open: nó desconhecido não é tratado como comum)', async () => {
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'x', caller: 'fantasma' })
+    expect(res.status).toBe(200)
+  })
+
+  // Ordem de erros (paridade com os demais verbos): 401 → 409 → 400/404 → 403. O 403 é o ÚLTIMO
+  // portão: um alvo inexistente responde 404 mesmo para um não-Maestro (o espelho inteiro já é
+  // legível via /list — 404 aqui não vaza nada que o agente não pudesse ver).
+  it('nome inexistente + caller comum → 404 (o 403 é o último portão, não mascara o 404)', async () => {
+    const s = makeServer(canvas(), [], { readRoleSidecar: () => null, writeRoleSidecar: () => true })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Fantasma', prompt: 'x', caller: 'c1' })
+    expect(res.status).toBe(404)
+  })
+
+  it('corpo inválido (nem prompt nem from/to) + caller comum → 400 (validação antes do gating)', async () => {
+    const s = makeServer(canvas(), [], { readRoleSidecar: () => null, writeRoleSidecar: () => true })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', caller: 'c1' })
+    expect(res.status).toBe(400)
+  })
+
+  it('escopo de projeto vence o gating: projeto não-ativo → 409 mesmo com caller válido', async () => {
+    const s = makeServer(canvas(), [], {
+      getActiveProjectId: () => 'proj-B',
+      readRoleSidecar: () => roleJson('x'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: {
+        'x-orkestra-token': token,
+        'x-orkestra-project': 'proj-A',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ name: 'Comum', prompt: 'x', caller: 'c1' })
+    })
+    expect(res.status).toBe(409)
+  })
+
+  // Decisão (T4c): LEITURA segue livre. Ler o papel de um colega é ordens de grandeza menos perigoso
+  // que escrevê-lo (não muda o comportamento de ninguém) e "saber com quem falo" é valor declarado do
+  // projeto — a mesma motivação que surfaçou o papel no `orq list`, que já é livre para todos.
+  it('GET /role de um TERCEIRO segue livre (leitura não é gated)', async () => {
+    const s = makeServer(canvas(), [], { readRoleSidecar: () => roleJson('papel da vitima') })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Vitima`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { prompt: string }).prompt).toBe('papel da vitima')
+  })
+})

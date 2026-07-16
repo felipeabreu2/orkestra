@@ -68,6 +68,26 @@ export function isMaestro(mirror: CanvasMirror, fromId: string | undefined): boo
   return !node || node.maestro !== false
 }
 
+// T4c (2026-07-16) — quem pode ESCREVER o `role.json` de um terminal.
+//
+// A T4 dispensou o gating do /role com uma premissa que a T4b derrubou: o sidecar era metadado
+// INERTE, então "o raio de dano é um arquivo". Depois da T4b ele virou a FONTE DO PROMPT EFETIVO no
+// spawn — escrever o role.json de um colega passou a ser escolher as instruções com que ele arranca.
+// Como o alvo do `role write/edit` é por NOME, qualquer recruta comum podia fazer isso: escalação de
+// privilégio num canvas multi-agente.
+//
+// Regra: auto-refino (callerId === targetId) é SEMPRE livre, Maestro ou não — é o caso de uso central
+// da T4 e não pode regredir. Escrever em TERCEIRO é verbo de gerência: exige maestro:true, e por isso
+// delega ao isMaestro (incluindo o fail-open dele para nó legado/desconhecido — decisão consciente,
+// fixada em testes; não "consertar" aqui por tabela).
+export function canWriteRole(mirror: CanvasMirror, callerId: string | undefined, targetId: string): boolean {
+  // Sem chamador (orq legado/externo, sem ORKESTRA_NODE_ID): mesmo fail-open de `from` ausente nos
+  // demais verbos — o isMaestro já decidiria assim, mas explicitar evita depender do acaso.
+  if (!callerId) return true
+  if (callerId === targetId) return true
+  return isMaestro(mirror, callerId)
+}
+
 export class OrchestrationServer {
   private server?: Server
   private token = ''
@@ -315,13 +335,15 @@ export class OrchestrationServer {
     //
     // ATENÇÃO ao `from` daqui: nas OUTRAS rotas `from` é o id do nó CHAMADOR (gating/posicionamento);
     // aqui é o trecho de texto a substituir (contrato do plano, paridade com `maestri role edit`).
-    // Não reuse este corpo como referência de gating.
+    // Não reuse este corpo como referência de gating. Por isso o id do chamador chega em `caller`
+    // (T4c) e NÃO em `from`: o nome já estava tomado, com outro significado.
     //
-    // SEM gating de Maestro (decisão do T4): auto-refino é o agente reescrevendo o PRÓPRIO papel,
-    // não um verbo de gerência sobre terceiros — um recruta comum (maestro:false) precisa poder.
+    // Gating (T4c, revisão da decisão do T4 após a T4b ligar o sidecar ao spawn): auto-refino
+    // (caller === nó alvo) é livre para qualquer agente; escrever o papel de TERCEIRO exige
+    // maestro:true — ver canWriteRole. LEITURA (GET /role) segue livre, sem gating.
     if (req.method === 'POST' && req.url === '/role') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { name?: unknown; prompt?: unknown; from?: unknown; to?: unknown }
+        const parsed = raw as { name?: unknown; prompt?: unknown; from?: unknown; to?: unknown; caller?: unknown }
         const isWrite = typeof parsed.prompt === 'string'
         const isEdit = typeof parsed.from === 'string' && typeof parsed.to === 'string'
         // Exatamente um dos dois modos: nem nenhum (nada a fazer), nem os dois (qual vence?).
@@ -332,6 +354,14 @@ export class OrchestrationServer {
         const node = this.terminalByName(parsed.name)
         if (!node || !this.opts.writeRoleSidecar) {
           res.writeHead(404).end('not found')
+          return
+        }
+        // `caller` = ORKESTRA_NODE_ID do terminal que rodou o orq. Mesmo tratamento retrocompatível
+        // do `from` das outras rotas: ausente/não-string → undefined → fail-open. O 403 vem DEPOIS do
+        // 404 (o espelho inteiro já é legível via /list, então o 404 não vaza nada novo).
+        const caller = typeof parsed.caller === 'string' && parsed.caller !== '' ? parsed.caller : undefined
+        if (!canWriteRole(this.opts.getMirror(), caller, node.id)) {
+          res.writeHead(403).end('not a maestro')
           return
         }
         const current = resolveRoleSidecar(this.opts.readRoleSidecar?.(node.id) ?? null, node)
