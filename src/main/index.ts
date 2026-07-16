@@ -14,7 +14,7 @@ import { registerSshIpc } from './ssh/registerSshIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { installOrq } from './orchestration/installOrq'
-import { buildEnvPath } from './orchestration/envPath'
+import { buildEnvPath, resolveNvmBinDirs } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
 import {
   NotificationCoalescer,
@@ -442,7 +442,17 @@ app.whenReady().then(async () => {
     const binDir = installOrq(join(__dirname, '../orq/bin.js'))
     // BLD-2: augmenta o PATH com os diretórios comuns de instalação que faltam num app empacotado
     // lançado pelo Finder (PATH mínimo do launchd) — em dev é no-op. Separador por plataforma.
-    const { path, realPath } = buildEnvPath(binDir, process.env.PATH ?? '', process.platform, app.getPath('home'))
+    // BLD-2b: descobre o bin do node do nvm (I/O) — sem ele o `orq` (shebang `#!/usr/bin/env node`)
+    // morre com "env: node: No such file or directory" e a orquestração inteira vai junto. No-op se
+    // não houver nvm. Fica fora de buildEnvPath, que é pura/determinística por causa dos testes.
+    const nvmBinDirs = resolveNvmBinDirs(process.env, app.getPath('home'), process.platform)
+    const { path, realPath } = buildEnvPath(
+      binDir,
+      process.env.PATH ?? '',
+      process.platform,
+      app.getPath('home'),
+      nvmBinDirs
+    )
     orchestrationEnv = {
       // Diretório dos wrappers/orq. registerPtyIpc usa para chamar o wrapper `claude` pelo CAMINHO
       // ABSOLUTO no auto-início — o PATH não é confiável (o .zshrc do usuário o reordena e mascara
