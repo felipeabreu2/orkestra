@@ -27,6 +27,23 @@ export function registerFileTreeIpc(
   ipcMain.handle('filetree:gitBranch', (_e, dir: string) => svc.gitBranch(dir))
   ipcMain.handle('filetree:gitDiff', (_e, dir: string, path?: string) => svc.gitDiff(dir, path))
 
+  // Onda 3 · T11 — git de ESCRITA (muta o REPOSITÓRIO do usuário). Ao contrário do gitBranch/
+  // gitDiff acima, estes REJEITAM em erro (nada staged, nome de branch inválido, checkout com
+  // working tree sujo, fora de repo) em vez de devolver vazio: para exibir uma árvore "sem git" não
+  // é erro, para commitar é. A rejeição do invoke() chega ao renderer, que mostra a mensagem — um
+  // commit que falha em silêncio faria o usuário achar que o trabalho está salvo quando não está.
+  // A confirmação (e o que entra no commit) é decidida no renderer ANTES de chamar isto; validação
+  // de nome de branch e defesa de option injection são no MAIN (svc), nunca só na UI.
+  ipcMain.handle('filetree:gitCommit', (_e, dir: string, message: string) =>
+    svc.gitCommit(dir, message)
+  )
+  ipcMain.handle('filetree:gitCreateBranch', (_e, dir: string, name: string) =>
+    svc.gitCreateBranch(dir, name)
+  )
+  ipcMain.handle('filetree:gitCheckout', (_e, dir: string, branch: string) =>
+    svc.gitCheckout(dir, branch)
+  )
+
   // Onda 3 · T9 — watch de filesystem.
   //
   // `subscriptionId` vem do RENDERER (não é gerado aqui e devolvido) de propósito: o unwatch do

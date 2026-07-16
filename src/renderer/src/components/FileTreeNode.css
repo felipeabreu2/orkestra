@@ -318,3 +318,136 @@
 .ork-filetree-refresh--degraded {
   color: var(--warn);
 }
+
+/* ── Onda 3 · T11: menu de git de ESCRITA (commit / branch) ─────────────────────────────────────
+   O chip de branch (T8) virou o gatilho do menu, então precisa de affordance de botão — mas segue
+   discreto: é um chip informativo que ACEITA clique, não uma call-to-action. Reset do <button>
+   nativo, porque .ork-filetree-branch nasceu como <span>. */
+button.ork-filetree-branch {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-2xs);
+}
+button.ork-filetree-branch:hover {
+  color: var(--text-2);
+  border-color: var(--border);
+}
+.ork-filetree-branch--open {
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-color: var(--border-strong);
+}
+
+/* Painel do menu: encostado no header, acima do corpo da árvore. */
+.ork-filetree-gitmenu {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2-weak);
+  padding: var(--space-1-5);
+}
+.ork-filetree-gitmenu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ork-filetree-gitmenu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.ork-filetree-gitmenu-item:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.ork-filetree-gitmenu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ork-filetree-gitform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.ork-filetree-gitform-row {
+  display: flex;
+  gap: var(--space-1-5);
+}
+.ork-filetree-gitinput {
+  width: 100%;
+  padding: var(--space-1) var(--space-1-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  resize: vertical;
+}
+.ork-filetree-gitinput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Preview do commit: a LISTA do que entra/fica de fora. Monoespaçada e rolável — é a promessa que
+   a confirmação faz, então precisa caber inteira mesmo com muitos arquivos. */
+.ork-filetree-gitpreview {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ork-filetree-githint {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+}
+
+/* Erro do git: cor SEMÂNTICA (--err), literal e dispensável só pelo × — uma operação que falhou não
+   pode sumir sozinha da tela. */
+.ork-filetree-giterr {
+  color: var(--err);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+}
+.ork-filetree-giterr--banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--err-weak);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ork-filetree-gitok {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--ok-weak);
+  color: var(--ok);
+  font-size: var(--fs-2xs);
+}

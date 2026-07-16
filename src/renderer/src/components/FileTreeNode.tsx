@@ -7,6 +7,7 @@ import { Icon } from './Icon'
 import { gitKeyForEntry } from './fileTreeGit'
 import { watchDirsFor, shouldApplyWatchEvent } from './fileTreeWatch'
 import { parseDiffLines, diffHunkAt, diffQuoteLabel, type DiffLine, type DiffHunk } from './fileTreeDiff'
+import { commitPreview, canCommit, commitConfirmText, branchNameError } from './fileTreeGitWrite'
 import { FileEditor } from './FileEditor'
 import { resolveConnectedTerminal } from './quoteSelection'
 import { getTerminalPty } from '../terminal/terminalRegistry'
@@ -276,6 +277,18 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   // parecendo viva, que é a pior falha possível aqui.
   const [watchError, setWatchError] = useState('')
 
+  // ── Onda 3 · T11: menu de git de ESCRITA (commit / nova branch / trocar) ─────────────────────
+  // Único lugar da árvore que muta o REPOSITÓRIO do usuário. Cada operação passa por uma etapa de
+  // confirmação explícita (nada dispara no primeiro clique) e o erro do git é mostrado LITERAL —
+  // "nothing to commit", "would be overwritten by checkout"… são mensagens que o usuário sabe ler,
+  // e reescrevê-las só perderia informação.
+  const [gitMenu, setGitMenu] = useState<'none' | 'menu' | 'commit' | 'branch' | 'switch'>('none')
+  const [commitMsg, setCommitMsg] = useState('')
+  const [branchInput, setBranchInput] = useState('')
+  const [gitBusy, setGitBusy] = useState(false)
+  const [gitWriteError, setGitWriteError] = useState('')
+  const [gitWriteOk, setGitWriteOk] = useState('')
+
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<PreviewState | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -421,6 +434,37 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     // recuperável com um clique; citar um hunk fantasma, não.
     setGitNonce((n) => n + 1)
   }, [])
+
+  // ── Onda 3 · T11: execução das operações de escrita ──────────────────────────────────────────
+  //
+  // POR QUE O REFRESH EXPLÍCITO: o watch da T9 observa a ÁRVORE (raiz + expandidas) e ignora `.git`
+  // de propósito (churn do git acordaria o watch a cada operação). Um COMMIT só mexe dentro de
+  // `.git` — nenhum arquivo da árvore muda — então o watcher NÃO dispara e o overlay/branch ficariam
+  // congelados mostrando o estado pré-commit: a árvore mentiria que ainda há trabalho pendente. Por
+  // isso todo caminho de sucesso aqui chama refreshFromDisk() à mão. (Um checkout mexe em arquivos
+  // da árvore e acordaria o watch, mas não dá para depender disso: se a troca de branch não alterar
+  // nenhum arquivo VISÍVEL, não há evento — o refresh explícito cobre os dois casos.)
+  const runGitWrite = useCallback(
+    async (label: string, op: () => Promise<void>): Promise<void> => {
+      setGitBusy(true)
+      setGitWriteError('')
+      setGitWriteOk('')
+      try {
+        await op()
+        setGitWriteOk(label)
+        setGitMenu('none')
+        setCommitMsg('')
+        setBranchInput('')
+        refreshFromDisk()
+      } catch (err) {
+        // Mensagem do git, literal. Falhou é falhou — nada de engolir e fingir que deu certo.
+        setGitWriteError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setGitBusy(false)
+      }
+    },
+    [refreshFromDisk]
+  )
 
   // Escopo de projeto: o projeto que ESTE canvas exibe. Carimbado na assinatura e reconferido em
   // cada push — ver shouldApplyWatchEvent. Existe por causa do incidente de corrupção
@@ -597,12 +641,23 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             {root ? basename(root) : name}
           </span>
           {/* Onda 3 · T8: branch atual. Só aparece DENTRO de um repo (fora, e em HEAD destacado,
-              gitBranch devolve '' e o header fica limpo em vez de mentir um nome). */}
+              gitBranch devolve '' e o header fica limpo em vez de mentir um nome).
+              Onda 3 · T11: virou o gatilho do menu de git de escrita (commit/branch). */}
           {branch && (
-            <span className="ork-filetree-branch" title={`Branch atual: ${branch}`}>
+            <button
+              className={`nodrag ork-filetree-branch${gitMenu !== 'none' ? ' ork-filetree-branch--open' : ''}`}
+              onClick={() => {
+                setGitWriteError('')
+                setGitWriteOk('')
+                setGitMenu((m) => (m === 'none' ? 'menu' : 'none'))
+              }}
+              aria-haspopup="menu"
+              aria-expanded={gitMenu !== 'none'}
+              title={`Branch atual: ${branch} — clique para commit / branch`}
+            >
               <Icon name="GitBranch" size={12} animation="none" />
               <span className="ork-filetree-branch-name">{branch}</span>
-            </span>
+            </button>
           )}
           {/* Toggle Lista ↔ Diff. Só faz sentido em repo: sem git não há diff nenhum p/ mostrar. */}
           <button
@@ -658,6 +713,165 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             <Icon name="X" size={14} animation="pop" />
           </button>
         </div>
+        {/* ── Onda 3 · T11: painel de git de escrita ────────────────────────────────────────────
+            A ÚNICA superfície da árvore que muta o repositório do usuário. Duas etapas sempre:
+            escolher a ação e então confirmar com os detalhes à vista. Nenhuma ação destrutiva mora
+            aqui (sem force/reset/clean/branch -D): o pior caso de qualquer botão é um erro do git
+            na faixa vermelha abaixo. */}
+        {gitMenu !== 'none' && (
+          <div className="nodrag ork-filetree-gitmenu" role="menu">
+            {gitMenu === 'menu' && (
+              <div className="ork-filetree-gitmenu-actions">
+                <button
+                  className="nodrag ork-filetree-gitmenu-item"
+                  role="menuitem"
+                  onClick={() => setGitMenu('commit')}
+                  disabled={!canCommit(gitStatus.entries)}
+                  title={
+                    canCommit(gitStatus.entries)
+                      ? 'Commitar as alterações rastreadas'
+                      : 'Nada a commitar (só há arquivos não rastreados, ou nada mudou)'
+                  }
+                >
+                  <Icon name="GitCommit" size={13} animation="none" />
+                  Commit…
+                </button>
+                <button
+                  className="nodrag ork-filetree-gitmenu-item"
+                  role="menuitem"
+                  onClick={() => setGitMenu('branch')}
+                >
+                  <Icon name="GitBranch" size={13} animation="none" />
+                  Nova branch…
+                </button>
+                <button
+                  className="nodrag ork-filetree-gitmenu-item"
+                  role="menuitem"
+                  onClick={() => setGitMenu('switch')}
+                >
+                  <Icon name="GitBranch" size={13} animation="none" />
+                  Trocar de branch…
+                </button>
+              </div>
+            )}
+
+            {/* COMMIT — a confirmação mostra a LISTA EXATA do que entra e do que fica de fora
+                (commitConfirmText). O main roda `git commit -a`: tracked modificado + o que já
+                estava em stage; untracked NÃO entra. Sem isso o botão seria um `add -A` cego, capaz
+                de varrer um .env esquecido para dentro do histórico. */}
+            {gitMenu === 'commit' && (
+              <div className="ork-filetree-gitform">
+                <pre className="ork-filetree-gitpreview">{commitConfirmText(gitStatus.entries)}</pre>
+                <textarea
+                  className="nodrag ork-filetree-gitinput"
+                  value={commitMsg}
+                  onChange={(e) => setCommitMsg(e.target.value)}
+                  placeholder="Mensagem do commit"
+                  rows={2}
+                  autoFocus
+                />
+                <div className="ork-filetree-gitform-row">
+                  <button
+                    className="nodrag ork-node-go"
+                    disabled={gitBusy || commitMsg.trim().length === 0}
+                    onClick={() => {
+                      const r = rootRef.current
+                      if (!r) return
+                      const n = commitPreview(gitStatus.entries).included.length
+                      void runGitWrite(`commit criado (${n} arquivo(s))`, async () => {
+                        await window.orkestra.filetree.gitCommit(r, commitMsg)
+                      })
+                    }}
+                  >
+                    {gitBusy ? 'commitando…' : 'Confirmar commit'}
+                  </button>
+                  <button className="nodrag ork-node-go" onClick={() => setGitMenu('menu')}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* NOVA BRANCH — cria a partir do HEAD atual e já troca para ela (é o que "nova branch"
+                significa no fluxo real; são duas chamadas, e se a troca falhar — working tree sujo —
+                a branch continua criada e o erro aparece). */}
+            {(gitMenu === 'branch' || gitMenu === 'switch') && (
+              <div className="ork-filetree-gitform">
+                <input
+                  className="nodrag ork-filetree-gitinput"
+                  value={branchInput}
+                  onChange={(e) => setBranchInput(e.target.value)}
+                  placeholder={gitMenu === 'branch' ? 'nome da nova branch' : 'branch de destino'}
+                  autoFocus
+                />
+                {/* validação-espelho: feedback imediato. A autoridade é o MAIN, que revalida e ainda
+                    consulta o próprio git (check-ref-format). */}
+                {branchInput.length > 0 && branchNameError(branchInput) && (
+                  <div className="ork-filetree-giterr">{branchNameError(branchInput)}</div>
+                )}
+                {gitMenu === 'switch' && (
+                  <div className="ork-filetree-githint">
+                    Com alterações não commitadas que colidam, o git recusa a troca — e nós não
+                    forçamos. Commite antes.
+                  </div>
+                )}
+                <div className="ork-filetree-gitform-row">
+                  <button
+                    className="nodrag ork-node-go"
+                    disabled={gitBusy || branchNameError(branchInput) !== ''}
+                    onClick={() => {
+                      const r = rootRef.current
+                      if (!r) return
+                      const alvo = branchInput
+                      if (gitMenu === 'branch') {
+                        void runGitWrite(`branch "${alvo}" criada e ativa`, async () => {
+                          await window.orkestra.filetree.gitCreateBranch(r, alvo)
+                          await window.orkestra.filetree.gitCheckout(r, alvo)
+                        })
+                      } else {
+                        void runGitWrite(`agora em "${alvo}"`, async () => {
+                          await window.orkestra.filetree.gitCheckout(r, alvo)
+                        })
+                      }
+                    }}
+                  >
+                    {gitBusy ? 'executando…' : gitMenu === 'branch' ? 'Criar e trocar' : 'Trocar'}
+                  </button>
+                  <button className="nodrag ork-node-go" onClick={() => setGitMenu('menu')}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {/* Erro do git, LITERAL ("nothing to commit", "would be overwritten by checkout"…): são
+            mensagens que o usuário sabe ler e reescrevê-las só perderia informação. Fica fora do
+            painel de propósito — continua visível depois que o menu fecha. */}
+        {gitWriteError && (
+          <div className="ork-filetree-giterr ork-filetree-giterr--banner" role="alert">
+            {gitWriteError}
+            <button
+              className="nodrag ork-node-iconbtn"
+              onClick={() => setGitWriteError('')}
+              aria-label="Fechar erro"
+            >
+              <Icon name="X" size={12} animation="pop" />
+            </button>
+          </div>
+        )}
+        {gitWriteOk && (
+          <div className="ork-filetree-gitok" role="status">
+            {gitWriteOk}
+            <button
+              className="nodrag ork-node-iconbtn"
+              onClick={() => setGitWriteOk('')}
+              aria-label="Fechar aviso"
+            >
+              <Icon name="X" size={12} animation="pop" />
+            </button>
+          </div>
+        )}
         <div className="ork-node-body ork-filetree-body">
           {resolving && <div className="ork-filetree-msg">carregando…</div>}
           {!resolving && !root && (

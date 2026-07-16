@@ -1,9 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FileTreeService, isInsideRoot, MAX_DIFF_LINES } from './FileTreeService'
+import {
+  FileTreeService,
+  gitCommitArgs,
+  gitCreateBranchArgs,
+  gitSwitchArgs,
+  isInsideRoot,
+  isSafeBranchName,
+  MAX_DIFF_LINES
+} from './FileTreeService'
 
 describe('FileTreeService', () => {
   let dir: string
@@ -289,5 +297,254 @@ describe('FileTreeService', () => {
     await svc.gitDiff(dir)
     expect(execFileSync('git', ['status', '--porcelain'], { cwd: dir }).toString()).toBe(before)
     expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString()).toBe(headBefore)
+  })
+
+  // ── Onda 3 · T11: git de ESCRITA (commit / branch / checkout) ──────────────────────────────
+  // Primeira coisa da árvore que muta o REPOSITÓRIO do usuário. Todo teste roda contra um repo
+  // git REAL (mesmo helper `initRepo` acima) — nada de fixture com shape fabricado.
+  const head = (at: string): string =>
+    execFileSync('git', ['rev-parse', 'HEAD'], { cwd: at }).toString().trim()
+
+  it('isSafeBranchName: recusa vazio, `-` inicial, espaço e caracteres de controle', () => {
+    expect(isSafeBranchName('feat/nova')).toBe(true)
+    expect(isSafeBranchName('acentuação')).toBe(true)
+    expect(isSafeBranchName('')).toBe(false)
+    expect(isSafeBranchName('   ')).toBe(false)
+    // ── vetor hostil: option injection. O git faz getopt no PRÓPRIO argv, então `execFile` com
+    // array NÃO protege — um nome começando com `-` viraria FLAG (`-D` = deletar branch).
+    expect(isSafeBranchName('-D')).toBe(false)
+    expect(isSafeBranchName('--force')).toBe(false)
+    expect(isSafeBranchName('-d outra')).toBe(false)
+    // whitespace nas pontas e controle: o git recusaria, mas recusamos antes p/ erro legível
+    expect(isSafeBranchName(' feat')).toBe(false)
+    expect(isSafeBranchName('feat ')).toBe(false)
+    expect(isSafeBranchName('a\nb')).toBe(false)
+    expect(isSafeBranchName('a\tb')).toBe(false)
+  })
+
+  // ── SEGUNDA camada da defesa de option injection, testada SOZINHA ────────────────────────────
+  // A primeira camada (isSafeBranchName) barra o vetor hostil antes de o git rodar, o que MASCARA
+  // o `--` nos testes de ponta a ponta: removê-lo do argv não quebrava teste nenhum (descoberto
+  // mutando o código). Estes testes exercitam o argv diretamente, então a defesa em profundidade
+  // não pode ser removida em silêncio.
+  it('gitCreateBranchArgs/gitSwitchArgs põem `--` IMEDIATAMENTE antes do posicional', () => {
+    const b = gitCreateBranchArgs('/repo', 'feat/x')
+    expect(b).toEqual(['-C', '/repo', 'branch', '--', 'feat/x'])
+    expect(b[b.length - 2]).toBe('--') // o `--` encosta no nome: nada pode se meter no meio
+    const s = gitSwitchArgs('/repo', 'feat/x')
+    expect(s).toEqual(['-C', '/repo', 'switch', '--', 'feat/x'])
+    expect(s[s.length - 2]).toBe('--')
+    // `switch`, jamais `checkout`: `git checkout -- <x>` RESTAURA o arquivo <x> (destrutivo).
+    expect(s).toContain('switch')
+    expect(s).not.toContain('checkout')
+  })
+
+  it('args de escrita: `--` neutraliza nome hostil, e NENHUM comando destrutivo é montado', () => {
+    // Mesmo se a validação afrouxasse e um `-D` chegasse até aqui, o `--` já encerrou o getopt:
+    // o git lê '-D' como NOME de branch (e o recusa), nunca como a flag de deletar.
+    for (const hostil of ['-D', '--force', '-f']) {
+      expect(gitCreateBranchArgs('/repo', hostil).indexOf('--')).toBeLessThan(
+        gitCreateBranchArgs('/repo', hostil).lastIndexOf(hostil)
+      )
+      expect(gitSwitchArgs('/repo', hostil).indexOf('--')).toBeLessThan(
+        gitSwitchArgs('/repo', hostil).lastIndexOf(hostil)
+      )
+    }
+    // Nenhum argv desta tarefa pode conter algo que descarte trabalho do usuário.
+    const todos = [
+      gitCommitArgs('/repo', 'msg'),
+      gitCreateBranchArgs('/repo', 'x'),
+      gitSwitchArgs('/repo', 'x')
+    ]
+    for (const args of todos) {
+      for (const proibido of ['--force', '-f', '-D', '--hard', 'reset', 'clean', '--discard-changes', 'push', 'pull', 'fetch']) {
+        expect(args).not.toContain(proibido)
+      }
+    }
+  })
+
+  it('gitCommitArgs: `-a` (não `add -A`), mensagem como VALOR de -m, e `--` no fim', () => {
+    expect(gitCommitArgs('/repo', 'minha msg')).toEqual([
+      '-c',
+      'core.quotePath=false',
+      '-C',
+      '/repo',
+      'commit',
+      '-a',
+      '-m',
+      'minha msg',
+      '--'
+    ])
+    // mensagem hostil vai como valor de `-m` (o argv seguinte), não como flag solta
+    const a = gitCommitArgs('/repo', '--amend')
+    expect(a[a.indexOf('-m') + 1]).toBe('--amend')
+    expect(a).not.toContain('-A')
+  })
+
+  it('gitCommit cria um commit novo (HEAD muda) com a mensagem dada e limpa o status', async () => {
+    initRepo(dir)
+    const before = head(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    const r = await svc.gitCommit(dir, 'muda a')
+    const after = head(dir)
+    expect(after).not.toBe(before)
+    expect(r.head).toBe(after)
+    expect(execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: dir }).toString().trim()).toBe(
+      'muda a'
+    )
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: dir }).toString()).toBe('')
+  })
+
+  it('gitCommit inclui TRACKED modificado e NÃO inclui untracked (semântica commit -a)', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    writeFileSync(join(dir, '.env'), 'SECRET=nao-commitar\n')
+    await svc.gitCommit(dir, 'só o tracked')
+    const files = execFileSync('git', ['show', '--name-only', '--pretty=', 'HEAD'], { cwd: dir })
+      .toString()
+      .trim()
+      .split('\n')
+    expect(files).toContain('src/a.ts')
+    expect(files).not.toContain('.env')
+    // o untracked continua lá, fora do commit — é isso que impede um `add -A` cego de varrer
+    // segredo/artefato para dentro do histórico do usuário.
+    expect((await svc.gitStatus(dir)).entries['.env']).toBe('??')
+  })
+
+  it('gitCommit inclui o que o usuário JÁ tinha em stage (inclusive untracked adicionado à mão)', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'novo.txt'), 'novo\n')
+    execFileSync('git', ['add', 'novo.txt'], { cwd: dir })
+    await svc.gitCommit(dir, 'com stage manual')
+    const files = execFileSync('git', ['show', '--name-only', '--pretty=', 'HEAD'], { cwd: dir })
+      .toString()
+    expect(files).toContain('novo.txt')
+  })
+
+  it('gitCommit com nada a commitar reporta erro LEGÍVEL (não engole em silêncio)', async () => {
+    initRepo(dir)
+    await expect(svc.gitCommit(dir, 'nada')).rejects.toThrow(/nothing to commit/i)
+    // o `nothing to commit` do git sai em STDOUT (não stderr) com exit≠0 — se o erro só olhasse
+    // stderr, a mensagem voltaria vazia e o usuário veria um "falhou" mudo.
+  })
+
+  it('gitCommit recusa mensagem vazia/só-espaço com erro legível, sem tocar no HEAD', async () => {
+    initRepo(dir)
+    const before = head(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    await expect(svc.gitCommit(dir, '   ')).rejects.toThrow(/mensagem/i)
+    expect(head(dir)).toBe(before)
+  })
+
+  it('gitCommit aceita mensagem começando com `-` como MENSAGEM (não como flag)', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    await svc.gitCommit(dir, '--force')
+    expect(execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: dir }).toString().trim()).toBe(
+      '--force'
+    )
+  })
+
+  it('gitCommit NÃO injeta nada na mensagem (sem Co-Authored-By, autor = config do usuário)', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    await svc.gitCommit(dir, 'mensagem limpa')
+    const body = execFileSync('git', ['log', '-1', '--pretty=%B'], { cwd: dir }).toString()
+    expect(body.trim()).toBe('mensagem limpa')
+    expect(body).not.toMatch(/Co-Authored-By/i)
+    expect(execFileSync('git', ['log', '-1', '--pretty=%an <%ae>'], { cwd: dir }).toString().trim()).toBe(
+      't <t@t>'
+    )
+  })
+
+  it('gitCreateBranch cria a branch e gitCheckout a torna a atual (gitBranch acompanha)', async () => {
+    initRepo(dir)
+    const original = await svc.gitBranch(dir)
+    await svc.gitCreateBranch(dir, 'feat/nova')
+    // criar NÃO troca: quem está na branch antiga continua nela até pedir o checkout.
+    expect(await svc.gitBranch(dir)).toBe(original)
+    await svc.gitCheckout(dir, 'feat/nova')
+    expect(await svc.gitBranch(dir)).toBe('feat/nova')
+    expect(await svc.gitCheckout(dir, original)).toBeUndefined()
+    expect(await svc.gitBranch(dir)).toBe(original)
+  })
+
+  it('gitCreateBranch aceita nome acentuado (projeto em português)', async () => {
+    initRepo(dir)
+    await svc.gitCreateBranch(dir, 'feat/acentuação')
+    await svc.gitCheckout(dir, 'feat/acentuação')
+    expect(await svc.gitBranch(dir)).toBe('feat/acentuação')
+  })
+
+  it('gitCreateBranch recusa nome inválido para o git (erro legível, branch não nasce)', async () => {
+    initRepo(dir)
+    await expect(svc.gitCreateBranch(dir, 'com espaço')).rejects.toThrow(/inválido/i)
+    await expect(svc.gitCreateBranch(dir, 'x..y')).rejects.toThrow(/inválido/i)
+    await expect(svc.gitCreateBranch(dir, 'x.lock')).rejects.toThrow(/inválido/i)
+    expect(execFileSync('git', ['branch', '--list'], { cwd: dir }).toString()).not.toContain('x')
+  })
+
+  it('gitCheckout com working tree SUJO reporta o erro do git (não força, não descarta trabalho)', async () => {
+    initRepo(dir)
+    await svc.gitCreateBranch(dir, 'outra')
+    // conflito real: o arquivo difere entre as branches E está sujo no working tree
+    writeFileSync(join(dir, 'src', 'a.ts'), 'na outra\n')
+    await svc.gitCommit(dir, 'commit na atual')
+    await svc.gitCheckout(dir, 'outra')
+    writeFileSync(join(dir, 'src', 'a.ts'), 'trabalho nao salvo\n')
+    const original = execFileSync('git', ['branch', '--list'], { cwd: dir })
+      .toString()
+      .split('\n')
+      .map((l) => l.replace(/^[*+ ]+/, '').trim())
+      .filter((b) => b && b !== 'outra')[0]
+    await expect(svc.gitCheckout(dir, original)).rejects.toThrow(/would be overwritten|local changes/i)
+    // o trabalho NÃO commitado continua intacto: nada de -f/reset --hard por baixo dos panos
+    expect(readFileSync(join(dir, 'src', 'a.ts')).toString()).toBe('trabalho nao salvo\n')
+    expect(await svc.gitBranch(dir)).toBe('outra')
+  })
+
+  // ── VETOR HOSTIL (option injection) — espelha o caso `-oProxyCommand` de scp.test.ts ──────────
+  // `execFile` com array não protege: quem faz getopt é o git, nos próprios argumentos. Um nome de
+  // branch `-D` sem defesa viraria `git branch -D <alvo>` = DELETAR branch (trabalho do usuário no
+  // lixo). Defesa dupla: isSafeBranchName barra o `-` inicial ANTES, e o `--` antes de todo
+  // posicional encerra o getopt do git.
+  it('gitCreateBranch RECUSA nome hostil (-D, --force, -d) sem executar o git', async () => {
+    initRepo(dir)
+    await svc.gitCreateBranch(dir, 'vitima')
+    const antes = execFileSync('git', ['branch', '--list'], { cwd: dir }).toString()
+    for (const hostil of ['-D', '--force', '-d', '-D vitima', '--delete=vitima']) {
+      await expect(svc.gitCreateBranch(dir, hostil)).rejects.toThrow(/inválido/i)
+    }
+    // a branch-vítima continua existindo: nenhum `-D` chegou a virar flag
+    expect(execFileSync('git', ['branch', '--list'], { cwd: dir }).toString()).toBe(antes)
+    expect(execFileSync('git', ['branch', '--list'], { cwd: dir }).toString()).toContain('vitima')
+  })
+
+  it('gitCheckout RECUSA nome hostil (-f, --force) sem executar o git', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'sujo\n')
+    for (const hostil of ['-f', '--force', '-D', '--discard-changes']) {
+      await expect(svc.gitCheckout(dir, hostil)).rejects.toThrow(/inválido/i)
+    }
+    // e o working tree sujo continua sujo: nenhum `--force`/`--discard-changes` foi executado
+    expect(readFileSync(join(dir, 'src', 'a.ts')).toString()).toBe('sujo\n')
+  })
+
+  it('gitCheckout NÃO restaura arquivo (um nome de ARQUIVO não é branch: `checkout -- file` é destrutivo)', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'README.md'), '# alterado, nao salvo\n')
+    // 'README.md' é um nome de branch LEGAL para o check-ref-format, mas aqui é um arquivo com
+    // trabalho não salvo. Se a implementação usasse `git checkout -- README.md`, o arquivo seria
+    // RESTAURADO (trabalho perdido). Usando `git switch`, o pior caso é um erro.
+    await expect(svc.gitCheckout(dir, 'README.md')).rejects.toBeTruthy()
+    expect(readFileSync(join(dir, 'README.md')).toString()).toBe('# alterado, nao salvo\n')
+  })
+
+  it('git de escrita fora de um repo REPORTA o erro (não devolve vazio como o read-only faz)', async () => {
+    // gitStatus/gitBranch/gitDiff devolvem vazio fora de repo porque "sem git" não é erro p/ um
+    // file-explorer. Escrever, sim: pedir commit onde não há repo PRECISA falhar visível.
+    await expect(svc.gitCommit(dir, 'x')).rejects.toBeTruthy()
+    await expect(svc.gitCreateBranch(dir, 'x')).rejects.toBeTruthy()
+    await expect(svc.gitCheckout(dir, 'x')).rejects.toBeTruthy()
   })
 })

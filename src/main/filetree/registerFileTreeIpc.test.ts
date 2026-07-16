@@ -137,6 +137,50 @@ describe('registerFileTreeIpc', () => {
     expect(only.text).toBe('')
   })
 
+  // Onda 3 · T11 — wiring do git de ESCRITA (o comportamento fica em FileTreeService.test.ts).
+  it('filetree:gitCommit/gitCreateBranch/gitCheckout mutam um repo git REAL pelo handler', async () => {
+    const g = (a: string[]): void => {
+      execFileSync('git', a, { cwd: dir })
+    }
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t'])
+    g(['config', 'user.name', 't'])
+    g(['add', '.'])
+    g(['commit', '-qm', 'i'])
+
+    const ipc = fakeIpcMain()
+    registerFileTreeIpc(ipc as any, svc, watcher)
+    const head = (): string =>
+      execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim()
+
+    // commit: HEAD muda de verdade
+    const before = head()
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    const r = await ipc.handlers.get('filetree:gitCommit')!({}, dir, 'pelo ipc')
+    expect(r.head).toBe(head())
+    expect(r.head).not.toBe(before)
+
+    // branch nova + checkout: gitBranch acompanha
+    await ipc.handlers.get('filetree:gitCreateBranch')!({}, dir, 'feat/ipc')
+    await ipc.handlers.get('filetree:gitCheckout')!({}, dir, 'feat/ipc')
+    expect(await ipc.handlers.get('filetree:gitBranch')!({}, dir)).toBe('feat/ipc')
+  })
+
+  it('filetree:gitCommit/gitCreateBranch REJEITAM (erro chega ao renderer, não vira silêncio)', async () => {
+    const ipc = fakeIpcMain()
+    registerFileTreeIpc(ipc as any, svc, watcher)
+
+    // fora de repo: ao contrário do gitBranch/gitDiff (que devolvem vazio), escrever tem que falhar
+    await expect(ipc.handlers.get('filetree:gitCommit')!({}, dir, 'x')).rejects.toBeTruthy()
+    // nome hostil barrado no MAIN, não só na UI (o renderer é privilegiado — tem pty.spawn)
+    await expect(
+      ipc.handlers.get('filetree:gitCreateBranch')!({}, dir, '-D')
+    ).rejects.toThrow(/inválido/i)
+    await expect(ipc.handlers.get('filetree:gitCheckout')!({}, dir, '--force')).rejects.toThrow(
+      /inválido/i
+    )
+  })
+
   // Onda 3 · T9 — wiring de watch/unwatch (o comportamento fica em FileTreeWatcher.test.ts).
   it('filetree:watch assina os dirs pedidos e devolve o resultado ao renderer', async () => {
     const ipc = fakeIpcMain()

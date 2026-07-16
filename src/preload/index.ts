@@ -114,6 +114,27 @@ const api = {
     // linhas do main (MAX_DIFF_LINES) e o texto veio cortado.
     gitDiff: (dir: string, path?: string): Promise<{ text: string; truncated: boolean }> =>
       ipcRenderer.invoke('filetree:gitDiff', dir, path),
+    // Onda 3 (T11): git de ESCRITA — o primeiro caminho da árvore que muta o REPOSITÓRIO do
+    // usuário. Ao contrário do gitBranch/gitDiff acima, os três REJEITAM em erro (nada a commitar,
+    // nome de branch inválido, checkout com working tree sujo, fora de repo): quem chama PRECISA
+    // tratar e mostrar a mensagem — um commit que falha calado faz o usuário achar que salvou.
+    //
+    // A validação de nome de branch e a defesa de option injection (`--` antes dos posicionais)
+    // vivem no MAIN, não aqui: este bridge é conveniência, não fronteira de segurança.
+    //
+    // O que ENTRA no commit é a semântica do `git commit -a` — tracked modificado/removido + o que
+    // já estiver em stage; untracked NÃO entra (ver commitPreview, que é o que a UI confirma).
+    // Devolve o SHA do novo HEAD. push/pull/fetch ficam fora (rede/credenciais).
+    gitCommit: (dir: string, message: string): Promise<{ head: string }> =>
+      ipcRenderer.invoke('filetree:gitCommit', dir, message),
+    // Cria a branch apontando p/ o HEAD atual e NÃO troca para ela (o checkout é uma segunda ação,
+    // confirmada à parte). Nunca sobrescreve branch existente.
+    gitCreateBranch: (dir: string, name: string): Promise<void> =>
+      ipcRenderer.invoke('filetree:gitCreateBranch', dir, name),
+    // Troca de branch (`git switch` no main). Com working tree sujo o git RECUSA — e nós reportamos
+    // o erro em vez de forçar: nada aqui descarta trabalho não commitado.
+    gitCheckout: (dir: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke('filetree:gitCheckout', dir, branch),
     // Onda 3 (T9): watch de filesystem — a árvore reage ao que os agentes fazem no disco, sem
     // clique em "atualizar". `dirs` é o escopo VISÍVEL (raiz + expandidas, ver watchDirsFor); o main
     // ignora .git/node_modules e coalesce as rajadas.

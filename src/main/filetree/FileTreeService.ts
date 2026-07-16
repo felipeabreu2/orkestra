@@ -37,6 +37,69 @@ export function isInsideRoot(root: string, target: string): boolean {
   return nTarget === nRoot || nTarget.startsWith(nRoot + sep)
 }
 
+// ── Onda 3 · T11: defesa contra OPTION INJECTION nos comandos git de escrita ────────────────────
+// `execFile` com array de args NÃO protege disto: quem faz getopt são os PRÓPRIOS binários, sobre o
+// argv que recebem. Um nome de branch `-D` viraria `git branch -D <alvo>` = DELETAR a branch do
+// usuário; `-f`/`--force`/`--discard-changes` num checkout descartariam trabalho não salvo. É o
+// mesmo vetor real já corrigido em `buildScpDrop` (um localPath com `-` inicial virava
+// `-oProxyCommand=...` e executava comando LOCAL) — e a defesa aqui é a mesma, em duas camadas:
+//   1. esta validação, que barra o `-` inicial ANTES de qualquer arg chegar ao git;
+//   2. `--` antes de todo posicional nos comandos (cinto-e-suspensório: mesmo que esta regra
+//      afrouxe um dia, o getopt do git já terminou e nada volta a ser lido como opção).
+//
+// A regra é deliberadamente RIGOROSA e só cobre o que é claramente hostil ou ilegível; a
+// autoridade final sobre "este nome é legal p/ o git?" é o próprio git (`check-ref-format --branch`,
+// chamado no serviço). NB: `check-ref-format` NÃO aceita `--` (vira erro de uso), então ele não pode
+// ser a primeira barreira do `-` inicial — esta função é que é.
+export function isSafeBranchName(name: string): boolean {
+  if (typeof name !== 'string') return false
+  if (name.length === 0 || name.length > 255) return false
+  // `-` inicial = option injection. O caso central desta defesa.
+  if (name.startsWith('-')) return false
+  // espaço nas pontas: o git recusaria, mas recusamos antes p/ um erro legível (e p/ que ' -D'
+  // nunca vire '-D' depois de algum trim acidental)
+  if (name !== name.trim()) return false
+  // Espaco e controle em QUALQUER posicao. `\n` quebraria qualquer log/erro; espaco/controle o
+  // git recusa em refname de todo jeito. Acentos e demais UTF-8 passam DE PROPOSITO: num projeto
+  // em portugues `feat/acentuacao` e o caso comum, e o git aceita.
+  if (/[\u0000-\u0020\u007f]/.test(name)) return false
+  return true
+}
+
+// Texto LEGÍVEL de um erro de execFile do git. Junta stderr E stdout de propósito: o git manda
+// `nothing to commit, working tree clean` para o STDOUT com exit≠0 — um handler que só olhasse
+// stderr devolveria "falhou" mudo, exatamente a falha silenciosa que estes comandos não podem ter.
+function gitErrorText(err: unknown): string {
+  const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown }
+  const parts = [e?.stderr, e?.stdout]
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter((s) => s.length > 0)
+  if (parts.length > 0) return parts.join('\n')
+  return typeof e?.message === 'string' && e.message ? e.message : 'erro desconhecido do git'
+}
+
+// ── Argumentos dos comandos git de ESCRITA (Onda 3 · T11), como funções PURAS ─────────────────
+// Extraídos do serviço para que a segunda camada da defesa de option injection — o `--` antes de
+// todo posicional — seja verificável por teste SOZINHA. Sem isso ela é código não exercitado: a
+// primeira camada (isSafeBranchName) barra o vetor hostil antes, então remover o `--` não quebraria
+// teste nenhum (medido por mutação) e a defesa apodreceria em silêncio. O serviço chama estas
+// funções — elas não são helper decorativo.
+export function gitCommitArgs(dir: string, message: string): string[] {
+  // `-m <msg>`: o parse-options do git consome o PRÓXIMO argv como valor, então mensagem começando
+  // com `-` é mensagem. `--` final encerra o getopt (não passamos pathspec — o `-a` é o escopo).
+  return ['-c', 'core.quotePath=false', '-C', dir, 'commit', '-a', '-m', message, '--']
+}
+
+export function gitCreateBranchArgs(dir: string, name: string): string[] {
+  // `--` antes do nome: sem ele, `-D` seria a FLAG de deletar branch, não um nome.
+  return ['-C', dir, 'branch', '--', name]
+}
+
+export function gitSwitchArgs(dir: string, branch: string): string[] {
+  // `switch` (não `checkout`): ver a decisão no gitCheckout. `--` encerra o getopt (`-f`, etc.).
+  return ['-C', dir, 'switch', '--', branch]
+}
+
 // Remove aspas C-style que `git status --porcelain` usa em paths com caracteres especiais (ex.:
 // espaços incomuns, unicode). Decodificação best-effort — nunca lança, na dúvida devolve o texto
 // como veio (melhor mostrar um path levemente errado do que quebrar o parse inteiro).
@@ -240,5 +303,95 @@ export class FileTreeService {
     const lines = stdout.split('\n')
     if (lines.length <= MAX_DIFF_LINES) return { text: stdout, truncated: false }
     return { text: lines.slice(0, MAX_DIFF_LINES).join('\n'), truncated: true }
+  }
+
+  // ── Onda 3 · T11: git de ESCRITA ────────────────────────────────────────────────────────────
+  // Primeiros métodos que mutam o REPOSITÓRIO do usuário (todo o resto — status/branch/diff — é
+  // leitura pura). Regras que valem para os três:
+  //  · NADA destrutivo: sem --force/-f, sem reset --hard, sem clean, sem branch -D. Nenhum caminho
+  //    aqui descarta trabalho do usuário — no pior caso a operação FALHA e o erro sobe legível.
+  //  · Erro é REPORTADO (rejeição da Promise), nunca engolido devolvendo vazio como o read-only
+  //    faz: "sem git" não é erro para exibir uma árvore, mas é erro para pedir um commit.
+  //  · `--` antes de todo posicional + isSafeBranchName (ver a nota de option injection acima).
+  //  · push/pull/fetch ficam FORA (rede/credenciais).
+
+  // Nome de branch legal? Duas camadas: a nossa regra (barra o `-` inicial — o `check-ref-format`
+  // NÃO aceita `--`, então ele não pode ser a primeira barreira) e depois o PRÓPRIO git decidindo
+  // (`check-ref-format --branch` recusa 'com espaço', 'x..y', 'x.lock', 'HEAD', 'x~1'…). Lança com
+  // mensagem legível; não muta nada.
+  private async assertBranchName(name: string): Promise<void> {
+    if (!isSafeBranchName(name)) {
+      throw new Error(`Nome de branch inválido: ${JSON.stringify(name)}`)
+    }
+    try {
+      await execFileAsync('git', ['check-ref-format', '--branch', name])
+    } catch {
+      throw new Error(`Nome de branch inválido para o git: ${JSON.stringify(name)}`)
+    }
+  }
+
+  // Commit do que está no repo que contém `dir`. Devolve o SHA do novo HEAD (a UI confirma com um
+  // fato do repo, não com um "ok" de fé).
+  //
+  // DECISÃO — `commit -a` (stage do TRACKED modificado/removido + commit) e NÃO `add -A`:
+  // `add -A` inclui UNTRACKED, e um botão que faz isso cego varre para dentro do histórico do
+  // usuário um `.env` que ele esqueceu de ignorar, um dump, um artefato de build — e histórico
+  // publicado não se desfaz sem reescrever. `-a` só toca no que o usuário JÁ decidiu versionar.
+  // O que ele quiser adicionar de novo, adiciona explicitamente (`git add`) — e o `-a` respeita:
+  // o index existente entra no commit junto, inclusive untracked que ele mesmo deu `add`. A UI
+  // mostra essa lista ANTES de confirmar (ver commitPreview no renderer).
+  // NB: o escopo é o REPO inteiro, não só `dir` — é a semântica do `-a`, e a lista da confirmação
+  // vem do mesmo `gitStatus` (que já é do repo), então o que a UI promete é o que acontece.
+  //
+  // A mensagem vai por `-m <msg>` como argumento do array: o parse-options do git consome o
+  // PRÓXIMO argv como valor de `-m`, então uma mensagem começando com `-` é mensagem, não flag
+  // (testado). Nada é injetado nela — sem Co-Authored-By, sem trailer; o autor é a config do
+  // usuário. O commit é dele, não nosso.
+  async gitCommit(dir: string, message: string): Promise<{ head: string }> {
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      throw new Error('Commit recusado: a mensagem não pode ser vazia.')
+    }
+    try {
+      await execFileAsync('git', gitCommitArgs(dir, message))
+    } catch (err) {
+      // Inclui o caso "nothing to commit" (nada staged), que o git manda em STDOUT com exit≠0.
+      throw new Error(`Commit falhou: ${gitErrorText(err)}`)
+    }
+    const { stdout } = await execFileAsync('git', ['-C', dir, 'rev-parse', 'HEAD'])
+    return { head: stdout.trim() }
+  }
+
+  // Cria a branch `name` apontando para o HEAD atual, SEM trocar para ela (quem troca é o
+  // gitCheckout — separar as duas deixa a UI confirmar cada uma). `git branch -- <name>` nunca
+  // sobrescreve uma branch existente (isso exigiria `-f`, que não usamos): se já existe, falha.
+  async gitCreateBranch(dir: string, name: string): Promise<void> {
+    await this.assertBranchName(name)
+    try {
+      await execFileAsync('git', gitCreateBranchArgs(dir, name))
+    } catch (err) {
+      throw new Error(`Criação de branch falhou: ${gitErrorText(err)}`)
+    }
+  }
+
+  // Troca para a branch `branch`.
+  //
+  // DECISÃO — `git switch` e NÃO `git checkout`: o `checkout` é sobrecarregado e a forma
+  // "segura contra option injection" dele é uma ARMADILHA — `git checkout -- <x>` não troca de
+  // branch, RESTAURA o arquivo `<x>` do index, descartando o trabalho não salvo. Ou seja: o `--`
+  // que nos protege do `-f` transformaria a operação na única coisa destrutiva desta tarefa. O
+  // `switch` só troca de branch (não conhece pathspec), então `switch -- <name>` é o que parece
+  // ser. Sem fallback para `checkout` em git antigo (<2.23): falhar visível é melhor que cair
+  // silenciosamente no comando com a semântica perigosa.
+  //
+  // Working tree SUJO: o git RECUSA a troca quando ela sobrescreveria alteração não commitada.
+  // Isso é o comportamento CERTO e não é contornado (nada de -f/--discard-changes/stash por baixo
+  // dos panos) — o erro do git sobe legível e o usuário decide (commitar, ou resolver no terminal).
+  async gitCheckout(dir: string, branch: string): Promise<void> {
+    await this.assertBranchName(branch)
+    try {
+      await execFileAsync('git', gitSwitchArgs(dir, branch))
+    } catch (err) {
+      throw new Error(`Troca de branch falhou: ${gitErrorText(err)}`)
+    }
   }
 }
