@@ -25,7 +25,12 @@ describe('registerSshIpc', () => {
 
     // ordem: primeiro garante o diretório remoto (ssh mkdir -p), depois envia (scp) — sem shell.
     expect(runProcess).toHaveBeenNthCalledWith(1, 'ssh', ['user@h', 'mkdir', '-p', REMOTE_DROP_DIR])
-    expect(runProcess).toHaveBeenNthCalledWith(2, 'scp', ['/tmp/a.png', `user@h:${REMOTE_DROP_DIR}/a.png`])
+    // `--` encerra o getopt do scp antes dos posicionais (nenhum caminho vira opção).
+    expect(runProcess).toHaveBeenNthCalledWith(2, 'scp', [
+      '--',
+      '/tmp/a.png',
+      `user@h:${REMOTE_DROP_DIR}/a.png`
+    ])
     expect(remotePath).toBe(`${REMOTE_DROP_DIR}/a.png`)
   })
 
@@ -52,9 +57,26 @@ describe('registerSshIpc', () => {
 
     expect(remotePath).toBe(`${REMOTE_DROP_DIR}/foo___rm_-rf___.png`)
     expect(runProcess).toHaveBeenNthCalledWith(2, 'scp', [
+      '--',
       '/tmp/foo;$(rm -rf ~).png',
       `user@h:${REMOTE_DROP_DIR}/foo___rm_-rf___.png`
     ])
+  })
+
+  // O main NÃO confia no payload do renderer (mesma premissa do registerPtyIpc): um localPath
+  // hostil é barrado por buildScpDrop antes de qualquer spawn — nem o `ssh mkdir` roda.
+  it('ssh:scpDrop com localPath de injeção de opção rejeita e não roda nada', async () => {
+    const runProcess = vi.fn(async () => ({ code: 0 }))
+    const ipc = fakeIpcMain()
+    registerSshIpc(ipc as any, runProcess)
+
+    await expect(
+      ipc.handlers.get('ssh:scpDrop')!({}, {
+        host: 'user@h',
+        localPath: '-oProxyCommand=touch /tmp/pwned'
+      })
+    ).rejects.toThrow('Caminho local inválido')
+    expect(runProcess).not.toHaveBeenCalled()
   })
 
   it('ssh:scpDrop propaga falha do processo (code != 0) como rejeição', async () => {
