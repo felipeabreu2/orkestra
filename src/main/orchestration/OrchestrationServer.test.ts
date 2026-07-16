@@ -286,7 +286,38 @@ describe('OrchestrationServer', () => {
     expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude' }])
   })
 
-  it('POST /recruit com body vazio (sem name/preset) retorna 400', async () => {
+  // T4 (Modo Maestro): `preset` é OPCIONAL na API. `orq recruit "Dev"` monta o corpo SEM o campo
+  // (JSON.stringify some com undefined); exigi-lo aqui devolvia 400 antes de o comando chegar ao
+  // renderer — deixando a herança de preset (resolveRecruitPreset) inalcançável na prática. Sem
+  // preset, o comando sai sem o campo e o renderer herda o do Maestro (default seguro 'shell').
+  it('POST /recruit sem preset emite o comando sem o campo (herança resolvida no renderer)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Dev', from: 't1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Dev', from: 't1' }])
+  })
+
+  // Opcional != sem contrato: quando presente, o preset continua tendo de ser string.
+  it('POST /recruit com preset não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Dev', preset: 42 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /recruit com body vazio (sem name) retorna 400', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [] }, commands)
     const { port, token } = await s.start()

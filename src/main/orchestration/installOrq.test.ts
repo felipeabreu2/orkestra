@@ -158,4 +158,12 @@ describe('installOrq', () => {
     expect(onboard).toContain('orq note write')
     expect(onboard).toContain('orq whoami')
   })
+
+  // T8: o `orq squad` existia, com testes verdes, mas não era citado em NENHUM texto que o agente
+  // lê — ninguém o descobria. O onboarding é o único canal de descoberta dos verbos.
+  it('o onboarding cita o orq squad (template de esquadrão do Maestro)', () => {
+    run()
+    const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')
+    expect(onboard).toContain('orq squad')
+  })
 })

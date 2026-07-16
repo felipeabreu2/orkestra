@@ -1,6 +1,7 @@
 import { interpretEscapes } from './escapes'
 import { describeSelf } from './whoami'
 import { planSquad } from './squad'
+import { formatListLine } from './list'
 import type { CanvasMirror } from '../shared/orchestration'
 
 export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
@@ -58,8 +59,9 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       // Sem o check, um 409 (projeto não-ativo) viraria erro de parse de JSON mascarado como
       // "falha de conexão" — o agente precisa da mensagem real do errOut.
       if (!res.ok) return { code: 1, out: errOut(res) }
-      const mirror = (await res.json()) as { nodes: { id: string; type: string; name: string }[] }
-      const out = mirror.nodes.map((n) => `${n.type}\t${n.name}\t${n.id}`).join('\n')
+      const mirror = (await res.json()) as CanvasMirror
+      // T3b: a linha passa pelo formatador puro (inclui o papel quando o nó tem um) — ver ./list.
+      const out = mirror.nodes.map(formatListLine).join('\n')
       return { code: 0, out }
     }
     if (cmd === 'context') {
@@ -332,7 +334,7 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal snapshot "<nome>" [--dom]\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval/back/forward/reload/scroll/create seguem fire-and-forget. Use "orq portal snapshot "<nome>" --dom" para listar os elementos interativos (seletores prontos para click/fill), ou sem flag para o texto da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" ["<preset>"] ["<papel>"] | orq squad "<preset>" "<nota-spec>" | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal snapshot "<nome>" [--dom]\nNota: recruit/squad/connect/dismiss são verbos de gerência (só têm efeito num Maestro) e são best-effort por nome; em recruit, o preset é opcional (omitido, o recruta herda o preset do Maestro); squad monta Dev+Revisor+Testador+Docs de uma vez, cada um conectado à nota-spec. Comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval/back/forward/reload/scroll/create seguem fire-and-forget. Use "orq portal snapshot "<nome>" --dom" para listar os elementos interativos (seletores prontos para click/fill), ou sem flag para o texto da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

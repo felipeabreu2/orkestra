@@ -58,6 +58,24 @@ describe('runOrq', () => {
     expect(out).toContain('Spec')
   })
 
+  // T3b (Terminais): o espelho SEMPRE teve o papel de cada nó, mas o `orq list` nunca o mostrava —
+  // o agente não sabia com quem estava falando. Papel presente entra como 4ª coluna; ausente/vazio
+  // (notas, terminais sem papel) mantém as 3 colunas de sempre.
+  it('list mostra o papel dos nós que têm um, e omite dos que não têm', async () => {
+    const env = await startServer(
+      {
+        nodes: [
+          { id: 't1', type: 'terminal', name: 'Dev', role: 'dev' },
+          { id: 'n1', type: 'note', name: 'Spec' }
+        ]
+      },
+      []
+    )
+    const { code, out } = await runOrq(['list'], env)
+    expect(code).toBe(0)
+    expect(out.split('\n')).toEqual(['terminal\tDev\tt1\tdev', 'note\tSpec\tn1'])
+  })
+
   // T2 (quick win #7): "recrutas sabem quem são". orq whoami busca /list, resolve o próprio nó por
   // ORKESTRA_NODE_ID e descreve nome/papel/conexões (via describeSelf).
   it('whoami imprime o próprio nome/papel e as conexões, com código 0', async () => {
@@ -283,6 +301,17 @@ describe('runOrq', () => {
     const { code } = await runOrq(['recruit', 'Rev', 'shell'], { ...env, ORKESTRA_NODE_ID: 't1' })
     expect(code).toBe(0)
     expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'shell', from: 't1' }])
+  })
+
+  // T4: o caminho REAL de ponta-a-ponta do `orq recruit "Dev"` (sem preset) — era ele que faltava.
+  // O corpo sai sem o campo `preset` (JSON.stringify some com undefined) e o servidor precisa
+  // aceitá-lo: só assim a herança de preset (resolveRecruitPreset, no renderer) é alcançável.
+  it('recruit sem preset (orq recruit "Dev") chega ao servidor e emite o comando, sem 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['recruit', 'Dev'], { ...env, ORKESTRA_NODE_ID: 't1' })
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Dev', from: 't1' }])
   })
 
   it('dismiss chama POST /dismiss com {target} e retorna código 0', async () => {

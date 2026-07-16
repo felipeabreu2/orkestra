@@ -220,9 +220,14 @@ export class OrchestrationServer {
     if (req.method === 'POST' && req.url === '/recruit') {
       this.readJsonBody(req, res, (raw) => {
         const parsed = raw as { name?: unknown; preset?: unknown; role?: unknown; from?: unknown }
+        // T4: `preset` é OPCIONAL — mesmo contrato de `role`. `orq recruit "Dev"` monta o corpo SEM
+        // o campo (JSON.stringify some com undefined); enquanto exigíamos string aqui, esse caminho
+        // morria em 400 antes de chegar ao renderer e a herança de preset (resolveRecruitPreset)
+        // era código inalcançável. Ausente → o renderer herda o preset do Maestro (`from`), com
+        // 'shell' como default seguro. Presente → segue tendo de ser string.
         if (
           typeof parsed.name !== 'string' ||
-          typeof parsed.preset !== 'string' ||
+          (parsed.preset !== undefined && typeof parsed.preset !== 'string') ||
           (parsed.role !== undefined && typeof parsed.role !== 'string')
         ) {
           res.writeHead(400).end('bad request')
@@ -240,7 +245,7 @@ export class OrchestrationServer {
           {
             type: 'recruit',
             name: parsed.name,
-            preset: parsed.preset,
+            preset: parsed.preset as string | undefined,
             role: parsed.role as string | undefined,
             from
           },
