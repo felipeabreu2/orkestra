@@ -9,9 +9,9 @@ import {
   type EdgeChange,
   type Connection
 } from '@xyflow/react'
-import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapshot'
+import type { CanvasSnapshot, PersistedEdge, PersistedNode } from '../../../shared/canvasSnapshot'
 import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
-import { loadEdgeStyle, saveEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
+import { loadEdgeStyle, saveEdgeStyle, isEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '../ui/sidebarCollapsed'
 import { basename } from '../ui/paths'
 import { dissolveThinGroups } from '../layout/groups'
@@ -430,6 +430,12 @@ interface CanvasState {
   // Fase 22 (Task 1): remove uma edge pelo id — usado pelo badge/UI da edge tipada (Task 2) para
   // desconectar sem passar por onEdgesChange (que espera EdgeChange[] do próprio React Flow).
   removeEdge: (id: string) => void
+  // Conexões T4: override de estilo POR ARESTA, gravado em `edge.data.style` e persistido no
+  // snapshot (PersistedEdge.style). Nome deliberadamente diferente do `setEdgeStyle` acima, que é
+  // a preferência GLOBAL/efêmera de UI: sobrecarregar o mesmo nome por aridade tornaria ambíguo
+  // qual das duas semânticas (canvas inteiro × uma aresta) o call site quis. TypedEdge resolve
+  // as duas com resolveEdgeStyle(data.style, global). Entra no histórico, como removeEdge.
+  setEdgeStyleFor: (id: string, style: EdgeStyle) => void
   // R6: remove de uma vez TODAS as conexões que tocam um nó (como source ou target). Retorna à
   // mesma referência de state quando o nó não tem nenhuma edge (no-op — o Zustand pula o update).
   removeEdgesForNode: (nodeId: string) => void
@@ -1010,6 +1016,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return count
   },
   removeEdge: (id): void => set((state) => ({ ...histPatch(state), edges: state.edges.filter((e) => e.id !== id) })),
+  setEdgeStyleFor: (id, style): void =>
+    set((state) => {
+      // Id inexistente devolve a MESMA referência (no-op: sem re-render e sem entrada no histórico).
+      if (!state.edges.some((e) => e.id === id)) return state
+      return {
+        ...histPatch(state),
+        edges: state.edges.map((e) => (e.id === id ? { ...e, data: { ...e.data, style } } : e))
+      }
+    }),
   removeEdgesForNode: (nodeId): void =>
     set((state) => {
       const next = state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
@@ -1023,13 +1038,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     // autostart (efêmero — senão todo reload re-rodaria o comando do preset, Fase 7 Task 2) e
     // parentId/extent só quando presentes (Fase 18 Task 3).
     nodes: get().nodes.map(persistNode),
-    edges: get().edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle,
-      targetHandle: e.targetHandle
-    }))
+    edges: get().edges.map((e) => {
+      const persisted: PersistedEdge = {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle
+      }
+      // Conexões T4: o override por-aresta é CONTEÚDO (escolha do usuário), ao contrário do kind
+      // (derivado dos tipos dos nós na hidratação) — só ele sai daqui de `data`, e só quando
+      // existe, mantendo o snapshot enxuto para as arestas que seguem o estilo global.
+      if (isEdgeStyle(e.data?.style)) persisted.style = e.data.style
+      return persisted
+    })
   }),
   hydrate: (snapshot, projectId): void => {
     // Scan hydrated nodes for Terminal/Portal names and update terminalSeq/portalSeq to avoid
@@ -1097,7 +1119,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         sourceHandle: e.sourceHandle,
         targetHandle: e.targetHandle,
         type: 'typed',
-        data: { kind },
+        // Conexões T4: `style` (override por-aresta) é reanexado a partir do snapshot — sem isto o
+        // override sumiria a cada reload, porque `data` é recomposto do zero aqui. Só entra quando
+        // é um EdgeStyle conhecido: um snapshot corrompido/futuro não deve plantar lixo em data
+        // (e TypedEdge, via resolveEdgeStyle, ainda cairia no global de qualquer forma).
+        data: isEdgeStyle(e.style) ? { kind, style: e.style } : { kind },
         className: `ork-edge--${kind}`
       }
     })

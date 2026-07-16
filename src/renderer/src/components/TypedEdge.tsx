@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type EdgeProps } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { EDGE_KIND_META, type EdgeKind } from '../edges/edgeKind'
+import { resolveEdgeStyle, nextEdgeStyle } from '../edges/edgeStyle'
 import { ropePath } from '../edges/ropePath'
 import { useRopeSwing } from '../edges/useRopeSwing'
 import './nodes.css'
@@ -19,7 +20,10 @@ export function TypedEdge({
 }: EdgeProps): JSX.Element {
   // R5: 'circuito' desenha trilhos ortogonais (getSmoothStepPath, cantos de 90° arredondados);
   // 'curva' mantém o bezier de sempre. Ambas retornam [path, labelX, labelY] na mesma ordem.
-  const edgeStyle = useCanvasStore((s) => s.edgeStyle)
+  // Conexões T4: `data.style` (override desta aresta, persistido no snapshot) manda; sem ele, ou
+  // com valor inválido vindo de um snapshot corrompido, vale a preferência global do canvas.
+  const globalStyle = useCanvasStore((s) => s.edgeStyle)
+  const edgeStyle = resolveEdgeStyle(data?.style, globalStyle)
   // Balanço da corda: injeta energia quando os extremos se movem e decai a zero (só custa algo
   // durante/após um arraste; em repouso retorna 0). Chamado sempre (regra dos hooks), inócuo
   // quando o estilo não é corda.
@@ -35,6 +39,7 @@ export function TypedEdge({
   const meta = EDGE_KIND_META[kind]
   const [open, setOpen] = useState(false)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
+  const setEdgeStyleFor = useCanvasStore((s) => s.setEdgeStyleFor)
   return (
     <>
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} className={edgeStyle === 'corda' ? 'ork-rope' : undefined} />
@@ -63,8 +68,21 @@ export function TypedEdge({
           <span>{meta.label}</span>
           {open && (
             <div className="ork-edge-pop">
+              {/* T4: alterna SÓ o estilo desta aresta (curva → circuito → corda → curva), gravando
+                  o override em data.style. O popover fica aberto — trocar de estilo é uma escolha
+                  visual, o usuário quer ver o resultado e possivelmente ciclar de novo. */}
               <button
                 className="ork-edge-pop-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setEdgeStyleFor(id, nextEdgeStyle(edgeStyle))
+                }}
+                title="Só esta conexão — o estilo global do canvas não muda"
+              >
+                Estilo: {edgeStyle}
+              </button>
+              <button
+                className="ork-edge-pop-btn ork-edge-pop-btn--danger"
                 onClick={(e) => {
                   e.stopPropagation()
                   removeEdge(id)

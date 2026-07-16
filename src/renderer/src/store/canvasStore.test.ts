@@ -168,6 +168,72 @@ describe('canvasStore', () => {
     expect(e.className).toContain('ork-edge--chain')
   })
 
+  // Conexões T4: estilo POR ARESTA (override) — o global (setEdgeStyle) continua sendo o padrão.
+  it('setEdgeStyleFor grava data.style na aresta alvo sem tocar no global nem no kind', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const globalBefore = useCanvasStore.getState().edgeStyle
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().setEdgeStyleFor(id, 'circuito')
+    const e = useCanvasStore.getState().edges[0]
+    expect(e.data).toMatchObject({ kind: 'agent', style: 'circuito' })
+    expect(useCanvasStore.getState().edgeStyle).toBe(globalBefore) // global intocado
+  })
+
+  it('setEdgeStyleFor entra no histórico (undo desfaz o override)', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().setEdgeStyleFor(id, 'curva')
+    expect((useCanvasStore.getState().edges[0].data as { style?: string }).style).toBe('curva')
+    useCanvasStore.getState().undo()
+    expect((useCanvasStore.getState().edges[0].data as { style?: string }).style).toBeUndefined()
+  })
+
+  it('setEdgeStyleFor com id inexistente é no-op (não cria histórico nem aresta)', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const before = useCanvasStore.getState().edges
+    useCanvasStore.getState().setEdgeStyleFor('nao-existe', 'curva')
+    expect(useCanvasStore.getState().edges).toBe(before) // mesma referência
+  })
+
+  it('data.style sobrevive ao round-trip serialize→hydrate (override não some no reload)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 400, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().setEdgeStyleFor(id, 'circuito')
+
+    // Usa o snapshot REAL produzido por serialize() (não um objeto fabricado à mão).
+    const snap = useCanvasStore.getState().serialize()
+    expect(snap.edges[0].style).toBe('circuito')
+
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().edges).toHaveLength(0)
+    useCanvasStore.getState().hydrate(snap)
+    const e = useCanvasStore.getState().edges[0]
+    expect(e.data).toMatchObject({ kind: 'agent', style: 'circuito' })
+  })
+
+  it('aresta sem override não ganha style no serialize nem na hidratação', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 400, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const snap = useCanvasStore.getState().serialize()
+    expect('style' in snap.edges[0]).toBe(false)
+    useCanvasStore.getState().hydrate(snap)
+    expect((useCanvasStore.getState().edges[0].data as { style?: string }).style).toBeUndefined()
+  })
+
   it('addNoteNode adiciona um nó note com html vazio', () => {
     useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
     const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!

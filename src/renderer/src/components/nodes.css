@@ -676,6 +676,12 @@
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-2);
   z-index: 10;
+  /* Conexões T4: o popover passou a ter mais de um botão (estilo + desconectar) — empilha e
+     alinha à esquerda em vez de deixar os dois lado a lado. */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
 .ork-edge-pop-btn {
   padding: 3px 10px;
@@ -686,9 +692,14 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
+  text-align: left;
 }
 .ork-edge-pop-btn:hover {
   background: var(--bg-2);
+}
+/* Ação destrutiva: só ela fica vermelha no hover (antes era a regra base, quando "Desconectar"
+   era o único botão do popover). */
+.ork-edge-pop-btn--danger:hover {
   color: var(--err);
 }
 
