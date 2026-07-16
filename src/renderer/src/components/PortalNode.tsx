@@ -1,8 +1,9 @@
-import { forwardRef, useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import type { WebviewTag } from 'electron'
-import { registerPortal, unregisterPortal } from '../portalRegistry'
-import { snapshotScript } from '../../../shared/portalScripts'
+import { registerPortal, unregisterPortal, subscribePortalDriving } from '../portalRegistry'
+import { snapshotScript, domSnapshotScript } from '../../../shared/portalScripts'
 import type { PortalState } from '../../../shared/orchestration'
+import './PortalNode.css'
 
 // Hospeda o <webview> em si (Fase 9). Task 1: renderiza o browser embutido e expõe o elemento
 // via ref para o pai (PortalFlowNode) dirigir a barra de URL. Task 2: também (a) registra o
@@ -19,6 +20,9 @@ export const PortalNode = forwardRef<
 >(
   function PortalNode({ url, nodeId, name, partition }, forwardedRef) {
     const localRef = useRef<WebviewTag | null>(null)
+    // T6 (indicador "agente dirigindo"): true por uma janela efêmera sempre que um comando de portal
+    // atinge ESTE nó (via o pub/sub do portalRegistry). Aciona o pulso visual no wrapper abaixo.
+    const [driving, setDriving] = useState(false)
 
     // Combina o ref local (usado pelos efeitos abaixo, que precisam do elemento de verdade) com
     // o ref encaminhado pelo pai (usado pela barra de URL em PortalFlowNode) — ambos apontam
@@ -46,10 +50,16 @@ export const PortalNode = forwardRef<
       if (!el) return
       let disposed = false
       const onFinishLoad = (): void => {
-        el.executeJavaScript(snapshotScript())
-          .then((state: PortalState) => {
+        // T4: captura o snapshot de TEXTO e o snapshot de DOM interativo no MESMO ciclo (sem
+        // round-trip novo) e reporta ambos em portal:state. O DOM é best-effort independente: se a
+        // sua captura falhar (página que restringe eval, etc.), cai pro '' e o texto ainda vai.
+        Promise.all([
+          el.executeJavaScript(snapshotScript()) as Promise<PortalState>,
+          (el.executeJavaScript(domSnapshotScript()) as Promise<string>).catch(() => '')
+        ])
+          .then(([state, dom]) => {
             if (disposed) return
-            window.orkestra.portalState({ name, ...state })
+            window.orkestra.portalState({ name, ...state, dom: typeof dom === 'string' ? dom : '' })
           })
           .catch(() => {
             // best-effort: se a captura do snapshot falhar, só não reporta este ciclo — o
@@ -63,13 +73,31 @@ export const PortalNode = forwardRef<
       }
     }, [name])
 
+    // T6: inscrição no pub/sub de "agente dirigindo" para ESTE nó. Cada toque acende o pulso e
+    // (re)agenda o apagamento após ~1.2s — comandos em sequência ESTENDEM a janela (reinicia o
+    // timer), mantendo o realce aceso enquanto o agente dirige. Timer limpo no unmount (sem vazar).
+    useEffect(() => {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const off = subscribePortalDriving(nodeId, () => {
+        setDriving(true)
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(() => setDriving(false), 1200)
+      })
+      return () => {
+        off()
+        if (timer) clearTimeout(timer)
+      }
+    }, [nodeId])
+
     return (
-      <webview
-        ref={setRef}
-        src={url}
-        partition={partition}
-        style={{ width: '100%', height: '100%', background: 'var(--bg-1)' }}
-      />
+      <div className={`ork-portal-view${driving ? ' ork-portal-view--driving' : ''}`}>
+        <webview
+          ref={setRef}
+          src={url}
+          partition={partition}
+          style={{ width: '100%', height: '100%', background: 'var(--bg-1)' }}
+        />
+      </div>
     )
   }
 )

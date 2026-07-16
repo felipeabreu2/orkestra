@@ -337,6 +337,58 @@ export class OrchestrationServer {
       })
       return
     }
+    if (req.method === 'POST' && req.url === '/portal/nav') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; action?: unknown }
+        // action é uma união FECHADA (enum), validada aqui: só back/forward/reload passam — sem
+        // superfície de string livre. O renderer aplica via método NATIVO do WebviewTag (T2).
+        if (
+          typeof parsed.target !== 'string' ||
+          (parsed.action !== 'back' && parsed.action !== 'forward' && parsed.action !== 'reload')
+        ) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        this.emit({ type: 'portalNavigate', target: parsed.target, action: parsed.action }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/scroll') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; x?: unknown; y?: unknown }
+        // x/y devem chegar já numéricos (o orq coage no cliente); rejeitamos não-número aqui como
+        // defesa (o renderer ainda re-coage via scrollScript, barreira anti-injeção final — T3).
+        if (
+          typeof parsed.target !== 'string' ||
+          typeof parsed.x !== 'number' ||
+          typeof parsed.y !== 'number'
+        ) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        this.emit({ type: 'portalScroll', target: parsed.target, x: parsed.x, y: parsed.y }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/create') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { name?: unknown; url?: unknown }
+        // name obrigatório; url opcional. A validação de ESQUEMA da url (isSafePortalUrl) fica no
+        // renderer (T5), junto do addPortalNode — mesma barreira SEC-3 do portalOpen; aqui só o
+        // contrato de tipos. url ausente → comando sem o campo (portal criado sem navegar).
+        if (typeof parsed.name !== 'string' || (parsed.url !== undefined && typeof parsed.url !== 'string')) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        this.emit(
+          typeof parsed.url === 'string'
+            ? { type: 'portalCreate', name: parsed.name, url: parsed.url }
+            : { type: 'portalCreate', name: parsed.name },
+          res
+        )
+      })
+      return
+    }
     if (req.method === 'POST' && req.url === '/ask') {
       this.readJsonBody(req, res, (raw) => {
         // Fase 14 (Task 1): wait:true bifurca para askWait (bloqueante — espera o agente

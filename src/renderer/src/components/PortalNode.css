@@ -1,0 +1,51 @@
+/* T6 — indicador visual "agente dirigindo" no portal.
+
+   O wrapper .ork-portal-view hospeda o <webview> (100%×100%). Quando o agente envia QUALQUER comando
+   ao portal (useOrchestrationSync → notifyPortalDriving → o PortalNode deste nó), o wrapper ganha
+   .ork-portal-view--driving por uma janela efêmera (~1.2s, estendida por comandos em sequência): um
+   ANEL accent pulsa na borda do webview, ecoando o border-beam de "gerando" dos terminais.
+
+   O realce é um overlay ::after com pointer-events:none — NÃO bloqueia o clique do usuário no site,
+   é puramente visual. Cor tokenizada (--accent, o azul do design system). Efêmero: some sozinho. */
+.ork-portal-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.ork-portal-view::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.ork-portal-view--driving::after {
+  opacity: 1;
+  animation: ork-portal-driving 1s ease-in-out infinite;
+}
+
+@keyframes ork-portal-driving {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px var(--accent),
+      inset 0 0 12px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+/* Acessibilidade: sob prefers-reduced-motion o anel fica ACESO e estático (sem pulsar), mantendo o
+   sinal "agente dirigindo" sem animação em loop — mesma política das demais animações do app. */
+@media (prefers-reduced-motion: reduce) {
+  .ork-portal-view--driving::after {
+    animation: none;
+    opacity: 1;
+  }
+}

@@ -66,6 +66,16 @@ describe('installOrq', () => {
     expect(onboard).toContain('orq portal')
   })
 
+  it('o onboarding descreve os comandos de portal dirigível (back/forward/reload/scroll/create/--dom)', () => {
+    run()
+    const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')
+    expect(onboard).toContain('orq portal back')
+    expect(onboard).toContain('reload')
+    expect(onboard).toContain('scroll')
+    expect(onboard).toContain('orq portal create')
+    expect(onboard).toContain('--dom')
+  })
+
   it('o onboarding descreve os verbos de gerência do Maestro (recruit/connect/dismiss/note write)', () => {
     run()
     const onboard = readFileSync(join(home, '.orkestra', 'onboarding.txt'), 'utf-8')

@@ -33,6 +33,12 @@ export interface PortalState {
   url: string
   title: string
   text: string
+  // T4 (snapshot --dom): lista serializada dos elementos INTERATIVOS da página (uma linha por
+  // elemento: "[tag] <seletor> — <rótulo>"), capturada no did-finish-load ao lado de `text` (mesmo
+  // canal portal:state, sem round-trip novo) e devolvida em GET /portal. Opcional para retrocompat:
+  // estados legados / portais que ainda não recarregaram não têm o campo. Só é impresso quando o
+  // agente pede `orq portal snapshot --dom`.
+  dom?: string
 }
 
 // T1 (round-trip de portal click/fill): resultado de uma ação de portal que o renderer devolve ao
@@ -57,3 +63,15 @@ export type OrchestrationCommand =
   | { type: 'portalClick'; target: string; selector: string; requestId?: string }
   | { type: 'portalFill'; target: string; selector: string; text: string; requestId?: string }
   | { type: 'portalEval'; target: string; js: string }
+  // T2 (navegação dedicada): back/forward/reload aplicados via métodos NATIVOS do WebviewTag
+  // (goBack/goForward/reload) — sem injeção de script. `action` é uma união FECHADA (enum), não
+  // string livre: não há superfície de injeção. Fire-and-forget (idempotente/barato).
+  | { type: 'portalNavigate'; target: string; action: 'back' | 'forward' | 'reload' }
+  // T3 (rolagem dedicada): x/y numéricos (coeridos no orq e validados no servidor); o renderer roda
+  // scrollScript(x,y), cuja coerção numérica é a barreira anti-injeção.
+  | { type: 'portalScroll'; target: string; x: number; y: number }
+  // T5 (agente cria portais): adiciona um nó portal ao canvas. `url` opcional — quando presente, o
+  // renderer a valida com isSafePortalUrl ANTES de navegar (guard SEC-3, obrigatório); URL insegura
+  // cria o portal mas não navega. Portal novo nasce com partition isolada própria (addPortalNode →
+  // partitionForPortal) e herda o hardenSession via session-created.
+  | { type: 'portalCreate'; name: string; url?: string }

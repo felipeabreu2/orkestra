@@ -219,8 +219,9 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       return { code: ok === ops.length ? 0 : 1, out: `esquadrão montado: ${ok}/${ops.length} operações` }
     }
     if (cmd === 'portal') {
-      // sub aqui é a ação (open/navigate/click/fill/eval/snapshot); rest[0] é o nome do portal
-      // alvo, o resto são os argumentos específicos da ação (url/selector/texto/js).
+      // sub aqui é a ação (open/navigate/click/fill/eval/snapshot/back/forward/reload/scroll/create);
+      // rest[0] é o nome do portal alvo (para create, o nome do portal A CRIAR), o resto são os
+      // argumentos específicos da ação (url/selector/texto/js/coords).
       const [target, ...args] = rest
       if (sub === 'open' || sub === 'navigate') {
         const url = args.join(' ')
@@ -269,22 +270,65 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         })
         return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
+      // T2: navegação dedicada — back/forward/reload usam os métodos NATIVOS do WebviewTag no
+      // renderer (sem injeção de script). A action vai numa união fechada (validada no servidor).
+      if (sub === 'back' || sub === 'forward' || sub === 'reload') {
+        const res = await fetch(`${base}/portal/nav`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ target, action: sub })
+        })
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+      }
+      // T3: rolagem dedicada — `orq portal scroll "<nome>" <dx> <dy>`. Coage os args a números aqui
+      // (NaN → 0): o corpo carrega números, o servidor valida typeof number, e o renderer re-coage no
+      // scrollScript (barreira anti-injeção final). dy omitido = 0.
+      if (sub === 'scroll') {
+        const nx = Number(args[0])
+        const ny = Number(args[1])
+        const x = Number.isFinite(nx) ? nx : 0
+        const y = Number.isFinite(ny) ? ny : 0
+        const res = await fetch(`${base}/portal/scroll`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ target, x, y })
+        })
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+      }
+      // T5: o agente cria um portal. `target` é o NOME do portal a criar; o resto é a URL opcional.
+      // O guard isSafePortalUrl roda no renderer ANTES de navegar (SEC-3): url insegura cria o
+      // portal mas não navega. url vazia → corpo só com {name} (portal em branco).
+      if (sub === 'create') {
+        const url = args.join(' ')
+        const res = await fetch(`${base}/portal/create`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(url ? { name: target, url } : { name: target })
+        })
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+      }
       if (sub === 'snapshot') {
+        // T4: --dom (aceito em qualquer posição, como o --wait do ask) pede a seção de elementos
+        // interativos (seletores utilizáveis direto em click/fill). Sem a flag, saída inalterada
+        // (só url/title/text) — retrocompat.
+        const dom = args.includes('--dom') || args.includes('--html')
         const res = await fetch(`${base}/portal?name=${encodeURIComponent(target ?? '')}`, { headers })
         if (!res.ok) return { code: 1, out: errOut(res) }
-        const data = (await res.json()) as { url: string; title: string; text: string }
-        return { code: 0, out: `url: ${data.url}\ntitle: ${data.title}\ntext: ${data.text}` }
+        const data = (await res.json()) as { url: string; title: string; text: string; dom?: string }
+        let out = `url: ${data.url}\ntitle: ${data.title}\ntext: ${data.text}`
+        if (dom) out += `\ndom:\n${data.dom ?? '(sem snapshot de DOM — recarregue a página do portal)'}`
+        return { code: 0, out }
       }
       return {
         code: 2,
         out:
-          'orq: subcomando de portal desconhecido.\nUso: orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"'
+          'orq: subcomando de portal desconhecido.\nUso: orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal snapshot "<nome>" [--dom]'
       }
     }
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval seguem fire-and-forget. Use "orq portal snapshot" para inspecionar o conteúdo da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal snapshot "<nome>" [--dom]\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval/back/forward/reload/scroll/create seguem fire-and-forget. Use "orq portal snapshot "<nome>" --dom" para listar os elementos interativos (seletores prontos para click/fill), ou sem flag para o texto da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

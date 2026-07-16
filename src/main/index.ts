@@ -355,7 +355,10 @@ app.whenReady().then(async () => {
     mirror = m
   })
   ipcMain.on('portal:state', (_e, s: { name: string } & PortalState) => {
-    portalStates.set(s.name, { url: s.url, title: s.title, text: s.text })
+    // T4: guarda o `dom` (lista de elementos interativos) ao lado de url/title/text — servido em
+    // GET /portal e impresso por `orq portal snapshot --dom`. Opcional (estados/portais legados sem
+    // o campo continuam válidos).
+    portalStates.set(s.name, { url: s.url, title: s.title, text: s.text, dom: s.dom })
   })
   // T1: canal de volta do round-trip de portal click/fill. O renderer devolve aqui o booleano de
   // sucesso da ação (via window.orkestra.portalResult), correlacionado pelo requestId que o main

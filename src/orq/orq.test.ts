@@ -15,7 +15,7 @@ async function startServer(
     askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     askRaw?: (name: string, data: string) => { ok: boolean; error?: string }
     check?: (name: string) => { output: string } | null
-    getPortalState?: (name: string) => { url: string; title: string; text: string } | null
+    getPortalState?: (name: string) => { url: string; title: string; text: string; dom?: string } | null
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
     runPortalAction?: (cmd: OrchestrationCommand) => Promise<{ ok: boolean } | null>
@@ -374,6 +374,82 @@ describe('runOrq', () => {
     const { code, out } = await runOrq(['portal', 'click', 'P', '.x'], env)
     expect(code).not.toBe(0)
     expect(out).toContain('sem janela ativa')
+  })
+
+  // T2: back/forward/reload → POST /portal/nav com a action correspondente (união fechada).
+  it('portal back/forward/reload emitem portalNavigate com a action certa', async () => {
+    for (const action of ['back', 'forward', 'reload'] as const) {
+      const commands: OrchestrationCommand[] = []
+      const env = await startServer({ nodes: [] }, commands)
+      const { code } = await runOrq(['portal', action, 'P'], env)
+      expect(code).toBe(0)
+      expect(commands).toEqual([{ type: 'portalNavigate', target: 'P', action }])
+      await server?.stop()
+      server = undefined
+    }
+  })
+
+  // T3: scroll "<nome>" <dx> <dy> — números coeridos no cliente (dy default 0).
+  it('portal scroll chama POST /portal/scroll com {target, x, y} numéricos', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'scroll', 'P', '0', '800'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalScroll', target: 'P', x: 0, y: 800 }])
+  })
+
+  it('portal scroll com dy omitido usa 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    await runOrq(['portal', 'scroll', 'P', '0'], env)
+    expect(commands).toEqual([{ type: 'portalScroll', target: 'P', x: 0, y: 0 }])
+  })
+
+  it('portal scroll coage argumentos não-numéricos para 0', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    await runOrq(['portal', 'scroll', 'P', 'abc', 'def'], env)
+    expect(commands).toEqual([{ type: 'portalScroll', target: 'P', x: 0, y: 0 }])
+  })
+
+  // T5: create "<nome>" ["<url>"] → POST /portal/create; url opcional.
+  it('portal create chama POST /portal/create com {name, url}', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'create', 'Pesquisa', 'https://example.com'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalCreate', name: 'Pesquisa', url: 'https://example.com' }])
+  })
+
+  it('portal create só com nome (sem url) também funciona', async () => {
+    const commands: OrchestrationCommand[] = []
+    const env = await startServer({ nodes: [] }, commands)
+    const { code } = await runOrq(['portal', 'create', 'Vazio'], env)
+    expect(code).toBe(0)
+    expect(commands).toEqual([{ type: 'portalCreate', name: 'Vazio' }])
+  })
+
+  // T4: snapshot --dom imprime a seção de elementos interativos (campo dom do estado); sem a flag,
+  // o dom NÃO aparece (retrocompat — só url/title/text como antes).
+  it('portal snapshot --dom inclui os seletores interativos (campo dom)', async () => {
+    const getPortalState = vi
+      .fn()
+      .mockReturnValue({ url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' })
+    const env = await startServer({ nodes: [] }, [], { getPortalState })
+    const { code, out } = await runOrq(['portal', 'snapshot', 'P', '--dom'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('#enviar')
+  })
+
+  it('portal snapshot sem --dom não inclui o dom (retrocompat)', async () => {
+    const getPortalState = vi
+      .fn()
+      .mockReturnValue({ url: 'https://x', title: 'X', text: 'corpo da página', dom: '[button] #enviar — Enviar' })
+    const env = await startServer({ nodes: [] }, [], { getPortalState })
+    const { code, out } = await runOrq(['portal', 'snapshot', 'P'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('corpo da página')
+    expect(out).not.toContain('#enviar')
   })
 
   it('portal snapshot chama GET /portal?name=<nome> e imprime o estado retornado', async () => {

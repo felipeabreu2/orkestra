@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { OrchestrationServer, isMaestro } from './OrchestrationServer'
+import { OrchestrationServer } from './OrchestrationServer'
 import type { CanvasMirror, OrchestrationCommand } from '../../shared/orchestration'
 
 let server: OrchestrationServer | undefined
@@ -13,7 +13,7 @@ function makeServer(
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
     askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     check?: (name: string) => { output: string } | null
-    getPortalState?: (name: string) => { url: string; title: string; text: string } | null
+    getPortalState?: (name: string) => { url: string; title: string; text: string; dom?: string } | null
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
   } = {}
@@ -561,6 +561,120 @@ describe('OrchestrationServer', () => {
     })
     expect(res.status).toBe(400)
     expect(commands).toEqual([])
+  })
+
+  // --- T2: navegação dedicada (POST /portal/nav, action ∈ {back,forward,reload}) ---
+
+  it('POST /portal/nav emite portalNavigate para cada action válida', async () => {
+    for (const action of ['back', 'forward', 'reload'] as const) {
+      const commands: OrchestrationCommand[] = []
+      const s = makeServer({ nodes: [] }, commands)
+      const { port, token } = await s.start()
+      const res = await fetch(`http://127.0.0.1:${port}/portal/nav`, {
+        method: 'POST',
+        headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+        body: JSON.stringify({ target: 'P', action })
+      })
+      expect(res.status).toBe(200)
+      expect(commands).toEqual([{ type: 'portalNavigate', target: 'P', action }])
+      await s.stop()
+    }
+  })
+
+  it('POST /portal/nav com action fora da união fechada retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/nav`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', action: 'evil' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // --- T3: rolagem dedicada (POST /portal/scroll, x/y devem ser number) ---
+
+  it('POST /portal/scroll emite portalScroll com x/y numéricos', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/scroll`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', x: 0, y: 800 })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalScroll', target: 'P', x: 0, y: 800 }])
+  })
+
+  it('POST /portal/scroll com x não-numérico retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/scroll`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', x: '800', y: 0 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // --- T5: agente cria portais (POST /portal/create, name string, url opcional) ---
+
+  it('POST /portal/create emite portalCreate com {name, url}', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/create`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Docs', url: 'https://example.com' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalCreate', name: 'Docs', url: 'https://example.com' }])
+  })
+
+  it('POST /portal/create só com name (url ausente) emite sem o campo url', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/create`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Vazio' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalCreate', name: 'Vazio' }])
+  })
+
+  it('POST /portal/create com name não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/create`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 123, url: 'https://example.com' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // T4: GET /portal repassa o campo dom (novo) quando presente no estado.
+  it('GET /portal repassa o campo dom quando presente no estado', async () => {
+    const getPortalState = vi
+      .fn()
+      .mockReturnValue({ url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' })
+    const s = makeServer({ nodes: [] }, [], { getPortalState })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal?name=P`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' })
   })
 
   it('GET /portal?name=P devolve o estado injetado por getPortalState', async () => {

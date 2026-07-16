@@ -3,9 +3,9 @@ import type { WebviewTag } from 'electron'
 import type { Node, Edge } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import type { CanvasMirror, OrchestrationCommand } from '../../../shared/orchestration'
-import { clickScript, fillScript } from '../../../shared/portalScripts'
+import { clickScript, fillScript, scrollScript } from '../../../shared/portalScripts'
 import { isSafePortalUrl } from '../../../shared/portalUrl'
-import { getPortal } from '../portalRegistry'
+import { getPortal, notifyPortalDriving } from '../portalRegistry'
 import { markdownToHtml } from '../markdown/markdownToHtml'
 import { htmlToText } from '../context/contextBlock'
 
@@ -19,6 +19,18 @@ function resolvePortalWebview(
 ): WebviewTag | undefined {
   const node = nodes.find((n) => n.type === 'portal' && (n.data?.name as string) === target)
   return node ? getPortal(node.id) : undefined
+}
+
+// T6 (indicador "agente dirigindo"): resolve o NÓ portal pelo nome e dispara o pulso efêmero no
+// PortalNode correspondente (via o pub/sub do portalRegistry). Chamado no início de cada comando de
+// portal que atua sobre um portal EXISTENTE (open/click/fill/eval/navigate/scroll) — puramente
+// visual, não bloqueia nem depende do sucesso da ação. portalCreate não usa (o nó ainda não existe).
+function markPortalDriving(
+  nodes: ReturnType<typeof useCanvasStore.getState>['nodes'],
+  target: string
+): void {
+  const node = nodes.find((n) => n.type === 'portal' && (n.data?.name as string) === target)
+  if (node) notifyPortalDriving(node.id)
 }
 
 // T1 (round-trip do booleano): executa um script de ação (clickScript/fillScript) no <webview> do
@@ -182,6 +194,7 @@ export function useOrchestrationSync(): void {
         // (execução de script na sessão possivelmente autenticada do portal). Silencioso, como
         // toda automação de portal (best-effort).
         if (!isSafePortalUrl(cmd.url)) return
+        markPortalDriving(store.nodes, cmd.target) // T6: pulso "agente dirigindo"
         try {
           resolvePortalWebview(store.nodes, cmd.target)?.loadURL(cmd.url)?.catch(() => {})
         } catch {
@@ -190,15 +203,50 @@ export function useOrchestrationSync(): void {
           // quebrar por causa disso. `orq portal snapshot` é o feedback, não este comando.
         }
       } else if (cmd.type === 'portalClick') {
+        markPortalDriving(store.nodes, cmd.target) // T6
         runPortalAction(store.nodes, cmd.target, clickScript(cmd.selector), cmd.requestId)
       } else if (cmd.type === 'portalFill') {
+        markPortalDriving(store.nodes, cmd.target) // T6
         runPortalAction(store.nodes, cmd.target, fillScript(cmd.selector, cmd.text), cmd.requestId)
       } else if (cmd.type === 'portalEval') {
+        markPortalDriving(store.nodes, cmd.target) // T6
         try {
           resolvePortalWebview(store.nodes, cmd.target)?.executeJavaScript(cmd.js)?.catch(() => {})
         } catch {
           // idem
         }
+      } else if (cmd.type === 'portalNavigate') {
+        // T2: back/forward/reload via métodos NATIVOS do WebviewTag — sem injeção de script. A união
+        // fechada de `action` já foi validada no servidor; back/forward são no-op seguros sem
+        // histórico. Best-effort como o resto da automação de portal.
+        markPortalDriving(store.nodes, cmd.target) // T6
+        try {
+          const webview = resolvePortalWebview(store.nodes, cmd.target)
+          if (cmd.action === 'back') webview?.goBack()
+          else if (cmd.action === 'forward') webview?.goForward()
+          else if (cmd.action === 'reload') webview?.reload()
+        } catch {
+          // idem
+        }
+      } else if (cmd.type === 'portalScroll') {
+        // T3: rolagem via scrollScript(x,y) — a coerção numérica no gerador é a barreira anti-injeção
+        // (x/y já vieram números do servidor; scrollScript re-coage por segurança).
+        markPortalDriving(store.nodes, cmd.target) // T6
+        try {
+          resolvePortalWebview(store.nodes, cmd.target)
+            ?.executeJavaScript(scrollScript(cmd.x, cmd.y))
+            ?.catch(() => {})
+        } catch {
+          // idem
+        }
+      } else if (cmd.type === 'portalCreate') {
+        // T5: o agente cria um portal. Guard SEC-3 OBRIGATÓRIO: só passa a url ao novo nó se for
+        // http/https (isSafePortalUrl) — file://, javascript:, data: são descartados (o portal nasce
+        // sem navegar, nunca carregando esquema hostil). addPortalNode dá partition isolada própria
+        // (partitionForPortal) e o hardenSession é herdado via session-created. Sem markPortalDriving
+        // aqui: o nó ainda não existe (não há PortalNode montado para pulsar).
+        const safeUrl = cmd.url && isSafePortalUrl(cmd.url) ? cmd.url : undefined
+        store.addPortalNode(undefined, { name: cmd.name, url: safeUrl })
       }
     })
     return dispose

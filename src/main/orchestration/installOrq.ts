@@ -12,7 +12,9 @@ Ferramentas do Orkestra — rode-as pela sua ferramenta de shell/Bash:
 - orq list — lista todos os nós do canvas (agentes, notas, portais) com nome e id.
 - orq ask "<nome>" "<prompt>" — delega uma tarefa a outro agente do canvas (adicione --wait para aguardar a resposta).
 - orq check "<nome>" — lê o output recente de outro agente.
-- orq portal navigate "<nome>" "<url>" | click "<nome>" "<seletor>" | fill "<nome>" "<seletor>" "<texto>" | snapshot "<nome>" — navega e controla um site (portal) conectado, como você faria num navegador.
+- orq portal navigate "<nome>" "<url>" | click "<nome>" "<seletor>" | fill "<nome>" "<seletor>" "<texto>" | snapshot "<nome>" [--dom] — navega e controla um site (portal) conectado, como você faria num navegador. snapshot --dom lista os elementos interativos da página (seletores prontos para click/fill).
+- orq portal back "<nome>" | forward "<nome>" | reload "<nome>" | scroll "<nome>" <x> <y> — histórico, recarregar e rolagem do portal.
+- orq portal create "<nome>" "<url>" — cria um novo portal no canvas já navegando para a url.
 
 Verbos de gerência (Modo Maestro) — só têm efeito se este terminal for um Maestro; caso contrário o Orkestra recusa o comando:
 - orq recruit "<nome>" "<preset>" ["<papel>"] — cria um novo terminal-agente abaixo de você, já conectado a você (presets: shell/claude/codex/gemini; papéis: Dev/Revisor/Testador/Docs).

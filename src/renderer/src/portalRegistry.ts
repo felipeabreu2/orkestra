@@ -18,3 +18,33 @@ export function unregisterPortal(nodeId: string): void {
 export function getPortal(nodeId: string): WebviewTag | undefined {
   return portals.get(nodeId)
 }
+
+// T6 (indicador "agente dirigindo") — pub/sub PURO por nodeId. Quando o hook de comandos
+// (useOrchestrationSync) aplica QUALQUER ação de portal a um nó, chama notifyPortalDriving(nodeId);
+// o PortalNode daquele nó, inscrito por subscribePortalDriving, acende um realce efêmero (pulso) e
+// o apaga sozinho após ~1s. Fica aqui (não no canvasStore) porque o alvo é o mesmo nodeId que o
+// registry já usa para resolver o webview — e mantém o efeito local ao componente, sem inflar o
+// store global. Sem timers aqui: a janela de expiração vive no componente; este módulo só entrega o
+// "toque". Puro e testável (o subscribe/notify não depende de DOM/Electron).
+type DrivingListener = () => void
+const drivingListeners = new Map<string, Set<DrivingListener>>()
+
+export function subscribePortalDriving(nodeId: string, cb: DrivingListener): () => void {
+  let set = drivingListeners.get(nodeId)
+  if (!set) {
+    set = new Set()
+    drivingListeners.set(nodeId, set)
+  }
+  set.add(cb)
+  return () => {
+    const s = drivingListeners.get(nodeId)
+    if (!s) return
+    s.delete(cb)
+    if (s.size === 0) drivingListeners.delete(nodeId)
+  }
+}
+
+export function notifyPortalDriving(nodeId: string): void {
+  const set = drivingListeners.get(nodeId)
+  if (set) for (const cb of [...set]) cb()
+}
