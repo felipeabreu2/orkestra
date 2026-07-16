@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FileTreeService, isInsideRoot } from './FileTreeService'
+import { FileTreeService, isInsideRoot, MAX_DIFF_LINES } from './FileTreeService'
 
 describe('FileTreeService', () => {
   let dir: string
@@ -179,5 +179,115 @@ describe('FileTreeService', () => {
     const top = await svc.gitStatus(dir)
     expect(top.prefix).toBe('')
     expect(top.entries['sub/deep/a.txt']).toBeTruthy()
+  })
+
+  // ── Onda 3 · T8: branch + diff (leitura pura) ──────────────────────────────────────────────
+  // Helper local (mesmo idioma dos testes de gitStatus acima): repo git REAL num tmpdir. Sem
+  // fabricar shape — o que o git de verdade imprime é exatamente o que o serviço parseia.
+  const initRepo = (at: string): void => {
+    const g = (a: string[]): void => {
+      execFileSync('git', a, { cwd: at })
+    }
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t'])
+    g(['config', 'user.name', 't'])
+    g(['add', '.'])
+    g(['commit', '-qm', 'i'])
+  }
+
+  it('gitBranch devolve "" fora de repo e o nome da branch dentro de um repo real', async () => {
+    expect(await svc.gitBranch(dir)).toBe('')
+    initRepo(dir)
+    const branch = await svc.gitBranch(dir)
+    expect(branch).toBeTruthy()
+    // Não fixamos 'main' (depende do init.defaultBranch do ambiente/CI); fixamos que é um nome
+    // de branch de verdade e que bate com o que o próprio git reporta.
+    expect(branch).toBe(execFileSync('git', ['branch', '--show-current'], { cwd: dir }).toString().trim())
+  })
+
+  it('gitBranch acompanha a troca de branch (checkout -b)', async () => {
+    initRepo(dir)
+    execFileSync('git', ['checkout', '-qb', 'feat/acentuação'], { cwd: dir })
+    expect(await svc.gitBranch(dir)).toBe('feat/acentuação')
+  })
+
+  it('gitBranch de um SUBdiretório do repo devolve a mesma branch (raiz ≠ toplevel)', async () => {
+    initRepo(dir)
+    execFileSync('git', ['checkout', '-qb', 'topico'], { cwd: dir })
+    expect(await svc.gitBranch(join(dir, 'src'))).toBe('topico')
+  })
+
+  it('gitDiff devolve vazio fora de repo e sem alterações', async () => {
+    expect(await svc.gitDiff(dir)).toEqual({ text: '', truncated: false })
+    initRepo(dir)
+    expect(await svc.gitDiff(dir)).toEqual({ text: '', truncated: false })
+  })
+
+  it('gitDiff inclui o hunk (+/-) de um arquivo modificado', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    const d = await svc.gitDiff(dir)
+    expect(d.truncated).toBe(false)
+    expect(d.text).toContain('src/a.ts')
+    expect(d.text).toContain('@@')
+    expect(d.text).toContain('-export const a = 1')
+    expect(d.text).toContain('+export const a = 2')
+  })
+
+  it('gitDiff inclui alterações JÁ EM STAGE (diff vs HEAD, não só working tree)', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 3\n')
+    execFileSync('git', ['add', 'src/a.ts'], { cwd: dir })
+    const d = await svc.gitDiff(dir)
+    expect(d.text).toContain('+export const a = 3')
+  })
+
+  it('gitDiff com `path` limita o diff àquele arquivo', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    writeFileSync(join(dir, 'README.md'), '# outro\n')
+    const only = await svc.gitDiff(dir, join(dir, 'src', 'a.ts'))
+    expect(only.text).toContain('src/a.ts')
+    expect(only.text).not.toContain('README.md')
+  })
+
+  it('gitDiff preserva nome não-ASCII (core.quotePath=false)', async () => {
+    const accented = 'café.txt'
+    writeFileSync(join(dir, accented), 'a\n')
+    initRepo(dir)
+    writeFileSync(join(dir, accented), 'b\n')
+    const d = await svc.gitDiff(dir)
+    expect(d.text).toContain('café.txt')
+    expect(d.text).not.toContain('\\303')
+  })
+
+  it('gitDiff trunca diff gigante no teto de linhas e marca truncated', async () => {
+    writeFileSync(join(dir, 'grande.txt'), Array.from({ length: 5000 }, (_, i) => `l${i}`).join('\n'))
+    initRepo(dir)
+    writeFileSync(join(dir, 'grande.txt'), Array.from({ length: 5000 }, (_, i) => `L${i}`).join('\n'))
+    const d = await svc.gitDiff(dir)
+    expect(d.truncated).toBe(true)
+    expect(d.text.split('\n').length).toBeLessThanOrEqual(MAX_DIFF_LINES)
+  })
+
+  it('gitDiff de um arquivo NOVO (untracked) não quebra e devolve vazio p/ ele', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'novo.txt'), 'novo\n')
+    const d = await svc.gitDiff(dir)
+    // `git diff HEAD` ignora untracked — o que importa é não lançar; o overlay da árvore (??) é
+    // quem sinaliza arquivo novo.
+    expect(d.truncated).toBe(false)
+    expect(d.text).not.toContain('novo.txt')
+  })
+
+  it('gitBranch/gitDiff NÃO escrevem no repo (leitura pura): status intacto antes/depois', async () => {
+    initRepo(dir)
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+    const before = execFileSync('git', ['status', '--porcelain'], { cwd: dir }).toString()
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString()
+    await svc.gitBranch(dir)
+    await svc.gitDiff(dir)
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: dir }).toString()).toBe(before)
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString()).toBe(headBefore)
   })
 })

@@ -13,4 +13,8 @@ export function registerFileTreeIpc(ipcMain: IpcMain, svc: FileTreeService): voi
   ipcMain.handle('filetree:write', (_e, path: string, content: string, root: string) =>
     svc.write(path, content, root)
   )
+  // Onda 3 · T8: branch no header + modo Diff. Leitura pura (nada aqui muta o repo) — nenhum dos
+  // dois rejeita fora de repo, devolvem vazio.
+  ipcMain.handle('filetree:gitBranch', (_e, dir: string) => svc.gitBranch(dir))
+  ipcMain.handle('filetree:gitDiff', (_e, dir: string, path?: string) => svc.gitDiff(dir, path))
 }

@@ -106,7 +106,14 @@ const api = {
     // Onda 2 (T4): grava `content` em `path` (escrita atômica no main). `root` é a raiz da árvore —
     // o main RECUSA gravar fora dela (isInsideRoot). Pode rejeitar (path fora da raiz, erro de fs).
     write: (path: string, content: string, root: string): Promise<void> =>
-      ipcRenderer.invoke('filetree:write', path, content, root)
+      ipcRenderer.invoke('filetree:write', path, content, root),
+    // Onda 3 (T8): branch do header + modo Diff — LEITURA pura de git (commit/checkout são T11).
+    // Nenhum dos dois rejeita fora de um repo: devolvem vazio ("sem git" não é erro aqui).
+    gitBranch: (dir: string): Promise<string> => ipcRenderer.invoke('filetree:gitBranch', dir),
+    // `path` opcional limita o diff a um arquivo. `truncated:true` = o diff passou do teto de
+    // linhas do main (MAX_DIFF_LINES) e o texto veio cortado.
+    gitDiff: (dir: string, path?: string): Promise<{ text: string; truncated: boolean }> =>
+      ipcRenderer.invoke('filetree:gitDiff', dir, path)
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),

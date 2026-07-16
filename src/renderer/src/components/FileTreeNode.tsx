@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useCanvasStore } from '../store/canvasStore'
 import type { FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
 import { gitKeyForEntry } from './fileTreeGit'
+import { parseDiffLines } from './fileTreeDiff'
 import { FileEditor } from './FileEditor'
 import { ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
 import { openEntryInEditor } from '../ui/openInEditor'
@@ -154,6 +155,34 @@ interface PreviewState {
   binary: boolean
 }
 
+// Onda 3 · T8 — modo Diff: render textual do `git diff` das alterações não commitadas, com realce
+// simples por tipo de linha (a classificação vive em ./fileTreeDiff, puro/testável). Não é um
+// diff-viewer lado-a-lado: é o mesmo texto que o terminal mostraria, legível dentro do nó.
+function DiffView({ text, truncated }: { text: string; truncated: boolean }): JSX.Element {
+  const lines = parseDiffLines(text)
+  if (lines.length === 0) {
+    return <div className="ork-filetree-msg">(sem alterações não commitadas)</div>
+  }
+  return (
+    <>
+      <pre className="ork-filetree-diff">
+        {lines.map((l) => (
+          <div key={l.key} className={`ork-filetree-diffline ork-filetree-diffline--${l.kind}`}>
+            {l.text === '' ? ' ' : l.text}
+          </div>
+        ))}
+      </pre>
+      {/* Truncado é um aviso HONESTO, não um detalhe: o resto do diff existe e não está aqui —
+          o teto (MAX_DIFF_LINES no main) evita que um refactor gigante trave o canvas. */}
+      {truncated && (
+        <div className="ork-filetree-msg ork-filetree-msg--warn">
+          (diff truncado — use o terminal para ver o restante)
+        </div>
+      )}
+    </>
+  )
+}
+
 export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const removeNode = useCanvasStore((s) => s.removeNode)
   const updateFileTreeRoot = useCanvasStore((s) => s.updateFileTreeRoot)
@@ -201,6 +230,15 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const [treeLoading, setTreeLoading] = useState(false)
   const [treeError, setTreeError] = useState('')
   const [gitStatus, setGitStatus] = useState<GitStatus>({ prefix: '', entries: {} })
+  // Onda 3 · T8: branch do header ('' = fora de repo ou HEAD destacado → o header não mostra nada)
+  // e modo de exibição do corpo (Lista de arquivos ↔ Diff das alterações não commitadas).
+  const [branch, setBranch] = useState('')
+  const [mode, setMode] = useState<'list' | 'diff'>('list')
+  const [diff, setDiff] = useState<{ text: string; truncated: boolean } | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+  // Bump manual do botão "atualizar": git status/branch/diff não têm watch (T9), então o refresh é
+  // explícito. Um nonce (em vez de 3 callbacks) mantém as três leituras em sincronia num clique.
+  const [gitNonce, setGitNonce] = useState(0)
 
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<PreviewState | null>(null)
@@ -218,6 +256,10 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     setPreviewPath(null)
     setPreviewContent(null)
     setPreviewError('')
+    // Onda 3 · T8: volta pra Lista ao trocar de raiz. Não é só higiene: o toggle fica DESABILITADO
+    // fora de repo, então quem estivesse no modo Diff e trocasse para uma pasta sem git ficaria
+    // preso num diff vazio sem botão de volta.
+    setMode('list')
     if (!root) {
       setEntries([])
       return undefined
@@ -242,21 +284,54 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     }
   }, [root])
 
-  const fetchGitStatus = useCallback((dir: string): void => {
-    window.orkestra.filetree
-      .gitStatus(dir)
-      .then(setGitStatus)
-      .catch(() => setGitStatus({ prefix: '', entries: {} }))
-  }, [])
-
-  // Git status: no mount (quando root muda) + reforçado pelo botão "atualizar" no header.
+  // Git status (overlay) + branch (header): no mount, quando `root` muda, e a cada clique no botão
+  // "atualizar" (gitNonce). Leitura pura — nada aqui muta o repo. Fora de repo os dois devolvem
+  // vazio sem rejeitar; o catch cobre só falhas inesperadas do IPC.
   useEffect(() => {
     if (!root) {
       setGitStatus({ prefix: '', entries: {} })
-      return
+      setBranch('')
+      return undefined
     }
-    fetchGitStatus(root)
-  }, [root, fetchGitStatus])
+    let cancelled = false
+    window.orkestra.filetree
+      .gitStatus(root)
+      .then((s) => !cancelled && setGitStatus(s))
+      .catch(() => !cancelled && setGitStatus({ prefix: '', entries: {} }))
+    window.orkestra.filetree
+      .gitBranch(root)
+      .then((b) => !cancelled && setBranch(b))
+      .catch(() => !cancelled && setBranch(''))
+    return () => {
+      cancelled = true
+    }
+  }, [root, gitNonce])
+
+  // Onda 3 · T8: o diff só é buscado quando o modo Diff está ATIVO (não paga o custo de um
+  // `git diff` a cada refresh de quem só usa a lista) e é rebuscado ao trocar de raiz/atualizar.
+  useEffect(() => {
+    if (!root || mode !== 'diff') {
+      setDiff(null)
+      return undefined
+    }
+    let cancelled = false
+    setDiffLoading(true)
+    window.orkestra.filetree
+      .gitDiff(root)
+      .then((d) => {
+        if (cancelled) return
+        setDiff(d)
+        setDiffLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setDiff({ text: '', truncated: false })
+        setDiffLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [root, mode, gitNonce])
 
   const toggleDir = (dir: FileEntry): void => {
     const isOpen = expanded.has(dir.path)
@@ -336,9 +411,34 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
           <span className="ork-node-title" title={root ?? name}>
             {root ? basename(root) : name}
           </span>
+          {/* Onda 3 · T8: branch atual. Só aparece DENTRO de um repo (fora, e em HEAD destacado,
+              gitBranch devolve '' e o header fica limpo em vez de mentir um nome). */}
+          {branch && (
+            <span className="ork-filetree-branch" title={`Branch atual: ${branch}`}>
+              <Icon name="GitBranch" size={12} animation="none" />
+              <span className="ork-filetree-branch-name">{branch}</span>
+            </span>
+          )}
+          {/* Toggle Lista ↔ Diff. Só faz sentido em repo: sem git não há diff nenhum p/ mostrar. */}
+          <button
+            className={`nodrag ork-node-iconbtn${mode === 'diff' ? ' ork-node-iconbtn--on' : ''}`}
+            onClick={() => setMode((m) => (m === 'diff' ? 'list' : 'diff'))}
+            aria-label={mode === 'diff' ? 'Ver lista de arquivos' : 'Ver diff'}
+            aria-pressed={mode === 'diff'}
+            title={
+              branch
+                ? mode === 'diff'
+                  ? 'Voltar para a lista de arquivos'
+                  : 'Ver alterações não commitadas (diff)'
+                : 'Sem repositório git nesta pasta'
+            }
+            disabled={!branch}
+          >
+            <Icon name={mode === 'diff' ? 'List' : 'FileDiff'} size={14} animation="pop" />
+          </button>
           <button
             className="nodrag ork-node-iconbtn"
-            onClick={() => root && fetchGitStatus(root)}
+            onClick={() => setGitNonce((n) => n + 1)}
             aria-label="Atualizar status git"
             title="Atualizar status git"
             disabled={!root}
@@ -443,7 +543,15 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
               )}
             </div>
           )}
-          {root && !previewPath && (
+          {/* Onda 3 · T8: modo Diff ocupa o corpo no lugar da lista (o preview de arquivo, quando
+              aberto, continua tendo precedência sobre os dois). */}
+          {root && !previewPath && mode === 'diff' && (
+            <div className="nodrag nowheel ork-filetree-previewbody">
+              {diffLoading && <div className="ork-filetree-msg">carregando…</div>}
+              {!diffLoading && diff && <DiffView text={diff.text} truncated={diff.truncated} />}
+            </div>
+          )}
+          {root && !previewPath && mode === 'list' && (
             <div className="nodrag nowheel ork-filetree-rows">
               {treeLoading && <div className="ork-filetree-msg">carregando…</div>}
               {treeError && <div className="ork-filetree-msg ork-filetree-msg--err">{treeError}</div>}

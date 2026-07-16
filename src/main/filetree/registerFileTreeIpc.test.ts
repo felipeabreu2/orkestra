@@ -89,4 +89,40 @@ describe('registerFileTreeIpc', () => {
     expect(result.prefix).toBe('')
     expect(result.entries['README.md']).toBeTruthy()
   })
+
+  // Onda 3 · T8 — wiring de gitBranch/gitDiff (comportamento fica em FileTreeService.test.ts).
+  it('filetree:gitBranch e filetree:gitDiff devolvem vazio fora de repo git', async () => {
+    const ipc = fakeIpcMain()
+    registerFileTreeIpc(ipc as any, svc)
+
+    expect(await ipc.handlers.get('filetree:gitBranch')!({}, dir)).toBe('')
+    expect(await ipc.handlers.get('filetree:gitDiff')!({}, dir)).toEqual({
+      text: '',
+      truncated: false
+    })
+  })
+
+  it('filetree:gitBranch/gitDiff refletem um repo git real (branch + hunk do modificado)', async () => {
+    const g = (a: string[]): void => {
+      execFileSync('git', a, { cwd: dir })
+    }
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t'])
+    g(['config', 'user.name', 't'])
+    g(['add', '.'])
+    g(['commit', '-qm', 'i'])
+    g(['checkout', '-qb', 'topico'])
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2\n')
+
+    const ipc = fakeIpcMain()
+    registerFileTreeIpc(ipc as any, svc)
+
+    expect(await ipc.handlers.get('filetree:gitBranch')!({}, dir)).toBe('topico')
+    const diff = await ipc.handlers.get('filetree:gitDiff')!({}, dir)
+    expect(diff.text).toContain('+export const a = 2')
+    expect(diff.truncated).toBe(false)
+    // O `path` opcional atravessa o handler (2º argumento do invoke).
+    const only = await ipc.handlers.get('filetree:gitDiff')!({}, dir, join(dir, 'README.md'))
+    expect(only.text).toBe('')
+  })
 })

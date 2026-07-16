@@ -9,6 +9,17 @@ const execFileAsync = promisify(execFile)
 const MAX_READ_BYTES = 256 * 1024
 const BINARY_SNIFF_BYTES = 8 * 1024
 
+// Onda 3 · T8 — teto do modo Diff. 2000 linhas ≈ um diff de revisão humana inteiro (a maioria dos
+// diffs de trabalho tem dezenas/centenas de linhas); acima disso ninguém LÊ o diff no nó, e cada
+// linha vira um elemento no DOM do renderer — um `git diff` de refactor grande (dezenas de milhares
+// de linhas) travaria o canvas. Cortamos no MAIN (não no renderer) para o texto sequer atravessar
+// o IPC. `truncated:true` avisa a UI, que manda o usuário ao terminal/editor de verdade.
+export const MAX_DIFF_LINES = 2000
+// maxBuffer do execFile p/ o diff: o default do Node é 1MB e, estourado, o child é MORTO e o
+// execFile rejeita — ou seja, um diff grande cairia no catch e viraria '' ("sem alterações"), que é
+// uma MENTIRA pior que truncar. Com 64MB o git termina e nós é que decidimos onde cortar.
+const DIFF_MAX_BUFFER = 64 * 1024 * 1024
+
 function compareEntries(a: FileEntry, b: FileEntry): number {
   if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
@@ -175,5 +186,59 @@ export class FileTreeService {
       entries[path] = status.trim()
     }
     return { prefix, entries }
+  }
+
+  // Onda 3 · T8: nome da branch atual do repo que contém `dir` — só o header da árvore. LEITURA
+  // PURA (nenhum comando aqui muta o repo; commit/checkout são T11). `branch --show-current` (e não
+  // `rev-parse --abbrev-ref HEAD`) de propósito: em HEAD destacado o `--abbrev-ref` devolve a
+  // string literal 'HEAD', que apareceria no header como se fosse o nome de uma branch; o
+  // `--show-current` devolve '' — o mesmo que fora de repo, e o header simplesmente não mostra
+  // nada (honesto: não estamos em branch nenhuma). Repo recém-`init` sem commit já responde o nome
+  // da branch inicial. Fora de repo (ou git ausente do PATH) execFile rejeita -> '': para um
+  // file-explorer isso não é erro, é "sem git".
+  async gitBranch(dir: string): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync('git', ['-C', dir, 'branch', '--show-current'])
+      return stdout.trim()
+    } catch {
+      return ''
+    }
+  }
+
+  // Onda 3 · T8: diff das alterações NÃO COMMITADAS do repo que contém `dir`, opcionalmente
+  // limitado a `path` (absoluto — o git resolve pathspec absoluto dentro do repo). LEITURA PURA.
+  //
+  // `diff HEAD` (e não `diff` puro) porque "não commitado" inclui o que já está em STAGE: com
+  // `git diff` puro, dar `git add` num arquivo o faria SUMIR do modo Diff, como se a mudança
+  // tivesse evaporado. Em repo sem nenhum commit (HEAD inexistente) o `diff HEAD` falha -> caímos
+  // no `diff` simples. Untracked não aparece em nenhum dos dois (é o overlay '??' da árvore que
+  // sinaliza arquivo novo).
+  //
+  // `core.quotePath=false` pelo mesmo motivo do gitStatus: sem isso os cabeçalhos `a/café.txt`
+  // voltariam C-escapados em octal ("caf\303\251.txt") e o diff ficaria ilegível — num projeto em
+  // português nomes acentuados são o caso comum.
+  //
+  // Truncagem em MAX_DIFF_LINES: ver a constante. `truncated` é o único sinal — a UI que decida o
+  // que dizer.
+  async gitDiff(dir: string, path?: string): Promise<{ text: string; truncated: boolean }> {
+    const base = ['-c', 'core.quotePath=false', '-C', dir, 'diff']
+    const pathspec = path ? ['--', path] : []
+    let stdout: string
+    try {
+      const r = await execFileAsync('git', [...base, 'HEAD', ...pathspec], {
+        maxBuffer: DIFF_MAX_BUFFER
+      })
+      stdout = r.stdout
+    } catch {
+      try {
+        const r = await execFileAsync('git', [...base, ...pathspec], { maxBuffer: DIFF_MAX_BUFFER })
+        stdout = r.stdout
+      } catch {
+        return { text: '', truncated: false }
+      }
+    }
+    const lines = stdout.split('\n')
+    if (lines.length <= MAX_DIFF_LINES) return { text: stdout, truncated: false }
+    return { text: lines.slice(0, MAX_DIFF_LINES).join('\n'), truncated: true }
   }
 }

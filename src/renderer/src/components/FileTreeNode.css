@@ -221,3 +221,72 @@
 .ork-filetree-cm .cm-editor {
   height: 100%;
 }
+
+/* ── Onda 3 · T8: branch no header + modo Diff ───────────────────────────────────────────────── */
+
+/* Chip da branch atual: metadado discreto ao lado do título — nunca compete com o nome da pasta.
+   Encolhe (min-width:0 + ellipsis) antes de empurrar os botões do header pra fora: nomes de branch
+   longos ("feat/alguma-coisa-bem-descritiva") são a regra, não a exceção. */
+.ork-filetree-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+.ork-filetree-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+/* Toggle Lista↔Diff ligado: accent (é estado de um controle, não status semântico) — o hover
+   vermelho herdado de .ork-node-iconbtn (idioma de "fechar") não deve vencer aqui. */
+.ork-node-iconbtn--on,
+.ork-node-iconbtn--on:hover {
+  color: var(--accent);
+  background: var(--accent-weak);
+}
+
+/* Diff textual: uma linha = um elemento (o realce é por linha inteira, como no `git diff` do
+   terminal). Sem wrap — linhas longas rolam na horizontal em vez de quebrar e desalinhar a
+   leitura dos +/-. */
+.ork-filetree-diff {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-1);
+}
+
+.ork-filetree-diffline {
+  white-space: pre;
+  padding: 0 var(--space-1);
+  border-radius: 2px;
+}
+/* Cor SEMÂNTICA (§4.13), igual ao overlay da árvore: adicionado=--ok, removido=--err. O fundo é
+   um véu fraco (não a cor cheia) pra não virar um bloco berrante num nó pequeno. */
+.ork-filetree-diffline--add {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.ork-filetree-diffline--del {
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}
+/* Cabeçalho de hunk (@@) = âncora de navegação: destacado, mas neutro (accent, não status). */
+.ork-filetree-diffline--hunk {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+/* `diff --git`, `index`, `+++/---`: ruído necessário — presente, recuado no contraste. */
+.ork-filetree-diffline--meta {
+  color: var(--text-3);
+}
