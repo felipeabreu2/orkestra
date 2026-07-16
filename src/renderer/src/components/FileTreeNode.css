@@ -420,6 +420,19 @@ button.ork-filetree-branch:hover {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* T13: item destrutivo do menu de mutação (Excluir). Vermelho SEMÂNTICO — mesma convenção do
+   ork-ctxmenu-item--danger do canvas. */
+.ork-filetree-gitmenu-item--danger {
+  color: var(--err);
+}
+.ork-filetree-gitmenu-item--danger:hover:not(:disabled) {
+  background: var(--err-weak);
+  color: var(--err);
+}
+.ork-node-go--danger {
+  color: var(--err);
+  border-color: var(--err);
+}
 
 .ork-filetree-gitform {
   display: flex;

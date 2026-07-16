@@ -145,6 +145,18 @@ const api = {
     // o erro em vez de forçar: nada aqui descarta trabalho não commitado.
     gitCheckout: (dir: string, branch: string): Promise<void> =>
       ipcRenderer.invoke('filetree:gitCheckout', dir, branch),
+    // Onda 3 (T13): mutação de ARQUIVOS — criar/renomear-mover/excluir, o menu de contexto da
+    // árvore. O MAIN valida o alvo sob `root` com SYMLINKS RESOLVIDOS (pathGuard); esta bridge é
+    // conveniência, não fronteira de segurança. Todas rejeitam legível: alvo existente (create),
+    // destino existente (rename — o rename POSIX sobrescreveria em silêncio), fora da raiz, a
+    // própria raiz. `remove` envia para a LIXEIRA do sistema (recuperável) — exclusão definitiva
+    // não existe neste canal.
+    create: (path: string, root: string, kind: 'file' | 'dir'): Promise<void> =>
+      ipcRenderer.invoke('filetree:create', path, root, kind),
+    rename: (from: string, to: string, root: string): Promise<void> =>
+      ipcRenderer.invoke('filetree:rename', from, to, root),
+    remove: (path: string, root: string): Promise<void> =>
+      ipcRenderer.invoke('filetree:remove', path, root),
     // Onda 3 (T9): watch de filesystem — a árvore reage ao que os agentes fazem no disco, sem
     // clique em "atualizar". `dirs` é o escopo VISÍVEL (raiz + expandidas, ver watchDirsFor); o main
     // ignora .git/node_modules e coalesce as rajadas.

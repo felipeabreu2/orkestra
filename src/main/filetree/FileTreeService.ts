@@ -1,9 +1,14 @@
-import { readdir, stat, open, rename, unlink } from 'node:fs/promises'
+import { readdir, stat, open, rename, unlink, mkdir, lstat } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { join, resolve, sep } from 'node:path'
+import { join } from 'node:path'
 import type { ContentMatch, ContentSearchResult, FileEntry } from '../../shared/filetree'
 import { IGNORED_DIR_NAMES } from './watchFilters'
+import { isInsideRoot, assertMutableTarget } from './pathGuard'
+
+// O guard lexical nasceu aqui (Onda 2 · T4) e MUDOU-SE para ./pathGuard na T13, quando ganhou a
+// camada que resolve symlinks (assertMutableTarget). Re-exportado para os consumidores existentes.
+export { isInsideRoot }
 
 const execFileAsync = promisify(execFile)
 
@@ -31,18 +36,6 @@ const MAX_SEARCH_SNIPPET = 200
 function compareEntries(a: FileEntry, b: FileEntry): number {
   if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-}
-
-// Guarda de caminho para `write` (Onda 2 · T4): só permite gravar DENTRO da raiz da árvore. Normaliza
-// os dois lados com `resolve` (colapsa `..`/`.`/separadores redundantes), então compara o prefixo
-// terminado em separador — assim `/r/a` casa mas `/r-outro` e `/r/../x` NÃO. Defesa em profundidade:
-// o renderer é privilegiado (tem pty.spawn), então uma escrita com path envenenado (traversal fora da
-// raiz) precisa ser barrada no MAIN, nunca só na UI. NB: comparação puramente lexical/pós-resolve —
-// não resolve symlinks (isso, e o guard completo de mutação criar/mover/excluir, são Onda 3 · T13).
-export function isInsideRoot(root: string, target: string): boolean {
-  const nRoot = resolve(root)
-  const nTarget = resolve(target)
-  return nTarget === nRoot || nTarget.startsWith(nRoot + sep)
 }
 
 // ── Onda 3 · T11: defesa contra OPTION INJECTION nos comandos git de escrita ────────────────────
@@ -127,7 +120,18 @@ function cleanGitPath(raw: string): string {
 // escrita fora da raiz) propagam como rejeição da
 // Promise — quem chama (registerFileTreeIpc) não os trata, e o invoke() do renderer os recebe
 // como rejeição, que é onde de fato existe uma ação de recuperação (mostrar erro na árvore).
+// Dependências injetáveis do serviço (Onda 3 · T13). `trash` envia um caminho para a LIXEIRA do
+// sistema — em produção é o shell.trashItem do Electron (ver src/main/index.ts); nos testes, um
+// spy. Injetada porque o serviço roda em teste node puro (sem Electron) E porque a decisão de
+// design é visível no tipo: exclusão definitiva NÃO existe aqui — sem dep de lixeira, remove()
+// falha legível em vez de degradar para um rm.
+export interface FileTreeServiceDeps {
+  trash?: (path: string) => Promise<void>
+}
+
 export class FileTreeService {
+  constructor(private readonly deps: FileTreeServiceDeps = {}) {}
+
   // Lista o conteúdo direto de `dir` (não-recursivo — a árvore no renderer expande sob demanda,
   // nó por nó). Pastas antes de arquivos; dentro de cada grupo, ordem alfabética
   // case-insensitive.
@@ -199,6 +203,58 @@ export class FileTreeService {
       }
       throw err
     }
+  }
+
+  // ── Onda 3 · T13: mutação de ARQUIVOS (o menu de contexto da árvore) ──────────────────────────
+  // Todas passam por assertMutableTarget (pathGuard): alvo sob a raiz com SYMLINKS RESOLVIDOS no
+  // caminho até o pai, pai existente, e a própria raiz imutável. Regras comuns:
+  //  · nada aqui sobrescreve nem apaga definitivo — criar em alvo existente falha, renomear para
+  //    destino existente falha, excluir vai para a LIXEIRA (recuperável);
+  //  · erro é rejeição legível (o renderer mostra), nunca silêncio.
+
+  // Cria arquivo VAZIO ou pasta. `wx`/mkdir não-recursivo: alvo existente e pai inexistente são
+  // erros do fs, não sobrescrita — o conteúdo que já estava lá nunca é tocado.
+  async create(path: string, root: string, kind: 'file' | 'dir'): Promise<void> {
+    await assertMutableTarget(root, path)
+    if (kind === 'dir') {
+      await mkdir(path)
+      return
+    }
+    const handle = await open(path, 'wx')
+    await handle.close()
+  }
+
+  // Renomear e MOVER são o mesmo syscall (rename) — o menu expõe os dois gestos, o serviço tem um
+  // caminho só. O guard roda na ORIGEM e no DESTINO (mover para fora da raiz é tão escape quanto
+  // criar fora). A checagem de destino existente é obrigatória: o rename POSIX sobrescreve em
+  // SILÊNCIO, e "renomeei a.txt para b.txt" não pode significar "destruí o b.txt que existia".
+  // (Checagem-então-rename tem janela TOCTOU teórica; para um gesto de UI num explorador local, o
+  // erro legível vale mais que a corrida improvável.)
+  async rename(from: string, to: string, root: string): Promise<void> {
+    await assertMutableTarget(root, from)
+    await assertMutableTarget(root, to)
+    let destinoExiste = true
+    try {
+      await lstat(to)
+    } catch {
+      destinoExiste = false
+    }
+    if (destinoExiste) {
+      throw new Error(`Operação recusada: o destino já existe (${to})`)
+    }
+    await rename(from, to)
+  }
+
+  // Exclui = envia para a LIXEIRA do sistema (dep injetada; produção usa shell.trashItem). Não há
+  // caminho de exclusão definitiva neste serviço de propósito: a confirmação da UI é a primeira
+  // barreira, a lixeira é a segunda — um clique errado continua recuperável. Sem a dep, falha
+  // legível (nunca degrada para rm).
+  async remove(path: string, root: string): Promise<void> {
+    await assertMutableTarget(root, path)
+    if (!this.deps.trash) {
+      throw new Error('Exclusão indisponível: sem acesso à lixeira do sistema neste ambiente.')
+    }
+    await this.deps.trash(path)
   }
 
   // Onda 3 · T10 — busca por CONTEÚDO (o modo `>` do campo de busca da árvore). Varredura

@@ -379,7 +379,33 @@ abrir-na-linha) é QA manual, como o resto do nó.
 
 ---
 
-### T13 — Menu de contexto com mutação (criar/renomear/mover/excluir)  [P3 · L · Onda 3]
+### T13 — Menu de contexto com mutação (criar/renomear/mover/excluir)  [P3 · L · Onda 3] — ✅ **ENTREGUE (fecha a Onda 3 da Árvore)**
+
+**Status (2026-07-16):** entregue, com estas decisões além do plano:
+- **`pathGuard.assertMutableTarget` resolve symlinks** (a pendência registrada na T4): realpath na
+  RAIZ (no macOS ela já vem por symlinks do sistema — /tmp→/private/tmp) e no **PAI** do alvo — a
+  folha NÃO é resolvida de propósito (excluir/renomear um symlink que aponta para fora é legítimo:
+  a operação age no link, nunca no destino). Symlink no caminho que escapa da raiz é recusado; a
+  própria raiz é imutável; pai inexistente falha legível. O `isInsideRoot` lexical mudou-se para
+  `pathGuard.ts` (re-exportado do serviço p/ compat do `write`).
+- **Excluir = LIXEIRA do sistema, nunca rm** — `shell.trashItem` injetado como dep do serviço
+  (`FileTreeServiceDeps.trash`); sem a dep, `remove()` falha legível em vez de degradar para rm.
+  Confirmação na UI é a primeira barreira, lixeira é a segunda: clique errado continua recuperável.
+- **Renomear e mover são UM gesto** (mesmo syscall): input de caminho RELATIVO à raiz, prefilled.
+  `rename` recusa destino existente (o rename POSIX sobrescreveria em SILÊNCIO); `create` recusa
+  alvo existente (`wx`/mkdir não-recursivo).
+- **Painel sob o header (padrão do menu git da T11), não overlay**: o `CanvasContextMenu` usa
+  `position:fixed`, que quebra dentro do nó transformado do React Flow. Botão-direito numa linha =
+  agir nela; em área vazia = agir na raiz. Duas etapas sempre; erro do fs LITERAL nos banners da
+  T11 (mesmo contrato). Validação-espelho na UI (`fileTreeMutate.ts`: nameError/relTargetError) com
+  a autoridade no main.
+- Pós-mutação: `refreshFromDisk()` explícito (o watch cobre quase tudo, mas alvo em nível
+  não-observado não emite evento) e o preview de arquivo renomeado/excluído (ou contido na pasta
+  afetada) é fechado.
+
+**Cobertura:** `pathGuard` (8 casos, incl. symlink-pai-fora × symlink-folha e /tmp symlinkado),
+mutações do serviço (10 casos, incl. traversal, sobrescrita recusada e lixeira via spy) e
+`fileTreeMutate` (11 casos). Painel/menu `.tsx` = QA manual, como o resto do nó.
 
 **Objetivo:** botão-direito na árvore com operações de arquivo, rompendo o read-only com segurança.
 

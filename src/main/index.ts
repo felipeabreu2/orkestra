@@ -466,9 +466,11 @@ app.whenReady().then(async () => {
     // re-attachar, então seguiriam vivos (agentes consumindo CPU/RAM/tokens) e inalcançáveis.
     for (const nodeId of nodeIds) ptyManager.killByNode(nodeId)
   })
-  // Árvore de arquivos (Fase 19 Task 1): serviço read-only de fs + git status para o nó de
-  // file-explorer do canvas (renderer, Task 2). Sem estado próprio — não precisa de bootstrap.
-  const fileTreeService = new FileTreeService()
+  // Árvore de arquivos (Fase 19 Task 1): serviço de fs + git para o nó de file-explorer do canvas
+  // (renderer, Task 2). Sem estado próprio — não precisa de bootstrap. A dep `trash` (Onda 3 ·
+  // T13) liga o remove() do menu de contexto à LIXEIRA do sistema (shell.trashItem): excluir pela
+  // árvore é sempre recuperável — exclusão definitiva não existe nesse canal.
+  const fileTreeService = new FileTreeService({ trash: (p) => shell.trashItem(p) })
   registerFileTreeIpc(ipcMain, fileTreeService, fileTreeWatcher)
   // R1 (abrir no editor externo): handler 'ide:open' — abre a pasta do projeto no editor de código
   // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.

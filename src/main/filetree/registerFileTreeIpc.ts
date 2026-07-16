@@ -50,6 +50,18 @@ export function registerFileTreeIpc(
     svc.gitCheckout(dir, branch)
   )
 
+  // Onda 3 · T13 — mutação de ARQUIVOS (menu de contexto da árvore). Todas validam no MAIN que o
+  // alvo vive sob `root` com symlinks resolvidos (pathGuard.assertMutableTarget) — a confirmação
+  // da UI é UX, a fronteira de segurança é aqui. Erro rejeita legível (nada é engolido); excluir
+  // vai para a LIXEIRA do sistema (dep injetada no serviço), nunca rm definitivo.
+  ipcMain.handle('filetree:create', (_e, path: string, root: string, kind: 'file' | 'dir') =>
+    svc.create(path, root, kind)
+  )
+  ipcMain.handle('filetree:rename', (_e, from: string, to: string, root: string) =>
+    svc.rename(from, to, root)
+  )
+  ipcMain.handle('filetree:remove', (_e, path: string, root: string) => svc.remove(path, root))
+
   // Onda 3 · T9 — watch de filesystem.
   //
   // `subscriptionId` vem do RENDERER (não é gerado aqui e devolvido) de propósito: o unwatch do

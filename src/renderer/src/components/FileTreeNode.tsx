@@ -6,6 +6,7 @@ import type { ContentSearchResult, FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
 import { gitKeyForEntry, relativeToRoot } from './fileTreeGit'
 import { parseSearchMode, filterByName, collectLoadedEntries } from './fileTreeFilter'
+import { parentDir, nameError, relTargetError, joinUnderRoot } from './fileTreeMutate'
 import { watchDirsFor, shouldApplyWatchEvent } from './fileTreeWatch'
 import { parseDiffLines, diffHunkAt, diffQuoteLabel, type DiffLine, type DiffHunk } from './fileTreeDiff'
 import { commitPreview, canCommit, commitConfirmText, branchNameError } from './fileTreeGitWrite'
@@ -71,14 +72,24 @@ interface TreeLevelProps {
   gitStatus: GitStatus
   onToggleDir: (dir: FileEntry) => void
   onOpenFile: (file: FileEntry) => void
+  // T13: botão-direito numa linha abre o menu de mutação para aquela entrada.
+  onContextEntry: (entry: FileEntry) => void
 }
 
 // Nível recursivo da árvore: cada pasta expandida renderiza seus filhos cacheados chamando a
 // si mesma com depth+1. Lazy por construção — só existe uma entrada em childrenCache/expanded
 // para uma pasta depois que o usuário clica nela (toggleDir dispara o filetree:list sob demanda).
 function TreeLevel(props: TreeLevelProps): JSX.Element {
-  const { entries, depth, root, expanded, childrenCache, gitStatus, onToggleDir, onOpenFile } = props
+  const { entries, depth, root, expanded, childrenCache, gitStatus, onToggleDir, onOpenFile, onContextEntry } =
+    props
   const indent = 8 + depth * 14
+  // stopPropagation: sem ele o context-menu da linha borbulharia até o container de rows, que abre
+  // o menu da RAIZ — e o usuário veria o menu do lugar errado.
+  const contextFor = (entry: FileEntry) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onContextEntry(entry)
+  }
   return (
     <>
       {entries.map((entry) => {
@@ -91,6 +102,7 @@ function TreeLevel(props: TreeLevelProps): JSX.Element {
                 className="nodrag ork-filetree-row ork-filetree-row--dir"
                 style={{ paddingLeft: indent }}
                 onClick={() => onToggleDir(entry)}
+                onContextMenu={contextFor(entry)}
                 title={entry.path}
               >
                 <span className="ork-filetree-triangle" aria-hidden="true">
@@ -127,6 +139,7 @@ function TreeLevel(props: TreeLevelProps): JSX.Element {
             // arquivo, idempotente); pastas não têm este handler (lá o duplo-clique só expande e
             // colapsa de novo). Fire-and-forget: openEntryInEditor nunca rejeita.
             onDoubleClick={() => void openEntryInEditor(entry, window.orkestra.ide.open)}
+            onContextMenu={contextFor(entry)}
             // Arrastar uma linha de ARQUIVO (pastas não — evita `cd` ambíguo) injeta seu caminho
             // absoluto no terminal de um agente ao soltar sobre um TerminalNode (que lê o MIME
             // interno via readDroppedPaths). `draggable` (HTML5) coexiste com `nodrag`, que só
@@ -287,8 +300,22 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const [commitMsg, setCommitMsg] = useState('')
   const [branchInput, setBranchInput] = useState('')
   const [gitBusy, setGitBusy] = useState(false)
+  // Banners de RESULTADO de operação (erro literal / sucesso). Nasceram na T11 (git de escrita) e
+  // desde a T13 servem também às mutações de arquivo — são o mesmo contrato: falhou é falhou,
+  // visível até o usuário dispensar.
   const [gitWriteError, setGitWriteError] = useState('')
   const [gitWriteOk, setGitWriteOk] = useState('')
+
+  // ── Onda 3 · T13: menu de mutação de ARQUIVOS (botão-direito numa linha da árvore) ───────────
+  // Painel sob o header (mesmo padrão do menu git da T11 — um overlay position:fixed quebraria
+  // dentro do nó transformado do React Flow). `mutTarget` null = ação na RAIZ (clique em área
+  // vazia). A validação aqui é espelho (fileTreeMutate); a autoridade é o pathGuard no main.
+  const [mutMenu, setMutMenu] = useState<'none' | 'menu' | 'newfile' | 'newdir' | 'rename' | 'delete'>(
+    'none'
+  )
+  const [mutTarget, setMutTarget] = useState<FileEntry | null>(null)
+  const [mutInput, setMutInput] = useState('')
+  const [mutBusy, setMutBusy] = useState(false)
 
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<PreviewState | null>(null)
@@ -484,6 +511,42 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     [refreshFromDisk]
   )
 
+  // ── Onda 3 · T13: execução das mutações de arquivo ───────────────────────────────────────────
+  // Mesmo desenho do runGitWrite (busy → op → banner + refresh explícito). O refresh explícito
+  // importa menos aqui que no commit (mutações de arquivo ACORDAM o watch), mas continua: se o
+  // alvo estava num nível não-observado (pasta colapsada), o evento não vem.
+  const runMutation = useCallback(
+    async (label: string, op: () => Promise<void>): Promise<void> => {
+      setMutBusy(true)
+      setGitWriteError('')
+      setGitWriteOk('')
+      try {
+        await op()
+        setGitWriteOk(label)
+        setMutMenu('none')
+        setMutTarget(null)
+        setMutInput('')
+        refreshFromDisk()
+      } catch (err) {
+        setGitWriteError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setMutBusy(false)
+      }
+    },
+    [refreshFromDisk]
+  )
+
+  // Botão-direito numa linha (ou em área vazia -> raiz). Fecha o menu git (um painel por vez) e
+  // zera os banners de resultado da operação anterior.
+  const openMutMenu = (entry: FileEntry | null): void => {
+    setGitMenu('none')
+    setGitWriteError('')
+    setGitWriteOk('')
+    setMutTarget(entry)
+    setMutInput('')
+    setMutMenu('menu')
+  }
+
   // Escopo de projeto: o projeto que ESTE canvas exibe. Carimbado na assinatura e reconferido em
   // cada push — ver shouldApplyWatchEvent. Existe por causa do incidente de corrupção
   // cross-project: um watcher do projeto A não pode atualizar o canvas do projeto B.
@@ -545,6 +608,10 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     [search, entries, childrenCache]
   )
   const searchActive = search.query.trim().length > 0
+
+  // T13 — diretório-destino de "novo arquivo/pasta": a própria pasta clicada, o pai do arquivo
+  // clicado, ou a raiz (clique em área vazia). Derivado, não estado — segue o alvo sozinho.
+  const mutDestDir = mutTarget ? (mutTarget.isDir ? mutTarget.path : parentDir(mutTarget.path)) : (root ?? '')
 
   // Linhas classificadas do diff (T8) — memoizadas porque agora servem a DOIS consumidores: o
   // render e o recorte do hunk citado (T12).
@@ -923,6 +990,187 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             )}
           </div>
         )}
+        {/* ── Onda 3 · T13: painel de mutação de ARQUIVOS ──────────────────────────────────────
+            Botão-direito numa linha (ou em área vazia = raiz). Duas etapas sempre — escolher a
+            ação, depois confirmar com os detalhes à vista (mesmo desenho do painel git). EXCLUIR
+            vai para a LIXEIRA do sistema (recuperável); exclusão definitiva não existe aqui. */}
+        {mutMenu !== 'none' && root && (
+          <div className="nodrag ork-filetree-gitmenu" role="menu">
+            {mutMenu === 'menu' && (
+              <div className="ork-filetree-gitmenu-actions">
+                <div className="ork-filetree-githint">
+                  alvo:{' '}
+                  {mutTarget
+                    ? `${relativeToRoot(root, mutTarget.path)}${mutTarget.isDir ? '/' : ''}`
+                    : 'raiz da árvore'}
+                </div>
+                <button
+                  className="nodrag ork-filetree-gitmenu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setMutInput('')
+                    setMutMenu('newfile')
+                  }}
+                >
+                  <Icon name="FilePlus" size={13} animation="none" />
+                  Novo arquivo…
+                </button>
+                <button
+                  className="nodrag ork-filetree-gitmenu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setMutInput('')
+                    setMutMenu('newdir')
+                  }}
+                >
+                  <Icon name="FolderPlus" size={13} animation="none" />
+                  Nova pasta…
+                </button>
+                {mutTarget && (
+                  <button
+                    className="nodrag ork-filetree-gitmenu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setMutInput(relativeToRoot(root, mutTarget.path))
+                      setMutMenu('rename')
+                    }}
+                  >
+                    <Icon name="Pencil" size={13} animation="none" />
+                    Renomear / mover…
+                  </button>
+                )}
+                {mutTarget && (
+                  <button
+                    className="nodrag ork-filetree-gitmenu-item ork-filetree-gitmenu-item--danger"
+                    role="menuitem"
+                    onClick={() => setMutMenu('delete')}
+                  >
+                    <Icon name="Trash2" size={13} animation="none" />
+                    Excluir (Lixeira)…
+                  </button>
+                )}
+                <button
+                  className="nodrag ork-filetree-gitmenu-item"
+                  role="menuitem"
+                  onClick={() => setMutMenu('none')}
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+
+            {(mutMenu === 'newfile' || mutMenu === 'newdir') && (
+              <div className="ork-filetree-gitform">
+                <div className="ork-filetree-githint">
+                  {mutMenu === 'newfile' ? 'novo arquivo' : 'nova pasta'} em{' '}
+                  {relativeToRoot(root, mutDestDir) || 'raiz'}/
+                </div>
+                <input
+                  className="nodrag ork-filetree-gitinput"
+                  value={mutInput}
+                  onChange={(e) => setMutInput(e.target.value)}
+                  placeholder={mutMenu === 'newfile' ? 'nome do arquivo' : 'nome da pasta'}
+                  autoFocus
+                />
+                {mutInput.length > 0 && nameError(mutInput) && (
+                  <div className="ork-filetree-giterr">{nameError(mutInput)}</div>
+                )}
+                <div className="ork-filetree-gitform-row">
+                  <button
+                    className="nodrag ork-node-go"
+                    disabled={mutBusy || nameError(mutInput) !== ''}
+                    onClick={() => {
+                      const alvo = joinUnderRoot(mutDestDir, mutInput)
+                      const kind = mutMenu === 'newdir' ? 'dir' : 'file'
+                      void runMutation(`criado: ${relativeToRoot(root, alvo)}`, async () => {
+                        await window.orkestra.filetree.create(alvo, root, kind)
+                      })
+                    }}
+                  >
+                    {mutBusy ? 'criando…' : 'Criar'}
+                  </button>
+                  <button className="nodrag ork-node-go" onClick={() => setMutMenu('menu')}>
+                    Voltar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {mutMenu === 'rename' && mutTarget && (
+              <div className="ork-filetree-gitform">
+                <div className="ork-filetree-githint">
+                  renomear/mover {relativeToRoot(root, mutTarget.path)} para (relativo à raiz):
+                </div>
+                <input
+                  className="nodrag ork-filetree-gitinput"
+                  value={mutInput}
+                  onChange={(e) => setMutInput(e.target.value)}
+                  placeholder="novo/caminho/nome.ext"
+                  autoFocus
+                />
+                {mutInput.length > 0 && relTargetError(mutInput) && (
+                  <div className="ork-filetree-giterr">{relTargetError(mutInput)}</div>
+                )}
+                <div className="ork-filetree-gitform-row">
+                  <button
+                    className="nodrag ork-node-go"
+                    disabled={mutBusy || relTargetError(mutInput) !== ''}
+                    onClick={() => {
+                      const from = mutTarget.path
+                      const to = joinUnderRoot(root, mutInput)
+                      void runMutation(`renomeado: ${mutInput}`, async () => {
+                        await window.orkestra.filetree.rename(from, to, root)
+                        // o preview do arquivo movido (ou de algo dentro da pasta movida) ficaria
+                        // apontando para um caminho que não existe mais
+                        if (previewPath && (previewPath === from || previewPath.startsWith(`${from}/`))) {
+                          closePreview()
+                        }
+                      })
+                    }}
+                  >
+                    {mutBusy ? 'renomeando…' : 'Renomear'}
+                  </button>
+                  <button className="nodrag ork-node-go" onClick={() => setMutMenu('menu')}>
+                    Voltar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {mutMenu === 'delete' && mutTarget && (
+              <div className="ork-filetree-gitform">
+                <div className="ork-filetree-githint">
+                  Enviar {relativeToRoot(root, mutTarget.path)}
+                  {mutTarget.isDir ? '/ (e todo o conteúdo)' : ''} para a Lixeira? Dá para restaurar
+                  pela Lixeira do sistema.
+                </div>
+                <div className="ork-filetree-gitform-row">
+                  <button
+                    className="nodrag ork-node-go ork-node-go--danger"
+                    disabled={mutBusy}
+                    onClick={() => {
+                      const alvo = mutTarget.path
+                      void runMutation(
+                        `enviado para a Lixeira: ${relativeToRoot(root, alvo)}`,
+                        async () => {
+                          await window.orkestra.filetree.remove(alvo, root)
+                          if (previewPath && (previewPath === alvo || previewPath.startsWith(`${alvo}/`))) {
+                            closePreview()
+                          }
+                        }
+                      )
+                    }}
+                  >
+                    {mutBusy ? 'enviando…' : 'Enviar para a Lixeira'}
+                  </button>
+                  <button className="nodrag ork-node-go" onClick={() => setMutMenu('menu')}>
+                    Voltar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* Erro do git, LITERAL ("nothing to commit", "would be overwritten by checkout"…): são
             mensagens que o usuário sabe ler e reescrevê-las só perderia informação. Fica fora do
             painel de propósito — continua visível depois que o menu fecha. */}
@@ -1082,7 +1330,15 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
           )}
           {root && !previewPath && mode === 'list' && (
             <>
-              <div className="nodrag nowheel ork-filetree-rows">
+              <div
+                className="nodrag nowheel ork-filetree-rows"
+                // T13: botão-direito em área VAZIA = agir na raiz (novo arquivo/pasta no topo).
+                // As linhas param a propagação, então chegar aqui significa "fora de qualquer linha".
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  if (!searchActive) openMutMenu(null)
+                }}
+              >
                 {treeLoading && <div className="ork-filetree-msg">carregando…</div>}
                 {treeError && <div className="ork-filetree-msg ork-filetree-msg--err">{treeError}</div>}
                 {/* ── T10: resultados da busca substituem a árvore enquanto houver query ── */}
@@ -1172,6 +1428,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
                     gitStatus={gitStatus}
                     onToggleDir={toggleDir}
                     onOpenFile={openFile}
+                    onContextEntry={openMutMenu}
                   />
                 )}
               </div>

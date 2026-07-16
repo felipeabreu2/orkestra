@@ -615,4 +615,94 @@ describe('FileTreeService', () => {
       await expect(svc.searchContent(join(dir, 'nao-existe'), 'x')).rejects.toBeTruthy()
     })
   })
+
+  // ── Onda 3 · T13: mutação de arquivos (criar/renomear-mover/excluir) ──────────────────────────
+  describe('mutações (create/rename/remove)', () => {
+    it('create cria arquivo vazio e ele aparece no list', async () => {
+      await svc.create(join(dir, 'novo.txt'), dir, 'file')
+      const e = await svc.list(dir)
+      expect(e.some((x) => x.name === 'novo.txt' && !x.isDir)).toBe(true)
+      expect(readFileSync(join(dir, 'novo.txt')).toString()).toBe('')
+    })
+
+    it('create cria pasta e ela aparece no list', async () => {
+      await svc.create(join(dir, 'src', 'nova-pasta'), dir, 'dir')
+      const e = await svc.list(join(dir, 'src'))
+      expect(e.some((x) => x.name === 'nova-pasta' && x.isDir)).toBe(true)
+    })
+
+    it('create em alvo EXISTENTE rejeita sem tocar no conteúdo', async () => {
+      await expect(svc.create(join(dir, 'README.md'), dir, 'file')).rejects.toBeTruthy()
+      expect(readFileSync(join(dir, 'README.md')).toString()).toBe('# hi\n')
+    })
+
+    it('create fora da raiz rejeita (traversal) e não cria nada', async () => {
+      await expect(svc.create(join(dir, '..', 'escapou.txt'), dir, 'file')).rejects.toThrow(
+        /fora da raiz/i
+      )
+      expect(existsSync(join(dir, '..', 'escapou.txt'))).toBe(false)
+    })
+
+    it('rename renomeia e o list reflete (o velho some, o novo aparece)', async () => {
+      await svc.rename(join(dir, 'README.md'), join(dir, 'LEIAME.md'), dir)
+      const e = await svc.list(dir)
+      expect(e.some((x) => x.name === 'LEIAME.md')).toBe(true)
+      expect(e.some((x) => x.name === 'README.md')).toBe(false)
+      expect(readFileSync(join(dir, 'LEIAME.md')).toString()).toBe('# hi\n')
+    })
+
+    it('rename MOVE para subpasta (mesmo syscall, destino noutro dir)', async () => {
+      await svc.rename(join(dir, 'README.md'), join(dir, 'src', 'README.md'), dir)
+      expect(existsSync(join(dir, 'src', 'README.md'))).toBe(true)
+      expect(existsSync(join(dir, 'README.md'))).toBe(false)
+    })
+
+    it('rename com destino EXISTENTE rejeita (o rename POSIX sobrescreveria em silêncio)', async () => {
+      writeFileSync(join(dir, 'alvo.txt'), 'conteudo do alvo\n')
+      await expect(svc.rename(join(dir, 'README.md'), join(dir, 'alvo.txt'), dir)).rejects.toThrow(
+        /já existe/i
+      )
+      // nada foi sobrescrito nem movido
+      expect(readFileSync(join(dir, 'alvo.txt')).toString()).toBe('conteudo do alvo\n')
+      expect(existsSync(join(dir, 'README.md'))).toBe(true)
+    })
+
+    it('rename com origem OU destino fora da raiz rejeita', async () => {
+      await expect(
+        svc.rename(join(dir, 'README.md'), join(dir, '..', 'fora.md'), dir)
+      ).rejects.toThrow(/fora da raiz/i)
+      await expect(svc.rename(join(dir, '..'), join(dir, 'dentro'), dir)).rejects.toThrow(
+        /fora da raiz|raiz/i
+      )
+      expect(existsSync(join(dir, 'README.md'))).toBe(true)
+    })
+
+    it('remove ENVIA PARA A LIXEIRA via dep injetada (nunca rm definitivo)', async () => {
+      const enviados: string[] = []
+      const comLixeira = new FileTreeService({
+        trash: async (p) => {
+          enviados.push(p)
+        }
+      })
+      await comLixeira.remove(join(dir, 'README.md'), dir)
+      expect(enviados).toEqual([join(dir, 'README.md')])
+    })
+
+    it('remove fora da raiz rejeita ANTES de chamar a lixeira', async () => {
+      const enviados: string[] = []
+      const comLixeira = new FileTreeService({
+        trash: async (p) => {
+          enviados.push(p)
+        }
+      })
+      await expect(comLixeira.remove(join(dir, '..', 'x'), dir)).rejects.toThrow(/fora da raiz/i)
+      await expect(comLixeira.remove(dir, dir)).rejects.toThrow(/raiz/i)
+      expect(enviados).toEqual([])
+    })
+
+    it('remove sem dep de lixeira rejeita LEGÍVEL (nunca cai num rm silencioso)', async () => {
+      await expect(svc.remove(join(dir, 'README.md'), dir)).rejects.toThrow(/lixeira/i)
+      expect(existsSync(join(dir, 'README.md'))).toBe(true)
+    })
+  })
 })
