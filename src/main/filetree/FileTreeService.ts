@@ -2,7 +2,8 @@ import { readdir, stat, open, rename, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join, resolve, sep } from 'node:path'
-import type { FileEntry } from '../../shared/filetree'
+import type { ContentMatch, ContentSearchResult, FileEntry } from '../../shared/filetree'
+import { IGNORED_DIR_NAMES } from './watchFilters'
 
 const execFileAsync = promisify(execFile)
 
@@ -19,6 +20,13 @@ export const MAX_DIFF_LINES = 2000
 // execFile rejeita — ou seja, um diff grande cairia no catch e viraria '' ("sem alterações"), que é
 // uma MENTIRA pior que truncar. Com 64MB o git termina e nós é que decidimos onde cortar.
 const DIFF_MAX_BUFFER = 64 * 1024 * 1024
+
+// Onda 3 · T10 — tetos da busca por conteúdo. 200 resultados é mais do que alguém LÊ num nó do
+// canvas (quem precisa de mais refina a query); parar cedo também limita o custo da varredura num
+// projeto grande. O trecho por linha é capado para uma linha minificada (bundle de 1MB numa linha
+// só) não atravessar o IPC inteira — o que a UI mostra é "onde está", não o conteúdo.
+export const MAX_SEARCH_RESULTS = 200
+const MAX_SEARCH_SNIPPET = 200
 
 function compareEntries(a: FileEntry, b: FileEntry): number {
   if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
@@ -191,6 +199,64 @@ export class FileTreeService {
       }
       throw err
     }
+  }
+
+  // Onda 3 · T10 — busca por CONTEÚDO (o modo `>` do campo de busca da árvore). Varredura
+  // recursiva LIMITADA por construção, não por fé:
+  //  · pula `.git`/`node_modules` (o mesmo IGNORED_DIR_NAMES do watch — a razão é a mesma: são os
+  //    dois cantos gigantes que ninguém quer nos resultados);
+  //  · cada arquivo passa pelo `read` de sempre — binário (byte NUL) é pulado e só os primeiros
+  //    MAX_READ_BYTES são olhados (buscar além do que o preview consegue MOSTRAR só produziria um
+  //    resultado que não abre);
+  //  · para no teto de resultados (MAX_SEARCH_RESULTS) com `truncated:true` — a varredura inteira
+  //    é interrompida, não só o append.
+  // Match por substring case-insensitive (sem regex: query do usuário não vira pattern — `.` numa
+  // busca por "config.ts" deve casar "config.ts", não "configXts"). Erros de leitura no MEIO da
+  // varredura (arquivo sumiu, sem permissão) pulam a entrada — best-effort, como o refresh do
+  // watch; só a RAIZ inexistente rejeita, mesmo contrato do `list`. Symlinks de diretório não são
+  // seguidos (dirent.isDirectory() é false para symlink), então ciclo não trava a varredura.
+  async searchContent(dir: string, query: string): Promise<ContentSearchResult> {
+    const q = query.trim().toLowerCase()
+    if (!q) return { matches: [], truncated: false }
+    const matches: ContentMatch[] = []
+    let truncated = false
+
+    const walk = async (d: string, isRoot: boolean): Promise<void> => {
+      let entries: FileEntry[]
+      try {
+        entries = await this.list(d)
+      } catch (err) {
+        if (isRoot) throw err
+        return
+      }
+      for (const entry of entries) {
+        if (truncated) return
+        if (entry.isDir) {
+          if (IGNORED_DIR_NAMES.has(entry.name)) continue
+          await walk(entry.path, false)
+          continue
+        }
+        let file: { content: string; binary: boolean }
+        try {
+          file = await this.read(entry.path)
+        } catch {
+          continue
+        }
+        if (file.binary) continue
+        const lines = file.content.split('\n')
+        for (let i = 0; i < lines.length; i++) {
+          if (!lines[i].toLowerCase().includes(q)) continue
+          if (matches.length >= MAX_SEARCH_RESULTS) {
+            truncated = true
+            return
+          }
+          matches.push({ path: entry.path, line: i + 1, text: lines[i].trim().slice(0, MAX_SEARCH_SNIPPET) })
+        }
+      }
+    }
+
+    await walk(dir, true)
+    return { matches, truncated }
   }
 
   // `git status --porcelain` -> { entries: { path: 'M' | 'A' | '??' | ... }, prefix }. Os paths que

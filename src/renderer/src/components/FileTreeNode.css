@@ -65,6 +65,54 @@
   font-size: var(--fs-sm);
   color: var(--text-3);
 }
+
+/* ── Onda 3 · T10: rodapé de busca + resultados ─────────────────────────────────────────────── */
+/* Rodapé fixo abaixo da lista rolável (a lista tem flex:1; isto não rola junto). */
+.ork-filetree-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1-5);
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+}
+.ork-filetree-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.ork-filetree-search-input:focus {
+  outline: none;
+}
+.ork-filetree-search-input::placeholder {
+  color: var(--text-3);
+}
+
+/* Resultado da busca por conteúdo: onde (arquivo:linha, mono) + trecho da linha (mudo, elíptico).
+   O trecho é informação de contexto, não conteúdo para ler — quem quer ler clica e abre na linha. */
+.ork-filetree-hit {
+  padding-left: 8px;
+}
+.ork-filetree-hit-loc {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+.ork-filetree-hit-snippet {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
 .ork-filetree-msg--err {
   color: var(--err);
 }

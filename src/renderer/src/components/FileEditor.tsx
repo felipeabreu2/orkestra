@@ -51,11 +51,21 @@ interface FileEditorProps {
   // raiz da árvore: enviada ao main junto do write para a validação de caminho (isInsideRoot).
   root: string
   initialContent: string
+  // Onda 3 · T10: abrir POSICIONADO numa linha (1-based) — é como um resultado da busca por
+  // conteúdo vira "estou olhando para a ocorrência". Fora do intervalo é clampado, não erro.
+  initialLine?: number
   // notifica o pai (FileTreeNode) do conteúdo salvo, para manter o preview coerente sem reler o disco.
   onSaved?: (content: string) => void
 }
 
-export function FileEditor({ nodeId, path, root, initialContent, onSaved }: FileEditorProps): JSX.Element {
+export function FileEditor({
+  nodeId,
+  path,
+  root,
+  initialContent,
+  initialLine,
+  onSaved
+}: FileEditorProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
 
@@ -202,11 +212,26 @@ export function FileEditor({ nodeId, path, root, initialContent, onSaved }: File
       parent: host
     })
     viewRef.current = view
+
+    // T10 — posiciona na linha pedida (resultado da busca por conteúdo). Clamp em vez de erro: o
+    // arquivo pode ter mudado entre a varredura e o clique (agentes escrevem o tempo todo) — abrir
+    // na última linha é degradar melhor do que não abrir. `scrollIntoView` centrado + cursor na
+    // linha (o highlightActiveLine marca a linha inteira, que é o feedback visual do "achei").
+    if (initialLine && initialLine >= 1) {
+      const line = view.state.doc.line(Math.min(initialLine, view.state.doc.lines))
+      view.dispatch({
+        selection: { anchor: line.from },
+        effects: EditorView.scrollIntoView(line.from, { y: 'center' })
+      })
+      view.focus()
+    }
+
     return () => {
       view.destroy()
       viewRef.current = null
     }
-    // deps vazias de propósito: montar uma vez. Ver o comentário acima do efeito.
+    // deps vazias de propósito: montar uma vez (initialLine só importa na montagem — o pai remonta
+    // por key ao trocar de arquivo). Ver o comentário acima do efeito.
   }, [])
 
   return (

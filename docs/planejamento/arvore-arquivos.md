@@ -293,7 +293,33 @@ O norte do produto: transformar o explorador de um utilitário passivo em **ferr
 
 ---
 
-### T10 — Busca por nome / conteúdo (`>`) na árvore  [P4 · M/L · Onda 3]
+### T10 — Busca por nome / conteúdo (`>`) na árvore  [P4 · M/L · Onda 3] — ✅ **ENTREGUE**
+
+**Status (2026-07-16):** entregue conforme o plano, com os achados abaixo:
+- O "abrir na linha" veio JUNTO (não ficou para depois): clicar num resultado de conteúdo abre o
+  arquivo **direto no editor CodeMirror, posicionado e centrado na linha** (`initialLine` no
+  FileEditor, com clamp — o arquivo pode ter mudado entre a varredura e o clique). Binário/truncado
+  degradam para o preview normal.
+- `searchContent` (main) reusa as peças existentes em vez de criar novas: `IGNORED_DIR_NAMES` do
+  watch (`.git`/`node_modules` fora), e o `read()` de sempre (binário pulado por byte NUL; só os
+  primeiros 256KB de cada arquivo — buscar além do que o preview MOSTRA produziria resultado que
+  não abre). Tetos: `MAX_SEARCH_RESULTS=200` → `truncated:true` (a UI avisa "refine a busca");
+  trecho por linha capado em 200 chars (linha minificada de 1MB não atravessa o IPC). Match por
+  substring case-insensitive, sem regex (query não vira pattern). Raiz inexistente rejeita (contrato
+  do list); erro no MEIO da varredura pula a entrada (best-effort). Symlink de dir não é seguido
+  (dirent.isDirectory() é false) — sem ciclo.
+- Filtro por NOME é client-side sobre o JÁ CARREGADO (raiz + níveis já listados, mesmo colapsados —
+  `collectLoadedEntries` com guarda de ciclo), coerente com a árvore lazy: não varre disco atrás de
+  pasta nunca aberta. Resultados planos com caminho relativo; arquivo mantém drag→terminal e
+  duplo-clique→editor externo; pasta expande no fundo (enriquece o próprio filtro).
+- Conteúdo dispara no **Enter** (não por keystroke — cada disparo é uma varredura de disco);
+  digitar invalida os resultados (pertencem à query que os gerou); Esc/× limpam; trocar de raiz
+  zera a busca.
+
+**Cobertura:** `fileTreeFilter.ts` (parseSearchMode/filterByName/collectLoadedEntries) e
+`FileTreeService.searchContent` testados (8 casos novos no serviço, incl. teto/truncated, binário,
+ignore de node_modules/.git, cap de trecho e teto de 256KB). A fiação `.tsx` (rodapé, resultados,
+abrir-na-linha) é QA manual, como o resto do nó.
 
 **Objetivo:** campo de busca no rodapé — filtra por **nome** (client-side sobre o já carregado); `>` no início alterna para **conteúdo** (varre arquivos do nó no main).
 

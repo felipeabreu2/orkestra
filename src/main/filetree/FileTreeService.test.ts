@@ -10,7 +10,8 @@ import {
   gitSwitchArgs,
   isInsideRoot,
   isSafeBranchName,
-  MAX_DIFF_LINES
+  MAX_DIFF_LINES,
+  MAX_SEARCH_RESULTS
 } from './FileTreeService'
 
 describe('FileTreeService', () => {
@@ -546,5 +547,72 @@ describe('FileTreeService', () => {
     await expect(svc.gitCommit(dir, 'x')).rejects.toBeTruthy()
     await expect(svc.gitCreateBranch(dir, 'x')).rejects.toBeTruthy()
     await expect(svc.gitCheckout(dir, 'x')).rejects.toBeTruthy()
+  })
+
+  // ── Onda 3 · T10: busca por CONTEÚDO (modo `>` da árvore) ─────────────────────────────────────
+  describe('searchContent', () => {
+    it('acha arquivo+linha+trecho, case-insensitive, inclusive aninhado', async () => {
+      writeFileSync(join(dir, 'notas.txt'), 'primeira\nfala de Apple aqui\n')
+      writeFileSync(join(dir, 'src', 'b.ts'), 'const apple = 1\n')
+      const r = await svc.searchContent(dir, 'apple')
+      expect(r.truncated).toBe(false)
+      expect(r.matches).toContainEqual({
+        path: join(dir, 'notas.txt'),
+        line: 2,
+        text: 'fala de Apple aqui'
+      })
+      expect(r.matches).toContainEqual({
+        path: join(dir, 'src', 'b.ts'),
+        line: 1,
+        text: 'const apple = 1'
+      })
+    })
+
+    it('ignora node_modules e .git', async () => {
+      mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true })
+      mkdirSync(join(dir, '.git'))
+      writeFileSync(join(dir, 'node_modules', 'pkg', 'x.js'), 'agulha\n')
+      writeFileSync(join(dir, '.git', 'config'), 'agulha\n')
+      writeFileSync(join(dir, 'legit.txt'), 'agulha\n')
+      const r = await svc.searchContent(dir, 'agulha')
+      expect(r.matches.map((m) => m.path)).toEqual([join(dir, 'legit.txt')])
+    })
+
+    it('pula binários (byte NUL) mesmo que os bytes da query estejam lá', async () => {
+      writeFileSync(join(dir, 'bin.dat'), Buffer.concat([Buffer.from('agulha'), Buffer.from([0, 1, 2])]))
+      const r = await svc.searchContent(dir, 'agulha')
+      expect(r.matches).toEqual([])
+    })
+
+    it('query vazia (ou só espaços) -> nada, sem varrer', async () => {
+      expect(await svc.searchContent(dir, '')).toEqual({ matches: [], truncated: false })
+      expect(await svc.searchContent(dir, '  ')).toEqual({ matches: [], truncated: false })
+    })
+
+    it('capa em MAX_SEARCH_RESULTS e avisa truncated', async () => {
+      const linhas = Array.from({ length: MAX_SEARCH_RESULTS + 5 }, (_, i) => `agulha ${i}`).join('\n')
+      writeFileSync(join(dir, 'muitos.txt'), linhas)
+      const r = await svc.searchContent(dir, 'agulha')
+      expect(r.matches.length).toBe(MAX_SEARCH_RESULTS)
+      expect(r.truncated).toBe(true)
+    })
+
+    it('só busca nos primeiros 256KB de cada arquivo (mesmo teto do read)', async () => {
+      const grande = 'x'.repeat(300 * 1024) + '\nagulha no fim\n'
+      writeFileSync(join(dir, 'grande.txt'), grande)
+      const r = await svc.searchContent(dir, 'agulha')
+      expect(r.matches).toEqual([])
+    })
+
+    it('linha gigante vira trecho capado (não trafega a linha inteira no IPC)', async () => {
+      writeFileSync(join(dir, 'longa.txt'), `agulha ${'y'.repeat(1000)}\n`)
+      const r = await svc.searchContent(dir, 'agulha')
+      expect(r.matches.length).toBe(1)
+      expect(r.matches[0].text.length).toBeLessThanOrEqual(200)
+    })
+
+    it('diretório inexistente rejeita (mesmo contrato do list)', async () => {
+      await expect(svc.searchContent(join(dir, 'nao-existe'), 'x')).rejects.toBeTruthy()
+    })
   })
 })

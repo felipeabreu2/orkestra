@@ -26,6 +26,12 @@ export function registerFileTreeIpc(
   // dois rejeita fora de repo, devolvem vazio.
   ipcMain.handle('filetree:gitBranch', (_e, dir: string) => svc.gitBranch(dir))
   ipcMain.handle('filetree:gitDiff', (_e, dir: string, path?: string) => svc.gitDiff(dir, path))
+  // Onda 3 · T10: busca por conteúdo (modo `>` do campo de busca). Leitura pura, com tetos no
+  // serviço (resultados/bytes por arquivo) e .git/node_modules fora. Raiz inexistente rejeita
+  // (mesmo contrato do list); o filtro por NOME nem passa por aqui (é client-side no renderer).
+  ipcMain.handle('filetree:searchContent', (_e, dir: string, query: string) =>
+    svc.searchContent(dir, query)
+  )
 
   // Onda 3 · T11 — git de ESCRITA (muta o REPOSITÓRIO do usuário). Ao contrário do gitBranch/
   // gitDiff acima, estes REJEITAM em erro (nada staged, nome de branch inválido, checkout com

@@ -2,7 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Project, ProjectIndex } from '../shared/project'
-import type { FileEntry, FileTreeChangedEvent, FileTreeWatchResult } from '../shared/filetree'
+import type {
+  ContentSearchResult,
+  FileEntry,
+  FileTreeChangedEvent,
+  FileTreeWatchResult
+} from '../shared/filetree'
 import type { RoleSidecar } from '../shared/roleSidecar'
 import type { DiscoverResult } from '../shared/discoverRoles'
 
@@ -114,6 +119,11 @@ const api = {
     // linhas do main (MAX_DIFF_LINES) e o texto veio cortado.
     gitDiff: (dir: string, path?: string): Promise<{ text: string; truncated: boolean }> =>
       ipcRenderer.invoke('filetree:gitDiff', dir, path),
+    // Onda 3 (T10): busca por CONTEÚDO (modo `>`). Varredura recursiva no main com tetos
+    // (MAX_SEARCH_RESULTS -> `truncated:true`; binários e .git/node_modules fora). Rejeita se a
+    // raiz não existe. O filtro por NOME não passa por aqui — é client-side (fileTreeFilter.ts).
+    searchContent: (dir: string, query: string): Promise<ContentSearchResult> =>
+      ipcRenderer.invoke('filetree:searchContent', dir, query),
     // Onda 3 (T11): git de ESCRITA — o primeiro caminho da árvore que muta o REPOSITÓRIO do
     // usuário. Ao contrário do gitBranch/gitDiff acima, os três REJEITAM em erro (nada a commitar,
     // nome de branch inválido, checkout com working tree sujo, fora de repo): quem chama PRECISA

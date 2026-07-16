@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useCanvasStore } from '../store/canvasStore'
-import type { FileEntry } from '../../../shared/filetree'
+import type { ContentSearchResult, FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
-import { gitKeyForEntry } from './fileTreeGit'
+import { gitKeyForEntry, relativeToRoot } from './fileTreeGit'
+import { parseSearchMode, filterByName, collectLoadedEntries } from './fileTreeFilter'
 import { watchDirsFor, shouldApplyWatchEvent } from './fileTreeWatch'
 import { parseDiffLines, diffHunkAt, diffQuoteLabel, type DiffLine, type DiffHunk } from './fileTreeDiff'
 import { commitPreview, canCommit, commitConfirmText, branchNameError } from './fileTreeGitWrite'
@@ -296,6 +297,19 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   const [copied, setCopied] = useState(false)
   // Onda 2 · T4: alterna entre o preview somente-leitura (<pre>) e o editor embutido (FileEditor).
   const [editing, setEditing] = useState(false)
+  // Onda 3 · T10: linha onde o editor deve abrir POSICIONADO (clique num resultado da busca por
+  // conteúdo). null = abertura normal. Vive aqui (não no FileEditor) porque é a openFileAtLine que
+  // decide entrar direto no modo edição.
+  const [pendingLine, setPendingLine] = useState<number | null>(null)
+
+  // ── Onda 3 · T10: campo de busca do rodapé ────────────────────────────────────────────────────
+  // O INPUT decide o modo (parseSearchMode): sem prefixo filtra por NOME (client-side, sobre o já
+  // carregado — instantâneo); com `>` busca por CONTEÚDO no main (Enter dispara — varrer o disco a
+  // cada tecla seria pagar a varredura inteira por keystroke).
+  const [searchInput, setSearchInput] = useState('')
+  const [contentResults, setContentResults] = useState<ContentSearchResult | null>(null)
+  const [contentLoading, setContentLoading] = useState(false)
+  const [contentError, setContentError] = useState('')
 
   // Recarrega a raiz (e zera cache/expansão/preview de uma pasta anterior) sempre que `root`
   // muda — troca de pasta pelo header, ou a resolução do fallback (projeto ativo) terminar.
@@ -309,6 +323,10 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     // fora de repo, então quem estivesse no modo Diff e trocasse para uma pasta sem git ficaria
     // preso num diff vazio sem botão de volta.
     setMode('list')
+    // T10: busca é POR raiz — resultados da pasta anterior seriam mentira na nova.
+    setSearchInput('')
+    setContentResults(null)
+    setContentError('')
     if (!root) {
       setEntries([])
       return undefined
@@ -515,6 +533,19 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     // muda o conjunto observado e precisa reassinar (o main fecha os antigos e abre os novos).
   }, [root, expanded, activeProjectId, refreshFromDisk])
 
+  // T10 — estado derivado da busca. `nameHits` só existe no modo nome com query não-vazia (null =
+  // sem busca ativa, mostra a árvore normal); recalcula quando o carregado muda (expandir uma pasta
+  // enriquece o filtro — ele é sobre o que JÁ foi carregado, coerente com a árvore lazy).
+  const search = useMemo(() => parseSearchMode(searchInput), [searchInput])
+  const nameHits = useMemo(
+    () =>
+      search.mode === 'name' && search.query.trim()
+        ? filterByName(collectLoadedEntries(entries, childrenCache), search.query)
+        : null,
+    [search, entries, childrenCache]
+  )
+  const searchActive = search.query.trim().length > 0
+
   // Linhas classificadas do diff (T8) — memoizadas porque agora servem a DOIS consumidores: o
   // render e o recorte do hunk citado (T12).
   const diffLines = useMemo(() => parseDiffLines(diff?.text ?? ''), [diff])
@@ -586,6 +617,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
     setPreviewContent(null)
     setPreviewError('')
     setEditing(false)
+    setPendingLine(null)
     setPreviewLoading(true)
     window.orkestra.filetree
       .read(file.path)
@@ -599,11 +631,57 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
       })
   }
 
+  // T10 — clique num resultado da busca por conteúdo: abre o arquivo JÁ NO EDITOR, posicionado na
+  // linha do acerto (o CodeMirror destravou isso — o <pre> do preview não posiciona nada). Binário
+  // e truncado não abrem para edição (mesma regra do botão "editar"): caem no preview normal, que
+  // é degradar, não falhar.
+  const openFileAtLine = (path: string, line: number): void => {
+    setPreviewPath(path)
+    setPreviewContent(null)
+    setPreviewError('')
+    setEditing(false)
+    setPendingLine(line)
+    setPreviewLoading(true)
+    window.orkestra.filetree
+      .read(path)
+      .then((r) => {
+        setPreviewContent(r)
+        setPreviewLoading(false)
+        if (!r.binary && !r.truncated) setEditing(true)
+      })
+      .catch((err) => {
+        setPreviewError(err instanceof Error ? err.message : String(err))
+        setPreviewLoading(false)
+      })
+  }
+
   const closePreview = (): void => {
     setPreviewPath(null)
     setPreviewContent(null)
     setPreviewError('')
     setEditing(false)
+    setPendingLine(null)
+  }
+
+  // T10 — dispara a busca por conteúdo (Enter no campo com `>`). Uma varredura por disparo; o
+  // guard de raiz no resolve descarta resultado velho se o usuário trocou de pasta no meio.
+  const runContentSearch = (query: string): void => {
+    const r = rootRef.current
+    if (!r || !query) return
+    setContentLoading(true)
+    setContentError('')
+    window.orkestra.filetree
+      .searchContent(r, query)
+      .then((res) => {
+        if (rootRef.current !== r) return
+        setContentResults(res)
+        setContentLoading(false)
+      })
+      .catch((err) => {
+        if (rootRef.current !== r) return
+        setContentError(err instanceof Error ? err.message : String(err))
+        setContentLoading(false)
+      })
   }
 
   const copyPath = (): void => {
@@ -929,6 +1007,7 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
                   nodeId={id}
                   path={previewPath}
                   root={root}
+                  initialLine={pendingLine ?? undefined}
                   initialContent={previewContent.content}
                   onSaved={(content) =>
                     setPreviewContent({ content, truncated: false, binary: false })
@@ -1002,23 +1081,141 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
             </div>
           )}
           {root && !previewPath && mode === 'list' && (
-            <div className="nodrag nowheel ork-filetree-rows">
-              {treeLoading && <div className="ork-filetree-msg">carregando…</div>}
-              {treeError && <div className="ork-filetree-msg ork-filetree-msg--err">{treeError}</div>}
-              {!treeLoading && !treeError && entries.length === 0 && (
-                <div className="ork-filetree-msg">(vazio)</div>
-              )}
-              <TreeLevel
-                entries={entries}
-                depth={0}
-                root={root}
-                expanded={expanded}
-                childrenCache={childrenCache}
-                gitStatus={gitStatus}
-                onToggleDir={toggleDir}
-                onOpenFile={openFile}
-              />
-            </div>
+            <>
+              <div className="nodrag nowheel ork-filetree-rows">
+                {treeLoading && <div className="ork-filetree-msg">carregando…</div>}
+                {treeError && <div className="ork-filetree-msg ork-filetree-msg--err">{treeError}</div>}
+                {/* ── T10: resultados da busca substituem a árvore enquanto houver query ── */}
+                {!treeLoading && !treeError && searchActive && nameHits && (
+                  <>
+                    {nameHits.length === 0 && (
+                      <div className="ork-filetree-msg">(nada carregado casa com “{search.query.trim()}”)</div>
+                    )}
+                    {nameHits.map((entry) => (
+                      <div
+                        key={entry.path}
+                        className="nodrag ork-filetree-row"
+                        style={{ paddingLeft: 8 }}
+                        onClick={() => (entry.isDir ? toggleDir(entry) : openFile(entry))}
+                        onDoubleClick={
+                          entry.isDir
+                            ? undefined
+                            : () => void openEntryInEditor(entry, window.orkestra.ide.open)
+                        }
+                        draggable={!entry.isDir}
+                        onDragStart={
+                          entry.isDir
+                            ? undefined
+                            : (e) => {
+                                e.dataTransfer.setData(ORKESTRA_PATH_MIME, entry.path)
+                                e.dataTransfer.setData('text/plain', entry.path)
+                                e.dataTransfer.effectAllowed = 'copy'
+                              }
+                        }
+                        title={entry.path}
+                      >
+                        <span className="ork-filetree-name">
+                          {relativeToRoot(root, entry.path)}
+                          {entry.isDir ? '/' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {!treeLoading && !treeError && searchActive && search.mode === 'content' && (
+                  <>
+                    {contentLoading && <div className="ork-filetree-msg">buscando…</div>}
+                    {contentError && (
+                      <div className="ork-filetree-msg ork-filetree-msg--err">{contentError}</div>
+                    )}
+                    {!contentLoading && !contentError && !contentResults && (
+                      <div className="ork-filetree-msg">Enter para buscar no conteúdo</div>
+                    )}
+                    {!contentLoading && !contentError && contentResults && (
+                      <>
+                        {contentResults.matches.length === 0 && (
+                          <div className="ork-filetree-msg">(nenhuma ocorrência)</div>
+                        )}
+                        {contentResults.matches.map((m) => (
+                          <div
+                            key={`${m.path}:${m.line}`}
+                            className="nodrag ork-filetree-row ork-filetree-hit"
+                            onClick={() => openFileAtLine(m.path, m.line)}
+                            title={`${m.path}:${m.line}`}
+                          >
+                            <span className="ork-filetree-hit-loc">
+                              {relativeToRoot(root, m.path)}:{m.line}
+                            </span>
+                            <span className="ork-filetree-hit-snippet">{m.text}</span>
+                          </div>
+                        ))}
+                        {contentResults.truncated && (
+                          <div className="ork-filetree-msg ork-filetree-msg--warn">
+                            (mais ocorrências existem — refine a busca)
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+                {/* Árvore normal — só quando não há busca ativa */}
+                {!searchActive && !treeLoading && !treeError && entries.length === 0 && (
+                  <div className="ork-filetree-msg">(vazio)</div>
+                )}
+                {!searchActive && (
+                  <TreeLevel
+                    entries={entries}
+                    depth={0}
+                    root={root}
+                    expanded={expanded}
+                    childrenCache={childrenCache}
+                    gitStatus={gitStatus}
+                    onToggleDir={toggleDir}
+                    onOpenFile={openFile}
+                  />
+                )}
+              </div>
+              {/* ── T10: rodapé de busca. Sem prefixo = filtro por NOME (instantâneo, sobre o já
+                  carregado); `>` = busca por CONTEÚDO no disco (Enter dispara). O × limpa e volta
+                  para a árvore. */}
+              <div className="ork-filetree-search">
+                <Icon name="Search" size={12} animation="none" />
+                <input
+                  className="nodrag ork-filetree-search-input"
+                  value={searchInput}
+                  onChange={(e) => {
+                    setSearchInput(e.target.value)
+                    // resultados pertencem à query que os gerou — digitou, invalidou.
+                    setContentResults(null)
+                    setContentError('')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && search.mode === 'content') runContentSearch(search.query)
+                    if (e.key === 'Escape') {
+                      setSearchInput('')
+                      setContentResults(null)
+                      setContentError('')
+                    }
+                  }}
+                  placeholder={'buscar por nome — comece com > para conteúdo'}
+                  aria-label="Buscar na árvore (prefixo > busca no conteúdo)"
+                />
+                {searchInput && (
+                  <button
+                    className="nodrag ork-node-iconbtn"
+                    onClick={() => {
+                      setSearchInput('')
+                      setContentResults(null)
+                      setContentError('')
+                    }}
+                    aria-label="Limpar busca"
+                    title="Limpar busca"
+                  >
+                    <Icon name="X" size={12} animation="pop" />
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

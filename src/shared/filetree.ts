@@ -24,6 +24,22 @@ export interface FileTreeChangedEvent {
   message?: string
 }
 
+// Onda 3 · T10 (busca por conteúdo, modo `>`): um acerto da varredura no main. `text` é o TRECHO
+// da linha (trimado e capado no main) — nunca a linha crua, para uma linha minificada de 1MB não
+// atravessar o IPC. `line` é 1-based (o mesmo que o editor/goto-line usam).
+export interface ContentMatch {
+  path: string
+  line: number
+  text: string
+}
+
+// `truncated` = a varredura PAROU no teto de resultados; existem mais acertos que não estão aqui.
+// A UI avisa em vez de fingir que a lista é completa (mesmo contrato do gitDiff truncado).
+export interface ContentSearchResult {
+  matches: ContentMatch[]
+  truncated: boolean
+}
+
 // Resultado de assinar o watch. `ok:false` = nem tudo que foi pedido está sob observação (ver
 // `errors`); a UI deve degradar de forma VISÍVEL em vez de prometer auto-refresh.
 export interface FileTreeWatchResult {
