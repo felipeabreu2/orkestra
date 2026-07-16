@@ -45,8 +45,34 @@ export function toLines(text: string): string[] {
   return stripAnsi(text).split(/\r?\n/)
 }
 
+// Quantas linhas do fim do buffer contam como "estado atual" do agente.
+//
+// Por que existir: a fonte crua (`agentBus.read`) é o buffer APPEND-ONLY da sessão inteira (teto de
+// 8000 chars, ver AgentBus). Classificar o buffer todo faz um marker ANTIGO — um `(y/n)` já
+// respondido, um `Error:` de um retry que deu certo depois — grudar para sempre: como needs-input
+// tem precedência, todo disparo posterior mentiria ("precisa de você") mesmo com o agente
+// terminando limpo. Status é sobre o AGORA, então só o fim do buffer pode decidi-lo.
+//
+// Por que 40: é da ordem de uma tela de terminal (24-50 linhas) — o que o usuário veria ao olhar o
+// agente parado, que é exatamente o que a notificação afirma. Cabe folgadamente um traceback
+// (~10-20 linhas) ou um prompt de seleção multi-linha estilo Claude Code, sem alcançar o passado.
+export const RECENT_LINES_WINDOW = 40
+
+// Últimas `window` linhas com conteúdo — a fatia do buffer que representa o estado atual.
+// Descarta antes as linhas vazias do FIM (um pty termina em '\n', e repaints deixam linhas em
+// branco sobrando): sem isso a janela seria gasta com vazio e o estado atual ficaria de fora.
+// Pura, sem I/O.
+export function takeRecentLines(lines: string[], window: number = RECENT_LINES_WINDOW): string[] {
+  let end = lines.length
+  while (end > 0 && lines[end - 1].trim() === '') end--
+  return lines.slice(Math.max(0, end - window), end)
+}
+
 // Precedência: needs-input > crashed > done. Testa cada marker contra o texto inteiro (junção das
 // linhas) para que markers ancorados (`^ ... /m`) funcionem por linha.
+//
+// Recebe apenas as linhas a considerar — cabe ao chamador limitar o recorte ao estado atual
+// (`takeRecentLines`) quando a origem for o buffer append-only da sessão.
 export function classifyAgentStatus(lines: string[]): AgentStatus {
   const text = lines.join('\n')
   if (NEEDS_INPUT_MARKERS.some((re) => re.test(text))) return 'needs-input'

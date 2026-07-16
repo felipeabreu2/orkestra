@@ -67,4 +67,57 @@ describe('buildAttentionNotification', () => {
     })
     expect(out.title).toBe('Dev precisa de você')
   })
+
+  // REGRESSÃO (bug do Ombro): agentBus.read devolve o buffer append-only da SESSÃO INTEIRA (teto de
+  // 8000 chars). Um marker antigo — respondido/superado minutos atrás — grudava para sempre e fazia
+  // TODO disparo posterior mentir ("precisa de você"/"travou") mesmo com o agente terminando limpo.
+  // O status é sobre o ESTADO ATUAL: só as últimas linhas do buffer podem decidi-lo.
+  it('marker (y/n) ANTIGO + saída limpa recente → done (não gruda na sessão inteira)', () => {
+    const bufferText = [
+      'Do you want to proceed? (y/n)',
+      'y',
+      ...Array.from({ length: 60 }, (_, i) => `[build] compilando módulo ${i}`),
+      'Tudo pronto.',
+      '- rodei os testes, tudo verde',
+      ''
+    ].join('\n')
+    const out = buildAttentionNotification({ agentName: 'Dev', bufferText })
+    expect(out.title).toBe('Dev ficou ocioso')
+    expect(out.body).toBe('- rodei os testes, tudo verde')
+  })
+
+  it('"Error:" ANTIGO + saída limpa recente → done (não vira "travou" para sempre)', () => {
+    const bufferText = [
+      'Error: ENOENT: no such file',
+      ...Array.from({ length: 60 }, (_, i) => `[retry] baixando dependência ${i}`),
+      'Concluído sem erros.',
+      ''
+    ].join('\n')
+    const out = buildAttentionNotification({ agentName: 'Dev', bufferText })
+    expect(out.title).toBe('Dev ficou ocioso')
+    expect(out.body).toBe('Concluído sem erros.')
+  })
+
+  it('marker RECENTE (dentro da janela) continua detectado', () => {
+    const bufferText = [
+      ...Array.from({ length: 200 }, (_, i) => `[build] compilando módulo ${i}`),
+      'Do you want to proceed? (y/n)',
+      ''
+    ].join('\n')
+    const out = buildAttentionNotification({ agentName: 'Dev', bufferText })
+    expect(out.title).toBe('Dev precisa de você')
+  })
+
+  it('crash RECENTE no fim de um buffer longo continua detectado', () => {
+    const bufferText = [
+      ...Array.from({ length: 200 }, (_, i) => `[build] compilando módulo ${i}`),
+      'Traceback (most recent call last):',
+      '  File "app.py", line 42, in <module>',
+      'ValueError: boom',
+      ''
+    ].join('\n')
+    const out = buildAttentionNotification({ agentName: 'Dev', bufferText })
+    expect(out.title).toBe('Dev travou')
+    expect(out.body).toBe('ValueError: boom')
+  })
 })

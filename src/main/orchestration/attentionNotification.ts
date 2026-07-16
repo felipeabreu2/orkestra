@@ -6,6 +6,7 @@
 import {
   classifyAgentStatus,
   lastNonEmptyLine,
+  takeRecentLines,
   toLines,
   type AgentStatus
 } from '../../shared/agentStatus'
@@ -48,7 +49,11 @@ export function buildAttentionNotification(input: AttentionNotificationInput): A
   const trimmedName = input.agentName?.trim()
   const name = trimmedName && trimmedName !== '' ? trimmedName : DEFAULT_AGENT_NAME
   // O buffer cru de agentBus.read é lido UMA vez pelo chamador; aqui só o classificamos/parseamos.
-  const lines = toLines(input.bufferText)
+  // Ele é APPEND-ONLY (a sessão inteira, até 8000 chars), então classificá-lo por completo faria um
+  // marker antigo grudar e mentir em todo disparo posterior. O status descreve o estado ATUAL: só as
+  // últimas linhas (takeRecentLines) entram no classificador. A prévia sai da mesma fatia — é a
+  // última linha não-vazia, que a janela sempre contém.
+  const lines = takeRecentLines(toLines(input.bufferText))
   const status = classifyAgentStatus(lines)
   const preview = lastNonEmptyLine(lines)
   const body = preview !== '' ? truncate(preview, MAX_BODY_LEN) : DEFAULT_BODY

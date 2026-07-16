@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   classifyAgentStatus,
   lastNonEmptyLine,
+  RECENT_LINES_WINDOW,
   stripAnsi,
+  takeRecentLines,
   toLines,
   type AgentStatus
 } from './agentStatus'
@@ -129,6 +131,35 @@ describe('stripAnsi / toLines', () => {
 
   it('última linha visível a partir do buffer cru com escapes de repaint', () => {
     expect(lastNonEmptyLine(toLines('\x1b[2K\x1b[1G done\n'))).toBe('done')
+  })
+})
+
+describe('takeRecentLines — janela do "estado atual"', () => {
+  it('devolve as linhas intactas quando cabem na janela', () => {
+    expect(takeRecentLines(['a', 'b', 'c'])).toEqual(['a', 'b', 'c'])
+  })
+
+  it('devolve lista vazia para buffer vazio', () => {
+    expect(takeRecentLines([])).toEqual([])
+  })
+
+  it('corta o começo, mantendo as últimas RECENT_LINES_WINDOW linhas', () => {
+    const lines = Array.from({ length: RECENT_LINES_WINDOW + 60 }, (_, i) => `linha ${i}`)
+    const recent = takeRecentLines(lines)
+    expect(recent).toHaveLength(RECENT_LINES_WINDOW)
+    expect(recent[0]).toBe(`linha ${60}`)
+    expect(recent[recent.length - 1]).toBe(`linha ${RECENT_LINES_WINDOW + 59}`)
+  })
+
+  it('aceita uma janela explícita', () => {
+    expect(takeRecentLines(['a', 'b', 'c', 'd'], 2)).toEqual(['c', 'd'])
+  })
+
+  it('ignora linhas vazias do fim ao contar a janela (repaint deixa \\n sobrando)', () => {
+    // Buffer termina com muitas linhas em branco: a janela não pode ser gasta com elas, senão o
+    // estado atual (as linhas com conteúdo) fica de fora.
+    const lines = ['conteúdo A', 'conteúdo B', ...Array.from({ length: 50 }, () => '')]
+    expect(takeRecentLines(lines, 2)).toEqual(['conteúdo A', 'conteúdo B'])
   })
 })
 
