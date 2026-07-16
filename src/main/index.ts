@@ -11,6 +11,7 @@ import { registerPersistenceIpc } from './persistence/registerPersistenceIpc'
 import { ProjectManager } from './projects/ProjectManager'
 import { registerProjectIpc } from './projects/registerProjectIpc'
 import { FileTreeService } from './filetree/FileTreeService'
+import { FileTreeWatcher } from './filetree/FileTreeWatcher'
 import { registerFileTreeIpc } from './filetree/registerFileTreeIpc'
 import { registerIdeIpc } from './ide/registerIdeIpc'
 import { registerSshIpc } from './ssh/registerSshIpc'
@@ -31,6 +32,18 @@ import type { CanvasMirror, PortalState } from '../shared/orchestration'
 
 let mainWindow: BrowserWindow | null = null
 const ptyManager = new PtyManager(nodePtySpawner)
+// Onda 3 · T9: watch de filesystem da árvore de arquivos. Nível de módulo (como o ptyManager) porque
+// o before-quit precisa alcançá-lo para fechar os fs.watch na saída do app.
+//
+// O push é main -> renderer, unidirecional (mesmo padrão de 'orchestration:command'/'agent:frame').
+// A guarda isDestroyed é obrigatória: os watchers vivem no MAIN e sobrevivem ao webContents, então
+// sem ela um evento de fs chegando durante o teardown da janela derrubaria o processo. Aqui o evento
+// é simplesmente descartado — o renderer que voltar re-assina do zero e re-lista, então não há
+// estado a perder. O carimbo de projeto viaja DENTRO do evento (ver FileTreeWatcher/shared).
+const fileTreeWatcher = new FileTreeWatcher((ev) => {
+  if (!mainWindow || mainWindow.webContents.isDestroyed()) return
+  mainWindow.webContents.send('filetree:changed', ev)
+})
 // Buffer de saída por pty + ask/read (Fase 6). track()/untrack() são geridos via o hook
 // onSpawn de registerPtyIpc (abaixo) e o auto-untrack interno do próprio AgentBus (onExit).
 //
@@ -456,7 +469,7 @@ app.whenReady().then(async () => {
   // Árvore de arquivos (Fase 19 Task 1): serviço read-only de fs + git status para o nó de
   // file-explorer do canvas (renderer, Task 2). Sem estado próprio — não precisa de bootstrap.
   const fileTreeService = new FileTreeService()
-  registerFileTreeIpc(ipcMain, fileTreeService)
+  registerFileTreeIpc(ipcMain, fileTreeService, fileTreeWatcher)
   // R1 (abrir no editor externo): handler 'ide:open' — abre a pasta do projeto no editor de código
   // instalado (VS Code/Cursor/…), com fallback pro gerenciador de arquivos. Sem estado próprio.
   registerIdeIpc(ipcMain)
@@ -545,5 +558,9 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   ptyManager.killAll()
+  // Onda 3 · T9: fecha todos os fs.watch da árvore. O SO recolheria os FDs ao matar o processo, mas
+  // deixar recurso aberto na saída é lixo nosso — e o mesmo closeAll é a rede contra um watcher que
+  // sobreviva a um teardown de janela.
+  fileTreeWatcher.closeAll()
   void orchestration.stop()
 })

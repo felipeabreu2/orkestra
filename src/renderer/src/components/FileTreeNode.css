@@ -309,3 +309,12 @@
 .ork-filetree-diffline {
   cursor: pointer;
 }
+
+/* Onda 3 · T9 — watch de filesystem DEGRADADO: o auto-refresh não está funcionando (falha ao
+   assinar, ou o watcher morreu: limite de FDs, pasta removida, permissão). Cor SEMÂNTICA (--warn,
+   o mesmo "atenção" do overlay git de modificado), nunca um accent de papel — é status, não
+   decoração. Existe porque uma árvore congelada com cara de viva é a pior falha possível aqui: o
+   usuário precisa VER que voltou a depender do clique manual. O `title` do botão diz o porquê. */
+.ork-filetree-refresh--degraded {
+  color: var(--warn);
+}

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useCanvasStore } from '../store/canvasStore'
 import type { FileEntry } from '../../../shared/filetree'
 import { Icon } from './Icon'
 import { gitKeyForEntry } from './fileTreeGit'
+import { watchDirsFor, shouldApplyWatchEvent } from './fileTreeWatch'
 import { parseDiffLines, diffHunkAt, diffQuoteLabel, type DiffLine, type DiffHunk } from './fileTreeDiff'
 import { FileEditor } from './FileEditor'
 import { resolveConnectedTerminal } from './quoteSelection'
@@ -267,9 +268,13 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
   // guardado ficaria descrito por um texto que não está mais na tela. O hunk é derivado abaixo.
   const [pickedLine, setPickedLine] = useState<number | null>(null)
   const [diffQuoteMsg, setDiffQuoteMsg] = useState('')
-  // Bump manual do botão "atualizar": git status/branch/diff não têm watch (T9), então o refresh é
-  // explícito. Um nonce (em vez de 3 callbacks) mantém as três leituras em sincronia num clique.
+  // Bump do refresh: um nonce (em vez de 3 callbacks) mantém status/branch/diff em sincronia num
+  // único disparo. Vem do botão "atualizar" (manual) e, desde a T9, do watch de filesystem.
   const [gitNonce, setGitNonce] = useState(0)
+  // Onda 3 · T9: o watch DEGRADOU (não pegou, ou morreu no meio). '' = auto-refresh saudável. A UI
+  // mostra isso no botão de atualizar — um watch quebrado em silêncio deixaria a árvore congelada
+  // parecendo viva, que é a pior falha possível aqui.
+  const [watchError, setWatchError] = useState('')
 
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<PreviewState | null>(null)
@@ -367,6 +372,104 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
       cancelled = true
     }
   }, [root, mode, gitNonce])
+
+  // ————— Onda 3 · T9: watch de filesystem (auto-refresh) —————
+  //
+  // Este canvas é um lugar onde AGENTES editam arquivos o tempo todo. Sem watch, a árvore mostra um
+  // retrato velho enquanto o agente trabalha. A lógica pura (o que observar, e se um push é meu)
+  // vive em ./fileTreeWatch — o vitest não coleta `.tsx`, então aqui fica só a fiação.
+
+  // Refs para o handler do push ler o estado FRESCO sem re-assinar o watch a cada render (mesmo
+  // motivo de useOrchestrationSync usar getState() em vez de depender do dep array).
+  const rootRef = useRef(root)
+  rootRef.current = root
+  const expandedRef = useRef(expanded)
+  expandedRef.current = expanded
+
+  // Re-lista o que está VISÍVEL (raiz + expandidas) e ressincroniza o git. Diferente do efeito de
+  // `root`, este NÃO zera expansão/cache/preview: o usuário não pediu nada, foi o disco que mudou —
+  // colapsar a árvore dele embaixo do dedo por causa de um save de agente seria hostil.
+  const refreshFromDisk = useCallback((): void => {
+    const r = rootRef.current
+    if (!r) return
+    const dirs = watchDirsFor(r, expandedRef.current)
+    Promise.all(
+      dirs.map((d) =>
+        window.orkestra.filetree
+          .list(d)
+          .then((list) => [d, list] as const)
+          // Pasta apagada/inacessível entre o evento e o list: vira vazia em vez de derrubar o
+          // refresh dos outros níveis (o efeito de `root` é quem trata erro de raiz).
+          .catch(() => [d, [] as FileEntry[]] as const)
+      )
+    ).then((pairs) => {
+      // Corrida: se a raiz mudou enquanto os lists corriam, o resultado é de uma árvore que não
+      // está mais na tela — descarta (o efeito de `root` já recarregou tudo).
+      if (rootRef.current !== r) return
+      for (const [dir, list] of pairs) {
+        if (dir === r) setEntries(list)
+        else setChildrenCache((prev) => new Map(prev).set(dir, list))
+      }
+    })
+    // Reusa o nonce do botão "atualizar": status + branch + diff em sincronia.
+    //
+    // DECISÃO — o modo Diff TAMBÉM é atualizado pelo watch. Um diff velho é pior que uma lista
+    // velha: é o texto que o usuário lê para decidir, e (T12) o hunk que ele CITA ao agente. Citar
+    // um hunk que não existe mais no arquivo é mandar o agente trabalhar em cima de ficção. O preço
+    // é que a seleção de hunk é descartada quando o diff é refeito (o efeito da T8/T12 zera
+    // pickedLine junto com o diff, porque as keys são índices de linha) — perder a seleção é
+    // recuperável com um clique; citar um hunk fantasma, não.
+    setGitNonce((n) => n + 1)
+  }, [])
+
+  // Escopo de projeto: o projeto que ESTE canvas exibe. Carimbado na assinatura e reconferido em
+  // cada push — ver shouldApplyWatchEvent. Existe por causa do incidente de corrupção
+  // cross-project: um watcher do projeto A não pode atualizar o canvas do projeto B.
+  const activeProjectId = useCanvasStore((s) => s.activeProjectId)
+
+  useEffect(() => {
+    if (!root) {
+      setWatchError('')
+      return undefined
+    }
+    // Id gerado AQUI (não devolvido pelo main) para que o cleanup abaixo sempre saiba o que
+    // cancelar, mesmo se o nó desmontar antes do invoke de watch() resolver.
+    const subscriptionId = crypto.randomUUID()
+    let cancelled = false
+    setWatchError('')
+
+    const dispose = window.orkestra.filetree.onChanged((ev) => {
+      if (cancelled) return
+      if (!shouldApplyWatchEvent(ev, subscriptionId, useCanvasStore.getState().activeProjectId ?? null)) return
+      if (ev.kind === 'error') {
+        setWatchError(ev.message ?? 'watch interrompido')
+        return
+      }
+      refreshFromDisk()
+    })
+
+    window.orkestra.filetree
+      .watch(subscriptionId, watchDirsFor(root, expanded), activeProjectId ?? null)
+      .then((r) => {
+        if (cancelled) return
+        // Falha NÃO é silenciosa: sem isto a árvore ficaria congelada parecendo viva.
+        if (!r.ok) setWatchError(r.errors.join('; ') || 'não foi possível observar a pasta')
+      })
+      .catch((err) => {
+        if (!cancelled) setWatchError(err instanceof Error ? err.message : String(err))
+      })
+
+    return () => {
+      cancelled = true
+      dispose() // remove o listener do ipcRenderer (vários nós de árvore = vários listeners)
+      // Encerra os fs.watch no main. Roda ao desmontar o nó (× ou troca de PROJETO, que troca os
+      // nós do canvas), ao trocar a raiz e a cada mudança do conjunto de expandidas. Sem isto,
+      // cada uma dessas ações vazaria file descriptors — invisível até a sessão longa.
+      void window.orkestra.filetree.unwatch(subscriptionId).catch(() => {})
+    }
+    // `expanded` no dep array de propósito: o watch é escopado ao VISÍVEL, então expandir/colapsar
+    // muda o conjunto observado e precisa reassinar (o main fecha os antigos e abre os novos).
+  }, [root, expanded, activeProjectId, refreshFromDisk])
 
   // Linhas classificadas do diff (T8) — memoizadas porque agora servem a DOIS consumidores: o
   // render e o recorte do hunk citado (T12).
@@ -518,11 +621,22 @@ export function FileTreeNode({ id, selected, data }: NodeProps): JSX.Element {
           >
             <Icon name={mode === 'diff' ? 'List' : 'FileDiff'} size={14} animation="pop" />
           </button>
+          {/* Onda 3 · T9: com o watch saudável este botão é redundante (a árvore se atualiza
+              sozinha) — mas continua aqui porque é a saída quando o watch DEGRADA, e porque o
+              escopo do watch é só o visível. Quando o watch falha, o botão fica em --warn e o
+              title diz o porquê: melhor um aviso feio do que uma árvore congelada parecendo viva. */}
           <button
-            className="nodrag ork-node-iconbtn"
-            onClick={() => setGitNonce((n) => n + 1)}
-            aria-label="Atualizar status git"
-            title="Atualizar status git"
+            className={`nodrag ork-node-iconbtn${watchError ? ' ork-filetree-refresh--degraded' : ''}`}
+            onClick={() => {
+              setWatchError('')
+              refreshFromDisk()
+            }}
+            aria-label={watchError ? 'Auto-refresh indisponível — atualizar manualmente' : 'Atualizar status git'}
+            title={
+              watchError
+                ? `Auto-refresh indisponível (${watchError}) — clique para atualizar manualmente`
+                : 'Atualizar status git'
+            }
             disabled={!root}
           >
             <Icon name="RefreshCw" size={14} animation="spin" />

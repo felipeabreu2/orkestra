@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Project, ProjectIndex } from '../shared/project'
-import type { FileEntry } from '../shared/filetree'
+import type { FileEntry, FileTreeChangedEvent, FileTreeWatchResult } from '../shared/filetree'
 import type { RoleSidecar } from '../shared/roleSidecar'
 import type { DiscoverResult } from '../shared/discoverRoles'
 
@@ -113,7 +113,36 @@ const api = {
     // `path` opcional limita o diff a um arquivo. `truncated:true` = o diff passou do teto de
     // linhas do main (MAX_DIFF_LINES) e o texto veio cortado.
     gitDiff: (dir: string, path?: string): Promise<{ text: string; truncated: boolean }> =>
-      ipcRenderer.invoke('filetree:gitDiff', dir, path)
+      ipcRenderer.invoke('filetree:gitDiff', dir, path),
+    // Onda 3 (T9): watch de filesystem — a árvore reage ao que os agentes fazem no disco, sem
+    // clique em "atualizar". `dirs` é o escopo VISÍVEL (raiz + expandidas, ver watchDirsFor); o main
+    // ignora .git/node_modules e coalesce as rajadas.
+    //
+    // `subscriptionId` é gerado pelo RENDERER (não devolvido pelo main): assim o unwatch do cleanup
+    // do React funciona mesmo se o nó desmontar antes deste invoke resolver — id que só existe
+    // depois do await seria uma janela em que ninguém pode cancelar o watcher.
+    //
+    // `projectId`: o projeto exibido AO ASSINAR. Volta carimbado em cada push (escopo de projeto —
+    // ver shouldApplyWatchEvent), mesmo contrato do relay de comandos do orq.
+    //
+    // O retorno diz se o watch PEGOU (ok/watching/errors) — a UI degrada de forma visível quando
+    // não pegou, em vez de prometer um auto-refresh que não existe.
+    watch: (
+      subscriptionId: string,
+      dirs: string[],
+      projectId: string | null
+    ): Promise<FileTreeWatchResult> =>
+      ipcRenderer.invoke('filetree:watch', subscriptionId, dirs, projectId),
+    unwatch: (subscriptionId: string): Promise<void> =>
+      ipcRenderer.invoke('filetree:unwatch', subscriptionId),
+    // Push main -> renderer (padrão `ipcRenderer.on` + unsubscribe, igual a orchestration.onCommand
+    // e pty.onData). O cleanup do useEffect DEVE chamar o unsubscribe: com vários nós de árvore no
+    // canvas, listeners não removidos vazariam (ver setMaxListeners no topo deste arquivo).
+    onChanged: (cb: (ev: FileTreeChangedEvent) => void): (() => void) => {
+      const listener = (_e: unknown, ev: FileTreeChangedEvent): void => cb(ev)
+      ipcRenderer.on('filetree:changed', listener)
+      return () => ipcRenderer.removeListener('filetree:changed', listener)
+    }
   },
   orchestration: {
     sync: (mirror: CanvasMirror): void => ipcRenderer.send('orchestration:sync', mirror),
