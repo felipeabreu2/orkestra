@@ -2,6 +2,7 @@ import { useState, type JSX } from 'react'
 import { useCanvasStore } from '../store/canvasStore'
 import { useNoteEditor } from '../notes/useNoteEditor'
 import { NOTE_COLORS } from '../notes/noteColors'
+import { useNoteRaw, toggleNoteRaw } from '../notes/noteRawModeRegistry'
 import { Icon } from './Icon'
 
 // Barra de formatação da nota (F06/F07) — renderizada dentro do NodeToolbar quando o nó é uma
@@ -10,6 +11,9 @@ import { Icon } from './Icon'
 export function NoteFormatBar({ nodeId }: { nodeId: string }): JSX.Element | null {
   const editor = useNoteEditor(nodeId)
   const updateNoteColor = useCanvasStore((s) => s.updateNoteColor)
+  // Toggle raw ↔ formatada (T7): estado efêmero fora do store; o NoteNode escuta o mesmo registry e
+  // troca o EditorContent por um textarea com o Markdown cru.
+  const raw = useNoteRaw(nodeId)
   // Inserir imagem por URL sem window.prompt (proibido no projeto): um campo inline que abre ao
   // clicar no botão de imagem e insere no Enter. null = fechado.
   const [imgUrl, setImgUrl] = useState<string | null>(null)
@@ -84,6 +88,16 @@ export function NoteFormatBar({ nodeId }: { nodeId: string }): JSX.Element | nul
           onBlur={() => setImgUrl(null)}
         />
       )}
+      <span className="ork-toolbar-divider" />
+      <button
+        className={`ork-toolbar-btn ork-node-toolbar-icon${raw ? ' ork-fmt--on' : ''}`}
+        title={raw ? 'Ver formatada' : 'Ver Markdown cru'}
+        aria-label={raw ? 'Ver formatada' : 'Ver Markdown cru'}
+        aria-pressed={raw}
+        onClick={() => toggleNoteRaw(nodeId)}
+      >
+        <Icon name="Braces" size={15} animation="none" />
+      </button>
     </>
   )
 }

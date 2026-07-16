@@ -491,6 +491,28 @@
   border-radius: var(--radius-sm);
 }
 
+/* Modo raw (T7): edição do Markdown cru num textarea que ocupa a mesma área do editor. Fonte mono
+   e sem borda para não competir com o post-it; nodrag/nowheel no elemento (React Flow não rouba o
+   texto/scroll). */
+.ork-note-raw {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  color: var(--text-1);
+}
+.ork-note--colored .ork-note-raw {
+  color: var(--note-ink);
+}
+
 /* Onda 6 (F03): rodapé do terminal com a rota da pasta. `direction: rtl` corta o começo do
    caminho longo, mantendo o fim (a pasta atual) visível. */
 .ork-node-footer {

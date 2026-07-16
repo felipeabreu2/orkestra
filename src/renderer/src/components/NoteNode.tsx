@@ -9,6 +9,8 @@ import { useCanvasStore } from '../store/canvasStore'
 import { markdownToHtml } from '../markdown/markdownToHtml'
 import { noteColorBg } from '../notes/noteColors'
 import { registerNoteEditor, unregisterNoteEditor } from '../notes/noteEditorRegistry'
+import { useNoteRaw } from '../notes/noteRawModeRegistry'
+import { noteHtmlToRaw, noteRawToHtml } from '../notes/noteRawSync'
 import { SearchReplace } from '../notes/searchReplaceExtension'
 import { normalizeNoteName } from '../notes/noteRename'
 import { NoteFindBar } from './NoteFindBar'
@@ -40,6 +42,16 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
   // Migração lazy: nota antiga tem `content` (Markdown) e não `html` — converte na 1ª montagem.
   const initialHtml = d.html ?? (d.content ? markdownToHtml(d.content) : '')
   const bg = noteColorBg(d.color)
+
+  // Toggle raw ↔ formatada (T7): no modo raw mostramos o Markdown cru num textarea; a alternância é
+  // disparada pela NoteFormatBar (via noteRawModeRegistry). O rascunho é semeado do HTML atual só ao
+  // ENTRAR no modo raw; cada edição grava markdownToHtml(rascunho) no store (mantém a fonte da
+  // verdade sincronizada, sem re-semear o texto enquanto o usuário digita).
+  const raw = useNoteRaw(id)
+  const [rawDraft, setRawDraft] = useState('')
+  useEffect(() => {
+    if (raw) setRawDraft(noteHtmlToRaw(d.html ?? ''))
+  }, [raw])
 
   const editor = useEditor({
     extensions: NOTE_EXTENSIONS,
@@ -119,7 +131,21 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
             <span className="ork-note-name">{customName}</span>
           ) : null}
         </div>
-        <EditorContent editor={editor} className="nodrag nowheel ork-note-editor" />
+        {raw ? (
+          <textarea
+            className="ork-note-raw nodrag nowheel"
+            value={rawDraft}
+            aria-label="Markdown cru da nota"
+            spellCheck={false}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              setRawDraft(e.target.value)
+              updateNoteHtml(id, noteRawToHtml(e.target.value))
+            }}
+          />
+        ) : (
+          <EditorContent editor={editor} className="nodrag nowheel ork-note-editor" />
+        )}
       </div>
       {/* Botão de localizar + barra ficam FORA do .ork-note (que tem overflow:hidden e cortaria a
           barra em notas pequenas). Como irmãos, ancoram no wrapper do nó (React Flow) e podem
