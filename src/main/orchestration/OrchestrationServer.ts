@@ -209,7 +209,8 @@ export class OrchestrationServer {
           return
         }
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ ok: result.ok }))
+        // T7: screenshot devolve também o caminho do PNG gravado; click/fill seguem só com o ok.
+        res.end(JSON.stringify(result.path ? { ok: result.ok, path: result.path } : { ok: result.ok }))
       } catch {
         res.writeHead(503).end('app unavailable')
       }
@@ -446,6 +447,24 @@ export class OrchestrationServer {
           return
         }
         this.emit({ type: 'portalEval', target: parsed.target, js: parsed.js }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/screenshot') {
+      // T7: captura de tela do portal. EXIGE o round-trip (runPortalAction): a resposta é o
+      // caminho do PNG que o main gravou, e sem o canal de volta não existe caminho a devolver —
+      // servidor legado/fake sem a opt responde 503 honesto, nunca um {ok:true} sem arquivo.
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown }
+        if (typeof parsed.target !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        if (!this.opts.runPortalAction) {
+          res.writeHead(503).end('screenshot indisponível (app sem round-trip de portal)')
+          return
+        }
+        this.emitPortalAction({ type: 'portalScreenshot', target: parsed.target }, res)
       })
       return
     }

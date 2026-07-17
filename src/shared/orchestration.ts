@@ -47,6 +47,9 @@ export interface PortalState {
 // futuras (T7 screenshot) estenderem com campos extras sem quebrar o contrato.
 export interface PortalActionResult {
   ok: boolean
+  // T7 (screenshot): caminho do PNG gravado pelo main (só presente quando a ação é uma captura
+  // bem-sucedida). click/fill seguem devolvendo só o booleano.
+  path?: string
 }
 
 export type OrchestrationCommand =
@@ -81,3 +84,8 @@ export type OrchestrationCommand =
   // cria o portal mas não navega. Portal novo nasce com partition isolada própria (addPortalNode →
   // partitionForPortal) e herda o hardenSession via session-created.
   | { type: 'portalCreate'; name: string; url?: string }
+  // T7 (Onda 3 — o agente "vê"): captura a página do portal via webview.capturePage() no renderer;
+  // o PNG volta em base64 pelo portal:result e o MAIN o grava em os.tmpdir() (o caminho curto vai
+  // no stdout do orq — nunca o base64, que pode passar de 1MB). Requer o round-trip do T1
+  // (requestId); sem ele o comando não tem como devolver o caminho.
+  | { type: 'portalScreenshot'; target: string; requestId?: string }

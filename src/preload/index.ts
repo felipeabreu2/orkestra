@@ -224,7 +224,10 @@ const api = {
   // renderer roda o script no <webview>, lê o booleano de sucesso e o devolve aqui, correlacionado
   // pelo mesmo requestId — o main resolve a pendência que o servidor aguarda. Send unidirecional
   // (a correlação vive no requestId), espelhando o portalState acima.
-  portalResult: (requestId: string, ok: boolean): void => ipcRenderer.send('portal:result', requestId, ok),
+  // T7 (screenshot): o MESMO canal carrega opcionalmente a captura ({png: base64, name}) — o main
+  // grava o PNG em tmpdir e resolve a pendência com o caminho. Nenhum canal novo por ação.
+  portalResult: (requestId: string, ok: boolean, shot?: { png: string; name: string }): void =>
+    ipcRenderer.send('portal:result', requestId, ok, shot),
   // Fase 20 (Task 1): watcher de atenção (ver AgentBus no main) — avisa o renderer quando um
   // terminal-agente produziu saída e depois ficou ocioso. onAgentAttention segue o mesmo padrão
   // de assinatura com unsubscribe de orchestration.onCommand acima; clearAgentAttention é

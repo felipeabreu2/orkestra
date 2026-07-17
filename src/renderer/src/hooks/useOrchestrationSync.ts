@@ -262,6 +262,37 @@ export function useOrchestrationSync(): void {
         // aqui: o nó ainda não existe (não há PortalNode montado para pulsar).
         const safeUrl = cmd.url && isSafePortalUrl(cmd.url) ? cmd.url : undefined
         store.addPortalNode(undefined, { name: cmd.name, url: safeUrl })
+      } else if (cmd.type === 'portalScreenshot') {
+        // T7: o agente "vê" a página. capturePage é método NATIVO do WebviewTag (sem injeção de
+        // script) e só captura o que já está renderizado — a mesma visibilidade do humano, nenhum
+        // vazamento novo. O PNG atravessa para o main como base64 (via toDataURL — o renderer
+        // sandboxed não tem Buffer) pelo mesmo portal:result do T1; é o MAIN quem grava o arquivo
+        // em tmpdir e responde o caminho ao servidor. Sem requestId não há a quem responder o
+        // caminho — comando legado vira no-op (nada a capturar às cegas).
+        markPortalDriving(store.nodes, cmd.target) // T6
+        const requestId = cmd.requestId
+        const reply = (ok: boolean, shot?: { png: string; name: string }): void => {
+          if (requestId) window.orkestra.portalResult(requestId, ok, shot)
+        }
+        try {
+          const view = resolvePortalWebview(store.nodes, cmd.target)
+          if (!view) {
+            reply(false)
+          } else {
+            view
+              .capturePage()
+              .then((img) => {
+                const dataUrl = img.toDataURL()
+                const prefix = 'data:image/png;base64,'
+                const png = dataUrl.startsWith(prefix) ? dataUrl.slice(prefix.length) : ''
+                if (png) reply(true, { png, name: cmd.target })
+                else reply(false)
+              })
+              .catch(() => reply(false))
+          }
+        } catch {
+          reply(false)
+        }
       }
     })
     return dispose

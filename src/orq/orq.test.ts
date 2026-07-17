@@ -19,7 +19,7 @@ async function startServer(
     getPortalState?: (name: string) => { url: string; title: string; text: string; dom?: string } | null
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
-    runPortalAction?: (cmd: OrchestrationCommand) => Promise<{ ok: boolean } | null>
+    runPortalAction?: (cmd: OrchestrationCommand) => Promise<{ ok: boolean; path?: string } | null>
     readRoleSidecar?: (nodeId: string) => string | null
     writeRoleSidecar?: (nodeId: string, json: string) => boolean
   } = {}
@@ -437,6 +437,38 @@ describe('runOrq', () => {
     const { code, out } = await runOrq(['portal', 'click', 'P', '.x'], env)
     expect(code).not.toBe(0)
     expect(out).toContain('sem janela ativa')
+  })
+
+  // T7 (screenshot): POST /portal/screenshot reusa o round-trip do T1; o main grava o PNG e
+  // devolve {ok, path} — o orq imprime o caminho para o agente multimodal abrir o arquivo.
+  it('portal screenshot imprime o caminho do PNG salvo', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue({ ok: true, path: '/tmp/orkestra-portal-P-1.png' })
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code, out } = await runOrq(['portal', 'screenshot', 'P'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('/tmp/orkestra-portal-P-1.png')
+    expect(runPortalAction).toHaveBeenCalledWith({ type: 'portalScreenshot', target: 'P' })
+  })
+
+  it('portal screenshot com captura falha (ok:false, sem path) reporta erro e código != 0', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue({ ok: false })
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code, out } = await runOrq(['portal', 'screenshot', 'P'], env)
+    expect(code).not.toBe(0)
+    expect(out).toContain('ok: false')
+  })
+
+  it('portal screenshot sem renderer vivo (runPortalAction -> null) responde 503', async () => {
+    const runPortalAction = vi.fn().mockResolvedValue(null)
+    const env = await startServer({ nodes: [] }, [], { runPortalAction })
+    const { code } = await runOrq(['portal', 'screenshot', 'P'], env)
+    expect(code).not.toBe(0)
+  })
+
+  it('portal screenshot sem runPortalAction (servidor legado) responde 503, não um ok mentiroso', async () => {
+    const env = await startServer({ nodes: [] }, [])
+    const { code } = await runOrq(['portal', 'screenshot', 'P'], env)
+    expect(code).not.toBe(0)
   })
 
   // T2: back/forward/reload → POST /portal/nav com a action correspondente (união fechada).

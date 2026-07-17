@@ -1,8 +1,9 @@
 import { app, BrowserWindow, ipcMain, dialog, Notification, shell, session } from 'electron'
 import { randomUUID } from 'crypto'
 import { join } from 'path'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 import { mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { readdir, unlink, writeFile } from 'fs/promises'
 import { isSafeNodeId } from '../shared/roleSidecar'
 import { PtyManager } from './pty/PtyManager'
 import { nodePtySpawner } from './pty/nodePtySpawner'
@@ -18,6 +19,7 @@ import { registerSshIpc } from './ssh/registerSshIpc'
 import { registerRolesIpc } from './roles/registerRolesIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
+import { screenshotFilename, isScreenshotOf } from './orchestration/portalScreenshot'
 import { installOrq } from './orchestration/installOrq'
 import { buildEnvPath, resolveNvmBinDirs } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
@@ -408,9 +410,40 @@ app.whenReady().then(async () => {
   // sucesso da ação (via window.orkestra.portalResult), correlacionado pelo requestId que o main
   // carimbou no relay; o registry resolve a promise que o OrchestrationServer está aguardando.
   // requestId desconhecido (reply duplicado / já expirado pelo timeout) é no-op no registry.
-  ipcMain.on('portal:result', (_e, requestId: string, ok: boolean) => {
-    portalActions.resolve(requestId, { ok: ok === true })
-  })
+  //
+  // T7 (screenshot): o mesmo canal carrega opcionalmente a captura ({png: base64, name}). Aí o
+  // fluxo ganha uma etapa: o MAIN grava o PNG em os.tmpdir() — nome sanitizado por
+  // screenshotFilename (o `name` vem do renderer; nunca vira pedaço de path sem sanitizar) — e só
+  // então resolve a pendência com o CAMINHO. Antes de gravar, apaga as capturas anteriores DESTE
+  // portal (best-effort): tmpdir não acumula um cemitério de PNG por sessão longa. Falha de
+  // escrita resolve {ok:false} — o timeout do registry nunca é o caminho normal de erro.
+  ipcMain.on(
+    'portal:result',
+    (_e, requestId: string, ok: boolean, shot?: { png?: unknown; name?: unknown }) => {
+      const png = shot && typeof shot.png === 'string' && shot.png.length > 0 ? shot.png : null
+      if (ok === true && png) {
+        const name = typeof shot?.name === 'string' ? shot.name : 'portal'
+        void (async () => {
+          try {
+            const dir = tmpdir()
+            const antigos = await readdir(dir).catch(() => [] as string[])
+            await Promise.all(
+              antigos
+                .filter((f) => isScreenshotOf(name, f))
+                .map((f) => unlink(join(dir, f)).catch(() => {}))
+            )
+            const file = join(dir, screenshotFilename(name, Date.now()))
+            await writeFile(file, Buffer.from(png, 'base64'))
+            portalActions.resolve(requestId, { ok: true, path: file })
+          } catch {
+            portalActions.resolve(requestId, { ok: false })
+          }
+        })()
+        return
+      }
+      portalActions.resolve(requestId, { ok: ok === true })
+    }
+  )
   // Fase 20 (Task 1): o renderer manda isto quando o usuário foca o terminal daquele nó — limpa
   // o watcher de atenção (ver AgentBus.clearAttention) para exigir NOVO output antes de disparar
   // onAttention de novo para este pty.
