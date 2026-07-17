@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
 import type { EditorView } from '@tiptap/pm/view'
 import { NodeHandles } from './NodeHandles'
@@ -15,6 +15,8 @@ import { noteHtmlToRaw, noteRawToHtml } from '../notes/noteRawSync'
 import { SearchReplace } from '../notes/searchReplaceExtension'
 import { normalizeNoteName } from '../notes/noteRename'
 import { pickImageFile, isImageDataUri, MAX_IMAGE_BYTES } from '../notes/imagePaste'
+import { parentDir } from './fileTreeMutate'
+import { shouldApplyWatchEvent } from './fileTreeWatch'
 import { NoteFindBar } from './NoteFindBar'
 import { Icon } from './Icon'
 import './nodes.css'
@@ -31,7 +33,7 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
   const [findOpen, setFindOpen] = useState(false)
   const updateNoteHtml = useCanvasStore((s) => s.updateNoteHtml)
   const updateNoteName = useCanvasStore((s) => s.updateNoteName)
-  const d = data as { html?: string; content?: string; color?: string; name?: string }
+  const d = data as { html?: string; content?: string; color?: string; name?: string; filePath?: string }
   // Notas #10 (T2): renomear a nota por duplo-clique na faixa de arraste. data.name vazio = volta à
   // nomeação automática pela 1ª linha (mirror/orq list). normalizeNoteName apara/colapsa/corta em 40.
   const customName = (d.name ?? '').trim()
@@ -54,6 +56,103 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
   useEffect(() => {
     if (raw) setRawDraft(noteHtmlToRaw(d.html ?? ''))
   }, [raw])
+
+  // ── T9 (notas .md em disco · incremento 1): sincronização nota ↔ arquivo vinculado ───────────
+  //
+  // Construído INTEIRO sobre a infra endurecida da Árvore (filetree.write atômico com guard de
+  // raiz no main, filetree.read, filetree.watch com debounce e escopo de projeto) — nenhum código
+  // novo no processo privilegiado. Três pernas:
+  //  1. ADOÇÃO (mount/vínculo novo): o DISCO vence — lê o arquivo e aplica na nota se diferirem.
+  //     É o que faz `git pull`/edição externa com o app fechado aparecerem ao abrir.
+  //  2. ESCRITA (nota→arquivo): cada edição, com debounce, grava htmlToMarkdown no arquivo. O
+  //     guard de raiz usa o cwd do projeto ATIVO, resolvido a cada escrita.
+  //  3. WATCH (arquivo→nota): edição externa dispara releitura; `lastMdRef` corta o ECO da nossa
+  //     própria escrita (o evento do rename final voltaria como "mudança externa"). Round-trip
+  //     md→html→md pode normalizar o texto uma vez (T7 garante estabilidade dali em diante).
+  // Excluir a nota do canvas NUNCA apaga o arquivo (não existe caminho de delete aqui).
+  const filePath = d.filePath
+  const [fileMsg, setFileMsg] = useState('')
+  // Último markdown SABIDO do arquivo (adotado ou gravado). null = ainda não adotado — a escrita
+  // fica bloqueada até a adoção, senão o mount sobrescreveria conteúdo externo mais novo.
+  const lastMdRef = useRef<string | null>(null)
+
+  // Perna 1 + 3: adoção inicial e watch do diretório do arquivo.
+  useEffect(() => {
+    if (!filePath) {
+      lastMdRef.current = null
+      setFileMsg('')
+      return undefined
+    }
+    const subId = crypto.randomUUID()
+    let cancelled = false
+
+    const applyFromDisk = (): void => {
+      window.orkestra.filetree
+        .read(filePath)
+        .then((r) => {
+          if (cancelled || r.binary) return
+          if (r.content === lastMdRef.current) return // eco da nossa própria escrita
+          lastMdRef.current = r.content
+          const html = noteRawToHtml(r.content)
+          if (html !== (useCanvasStore.getState().nodes.find((n) => n.id === id)?.data as { html?: string })?.html) {
+            updateNoteHtml(id, html)
+          }
+          setFileMsg('')
+        })
+        .catch(() => {
+          if (!cancelled) setFileMsg('arquivo da nota não encontrado (movido/apagado por fora?)')
+        })
+    }
+
+    const dispose = window.orkestra.filetree.onChanged((ev) => {
+      if (cancelled) return
+      if (!shouldApplyWatchEvent(ev, subId, useCanvasStore.getState().activeProjectId ?? null)) return
+      if (ev.kind === 'error') {
+        setFileMsg(ev.message ?? 'auto-sync do arquivo indisponível')
+        return
+      }
+      applyFromDisk()
+    })
+
+    applyFromDisk() // adoção: o estado do disco entra antes de qualquer escrita nossa
+    window.orkestra.filetree
+      .watch(subId, [parentDir(filePath)], useCanvasStore.getState().activeProjectId ?? null)
+      .then((r) => {
+        if (!cancelled && !r.ok) setFileMsg(r.errors.join('; ') || 'auto-sync do arquivo indisponível')
+      })
+      .catch((err) => {
+        if (!cancelled) setFileMsg(err instanceof Error ? err.message : String(err))
+      })
+
+    return () => {
+      cancelled = true
+      dispose()
+      void window.orkestra.filetree.unwatch(subId).catch(() => {})
+    }
+  }, [filePath, id])
+
+  // Perna 2: escrita nota→arquivo, debounced. Bloqueada até a adoção (lastMdRef null).
+  useEffect(() => {
+    if (!filePath || lastMdRef.current === null) return undefined
+    const md = noteHtmlToRaw(d.html ?? '')
+    if (md === lastMdRef.current) return undefined
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const idx = await window.orkestra.projects.list()
+          const cwd = idx.projects.find((p) => p.id === idx.activeId)?.cwd
+          if (!cwd) return // sem projeto ativo não há raiz para o guard — não grava às cegas
+          await window.orkestra.filetree.write(filePath, md, cwd)
+          lastMdRef.current = md
+          setFileMsg('')
+        } catch (err) {
+          // ex.: arquivo fora da raiz do projeto ativo (nota de outro projeto) — erro visível
+          setFileMsg(err instanceof Error ? err.message : String(err))
+        }
+      })()
+    }, 600)
+    return () => clearTimeout(t)
+  }, [filePath, d.html])
 
   // T6 (colar imagem): aviso transiente quando a colagem é recusada (teto de bytes / formato).
   // Recusar em silêncio faria o usuário colar de novo achando que falhou por acaso.
@@ -190,6 +289,16 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
           ) : customName ? (
             <span className="ork-note-name">{customName}</span>
           ) : null}
+          {/* T9: crachá do vínculo com arquivo .md — o title mostra o caminho; erro de sync pinta
+              de --warn (arquivo sumiu, escrita recusada) para a degradação nunca ser invisível. */}
+          {filePath && !renaming && (
+            <span
+              className={`ork-note-filebadge${fileMsg ? ' ork-note-filebadge--warn' : ''}`}
+              title={fileMsg ? `${filePath} — ${fileMsg}` : `Vinculada a ${filePath}`}
+            >
+              <Icon name="FileText" size={11} animation="none" />
+            </span>
+          )}
         </div>
         {raw ? (
           <textarea
@@ -210,6 +319,13 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
         {imgMsg && (
           <div className="ork-note-imgmsg" role="status">
             {imgMsg}
+          </div>
+        )}
+        {/* T9: erro de sync com o arquivo vinculado — persistente até resolver (não some sozinho:
+            uma nota que parou de gravar em disco parecendo saudável é perda de dados silenciosa). */}
+        {fileMsg && (
+          <div className="ork-note-imgmsg" role="alert">
+            {fileMsg}
           </div>
         )}
       </div>

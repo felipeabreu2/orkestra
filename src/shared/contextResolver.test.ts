@@ -164,6 +164,23 @@ describe('formatContextBlocks — formato byte-a-byte do /context', () => {
     expect(formatContextBlocks(nodes)).toBe('[contexto — nota: Cheia]\nconteúdo')
   })
 
+  // T9 (notas .md em disco): nota vinculada a arquivo expõe o CAMINHO no cabeçalho do bloco — o
+  // agente pode ler/editar o arquivo com as próprias ferramentas (é a memória durável de fato).
+  it('nota com filePath ganha o caminho no cabeçalho; sem filePath o formato é byte-idêntico ao de sempre', () => {
+    const nodes: MirrorNode[] = [
+      { id: 'A', type: 'note', name: 'Plano', content: 'corpo', filePath: '/proj/plano.md' },
+      { id: 'B', type: 'note', name: 'Solta', content: 'x' }
+    ]
+    expect(formatContextBlocks(nodes)).toBe(
+      '[contexto — nota: Plano — arquivo: /proj/plano.md]\ncorpo\n\n' + '[contexto — nota: Solta]\nx'
+    )
+  })
+
+  it('filePath em nó não-nota é ignorado no formato (o vínculo é conceito de nota)', () => {
+    const nodes: MirrorNode[] = [{ id: 'F', type: 'file', name: 'x.ts', content: 'c', filePath: '/y' }]
+    expect(formatContextBlocks(nodes)).toBe('[contexto — arquivo: x.ts]\nc')
+  })
+
   it('devolve string vazia para lista vazia', () => {
     expect(formatContextBlocks([])).toBe('')
   })

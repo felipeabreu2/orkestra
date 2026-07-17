@@ -10,6 +10,11 @@ export interface MirrorNode {
   // Carregado no espelho para o gating server-side de T6 (isMaestro) decidir se o `from` de um
   // recruit/connect/dismiss pode gerenciar. Ausente/undefined = terminal comum (retrocompat).
   maestro?: boolean
+  // T9 (notas .md em disco): caminho do arquivo `.md` vinculado a uma NOTA (data.filePath). O
+  // `orq context` o expõe ao agente, que pode ler/editar o arquivo com as próprias ferramentas —
+  // é o que torna a nota memória DURÁVEL de verdade. Ausente = nota só-no-canvas (comportamento
+  // de sempre).
+  filePath?: string
 }
 
 // Ligações do canvas no espelho — o suficiente para o servidor resolver "o que está conectado a

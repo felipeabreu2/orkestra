@@ -103,7 +103,11 @@ export function formatContextBlocks(nodes: MirrorNode[]): string {
             : n.type === 'portal'
               ? 'site'
               : n.type
-      return `[contexto — ${label}: ${n.name}]\n${(n.content ?? '').trim()}`
+      // T9: nota vinculada a um .md em disco expõe o caminho no cabeçalho — o agente lê/edita o
+      // arquivo com as próprias ferramentas (nota como memória durável). Só para NOTAS: em `file`
+      // o caminho já É o content, e nos demais tipos filePath não existe conceitualmente.
+      const arquivo = n.type === 'note' && n.filePath ? ` — arquivo: ${n.filePath}` : ''
+      return `[contexto — ${label}: ${n.name}${arquivo}]\n${(n.content ?? '').trim()}`
     })
     .join('\n\n')
 }

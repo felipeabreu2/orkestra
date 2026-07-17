@@ -835,3 +835,16 @@
   color: var(--warn);
   background: var(--warn-weak);
 }
+
+/* T9 (notas): crachá do vínculo com arquivo .md, na faixa de arraste. Discreto quando saudável;
+   --warn quando o sync degradou (arquivo sumiu, escrita recusada). */
+.ork-note-filebadge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding-right: var(--space-1);
+  color: var(--text-3);
+}
+.ork-note-filebadge--warn {
+  color: var(--warn);
+}

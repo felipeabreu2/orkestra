@@ -3,6 +3,9 @@ import { useCanvasStore } from '../store/canvasStore'
 import { useNoteEditor } from '../notes/useNoteEditor'
 import { NOTE_COLORS } from '../notes/noteColors'
 import { useNoteRaw, toggleNoteRaw } from '../notes/noteRawModeRegistry'
+import { deriveNoteName } from '../notes/noteName'
+import { noteHtmlToRaw } from '../notes/noteRawSync'
+import { notePathCandidate } from '../notes/noteFileLink'
 import { Icon } from './Icon'
 
 // Barra de formatação da nota (F06/F07) — renderizada dentro do NodeToolbar quando o nó é uma
@@ -11,6 +14,43 @@ import { Icon } from './Icon'
 export function NoteFormatBar({ nodeId }: { nodeId: string }): JSX.Element | null {
   const editor = useNoteEditor(nodeId)
   const updateNoteColor = useCanvasStore((s) => s.updateNoteColor)
+  const updateNoteFilePath = useCanvasStore((s) => s.updateNoteFilePath)
+  // T9: dados da nota para o vínculo com arquivo (.md). O find por render é barato (a barra só
+  // existe para a nota selecionada).
+  const noteData = useCanvasStore((s) => s.nodes.find((n) => n.id === nodeId)?.data) as
+    | { html?: string; name?: string; filePath?: string }
+    | undefined
+  const filePath = noteData?.filePath
+  const [exporting, setExporting] = useState(false)
+
+  // Exporta a nota para `<cwd-do-projeto>/<slug>.md` e vincula. NUNCA sobrescreve arquivo
+  // existente: filetree.read como teste de existência (rejeitou = livre), sufixo -n até 20.
+  // O guard de raiz da escrita (isInsideRoot) roda no MAIN via filetree.write.
+  const exportMd = async (): Promise<void> => {
+    setExporting(true)
+    try {
+      const idx = await window.orkestra.projects.list()
+      const cwd = idx.projects.find((p) => p.id === idx.activeId)?.cwd
+      if (!cwd) return
+      const name = deriveNoteName({ name: noteData?.name, html: noteData?.html })
+      for (let attempt = 1; attempt <= 20; attempt++) {
+        const candidate = notePathCandidate(cwd, name, attempt)
+        const livre = await window.orkestra.filetree
+          .read(candidate)
+          .then(() => false)
+          .catch(() => true)
+        if (!livre) continue
+        await window.orkestra.filetree.write(candidate, noteHtmlToRaw(noteData?.html ?? ''), cwd)
+        updateNoteFilePath(nodeId, candidate)
+        return
+      }
+    } catch {
+      // falha de export não pode quebrar a barra; o usuário tenta de novo (o erro de sync
+      // contínuo, esse sim persistente, aparece no próprio NoteNode)
+    } finally {
+      setExporting(false)
+    }
+  }
   // Toggle raw ↔ formatada (T7): estado efêmero fora do store; o NoteNode escuta o mesmo registry e
   // troca o EditorContent por um textarea com o Markdown cru.
   const raw = useNoteRaw(nodeId)
@@ -98,6 +138,30 @@ export function NoteFormatBar({ nodeId }: { nodeId: string }): JSX.Element | nul
       >
         <Icon name="Braces" size={15} animation="none" />
       </button>
+      {/* T9 (notas .md em disco): vincular grava um `.md` novo na pasta do projeto ativo (nunca
+          sobrescreve arquivo que já existia — sufixo -n) e liga o auto-sync do NoteNode;
+          desvincular só desfaz o vínculo — o ARQUIVO fica (paridade Maestri: excluir do canvas
+          não apaga memória durável). */}
+      {filePath ? (
+        <button
+          className="ork-toolbar-btn ork-node-toolbar-icon ork-fmt--on"
+          title={`Vinculada a ${filePath} — clique para desvincular (o arquivo fica)`}
+          aria-label="Desvincular do arquivo .md (o arquivo fica)"
+          onClick={() => updateNoteFilePath(nodeId, undefined)}
+        >
+          <Icon name="FileText" size={15} animation="none" />
+        </button>
+      ) : (
+        <button
+          className="ork-toolbar-btn ork-node-toolbar-icon"
+          title="Salvar como .md na pasta do projeto (a nota passa a viver no arquivo)"
+          aria-label="Salvar como arquivo .md"
+          disabled={exporting}
+          onClick={() => void exportMd()}
+        >
+          <Icon name="FileDown" size={15} animation="none" />
+        </button>
+      )}
     </>
   )
 }

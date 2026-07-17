@@ -101,7 +101,9 @@ export function buildMirror(nodes: Node[], edges: Edge[]): CanvasMirror {
       role: (n.data?.role as string) ?? '',
       preset: (n.data?.preset as string) ?? 'shell',
       monitor: n.data?.monitor as boolean | undefined,
-      maestro: n.data?.maestro as boolean | undefined
+      maestro: n.data?.maestro as boolean | undefined,
+      // T9: nota vinculada a arquivo .md — o /context expõe o caminho ao agente.
+      filePath: n.type === 'note' ? (n.data?.filePath as string | undefined) : undefined
     })),
     // Ligações (source/target) — o servidor usa para resolver os blocos conectados a um terminal.
     edges: edges.map((e) => ({ source: e.source, target: e.target }))

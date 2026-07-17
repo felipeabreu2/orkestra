@@ -250,6 +250,17 @@ describe('canvasStore', () => {
     expect((n.data as { name?: string }).name).toBe('plano')
   })
 
+  it('updateNoteFilePath vincula e desvincula a nota de um arquivo .md (T9)', () => {
+    useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
+    const id = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!.id
+    useCanvasStore.getState().updateNoteFilePath(id, '/proj/plano.md')
+    let d = useCanvasStore.getState().nodes.find((x) => x.id === id)!.data as { filePath?: string }
+    expect(d.filePath).toBe('/proj/plano.md')
+    useCanvasStore.getState().updateNoteFilePath(id, undefined)
+    d = useCanvasStore.getState().nodes.find((x) => x.id === id)!.data as { filePath?: string }
+    expect(d.filePath).toBeUndefined()
+  })
+
   it('updateNoteContent (legado/migração) ainda seta o content', () => {
     useCanvasStore.getState().addNoteNode()
     const id = useCanvasStore.getState().nodes[0].id

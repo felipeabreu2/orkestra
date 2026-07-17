@@ -392,6 +392,9 @@ interface CanvasState {
   // Notas #10: nome personalizado da nota (data.name). '' = volta à nomeação automática pela 1ª
   // linha do conteúdo (ver deriveNoteName). Canvas #12: nome do grupo (data.name).
   updateNoteName: (id: string, name: string) => void
+  // T9 (notas .md em disco): vincula/desvincula a nota a um arquivo `.md` (undefined = desfaz o
+  // vínculo — o ARQUIVO nunca é apagado por aqui). Persiste como parte de node.data.
+  updateNoteFilePath: (id: string, filePath?: string) => void
   updateGroupName: (id: string, name: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
@@ -699,6 +702,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((state) => ({
       ...histPatch(state, 'notename:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
+  updateNoteFilePath: (id, filePath): void =>
+    set((state) => ({
+      ...histPatch(state, 'notefile:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, filePath } } : n))
     })),
   updateGroupName: (id, name): void =>
     set((state) => ({
