@@ -71,6 +71,9 @@ export function ProjectsSidebar(): JSX.Element | null {
   const [filter, setFilter] = useState<string>('')
   const [groupOpen, setGroupOpen] = useState<boolean>(true)
   const [counts, setCounts] = useState<Record<string, number>>({})
+  // Resiliência T6: projetos descarregados NESTA sessão (efêmero de propósito — ao reiniciar o
+  // app tudo já nasce sem pty, o estado não teria significado). Esmaece o ícone na linha.
+  const [hibernatedIds, setHibernatedIds] = useState<Set<string>>(new Set())
 
   const refreshCounts = async (): Promise<void> => {
     try {
@@ -159,6 +162,14 @@ export function ProjectsSidebar(): JSX.Element | null {
       }
       useCanvasStore.getState().hydrate(snap, id)
       setActiveId(id)
+      // T6: abrir um projeto descarregado o "acorda" — os TerminalNode re-montam e re-spawnam
+      // (o pty:attach devolve null porque os ptys foram mortos no descarregar).
+      setHibernatedIds((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
       setError('')
       await refreshCounts() // reflete a contagem do projeto que acabou de sair (já flushado) e do novo
     } catch (err) {
@@ -218,6 +229,18 @@ export function ProjectsSidebar(): JSX.Element | null {
       setIconPickerId(null)
       setCustomIcon('')
       await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Resiliência T6: "Descarregar" — libera os agentes (ptys) de um projeto NÃO-ativo. O canvas em
+  // disco fica intacto; ao reabrir, volta de onde parou (os agentes reiniciam — trade-off
+  // declarado no title do botão). O main garante o escopo (terminalNodeIds por id explícito).
+  const handleHibernate = async (id: string): Promise<void> => {
+    try {
+      await window.orkestra.projects.hibernate(id)
+      setHibernatedIds((prev) => new Set(prev).add(id))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -364,10 +387,16 @@ export function ProjectsSidebar(): JSX.Element | null {
               {filtered.map((p) => (
                 <div
                   key={p.id}
-                  className={`ork-sidebar-project${p.id === activeId ? ' ork-sidebar-project--active' : ''}`}
+                  className={`ork-sidebar-project${p.id === activeId ? ' ork-sidebar-project--active' : ''}${
+                    hibernatedIds.has(p.id) ? ' ork-sidebar-project--hibernated' : ''
+                  }`}
                   onClick={() => handleRowClick(p.id)}
                   onDoubleClick={() => startRename(p)}
-                  title={p.cwd ?? p.name}
+                  title={
+                    hibernatedIds.has(p.id)
+                      ? `${p.cwd ?? p.name} — descarregado (abrir reinicia os agentes)`
+                      : (p.cwd ?? p.name)
+                  }
                 >
                   {/* Ícone do projeto — clicar abre o seletor inline; não dispara switch/rename. */}
                   <div className="ork-sidebar-icon-wrap" data-icon-picker-id={p.id}>
@@ -467,6 +496,22 @@ export function ProjectsSidebar(): JSX.Element | null {
                       <span className="ork-sidebar-badge-n">{countFor(p)}</span>
                     </span>
                     <div className="ork-sidebar-project-actions">
+                      {/* T6: Descarregar — SÓ em projeto não-ativo (descarregar o que está na tela
+                          mataria os agentes sob o dedo do usuário) e ainda não descarregado. */}
+                      {p.id !== activeId && !hibernatedIds.has(p.id) && (
+                        <button
+                          className="ork-sidebar-folder"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleHibernate(p.id)
+                          }}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                          aria-label={`Descarregar agentes de ${p.name}`}
+                          title="Descarregar: libera os agentes deste projeto (o canvas fica; ao reabrir, os agentes reiniciam)"
+                        >
+                          <Icon name="MoonStar" size={14} animation="none" />
+                        </button>
+                      )}
                       <button
                         className="ork-sidebar-folder"
                         onClick={(e) => {

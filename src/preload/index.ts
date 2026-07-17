@@ -94,7 +94,11 @@ const api = {
     // Onda 7: seletor de 1 arquivo (nó de arquivo/clip).
     pickFile: (): Promise<string | null> => ipcRenderer.invoke('projects:pickFile'),
     // Badge da sidebar (2026-07-14): nº de terminais por projeto (id -> count).
-    terminalCounts: (): Promise<Record<string, number>> => ipcRenderer.invoke('projects:terminalCounts')
+    terminalCounts: (): Promise<Record<string, number>> => ipcRenderer.invoke('projects:terminalCounts'),
+    // Resiliência T6: "Descarregar" um projeto NÃO-ativo — o main mata os ptys DAQUELE projeto
+    // (por id explícito, escopo garantido no ProjectManager) sem tocar índice/ativo/canvas. Ao
+    // reabrir o projeto, os terminais re-spawnam: o canvas volta de onde parou, agentes reiniciam.
+    hibernate: (id: string): Promise<void> => ipcRenderer.invoke('projects:hibernate', id)
   },
   // Fase 19 (Task 1): árvore de arquivos (canvas file-explorer node) — read-only, delega tudo ao
   // FileTreeService no main (ver registerFileTreeIpc). O renderer nunca importa `fs`/`child_process`

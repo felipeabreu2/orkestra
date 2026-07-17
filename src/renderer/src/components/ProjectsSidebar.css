@@ -237,6 +237,12 @@
   background: var(--accent);
   box-shadow: 0 6px 16px var(--accent-weak);
 }
+/* Resiliência T6: projeto descarregado nesta sessão — ícone/nome esmaecidos (o canvas está salvo;
+   os agentes foram liberados). Abrir o projeto o acorda e a classe sai. */
+.ork-sidebar-project--hibernated .ork-sidebar-icon,
+.ork-sidebar-project--hibernated .ork-sidebar-project-name {
+  opacity: 0.45;
+}
 .ork-sidebar-project--active:hover {
   background: var(--accent-hover);
 }

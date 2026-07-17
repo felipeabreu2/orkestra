@@ -20,7 +20,11 @@ export function registerProjectIpc(
   // PTY-1 (auditoria 2026-07-14): chamado com os nodeIds dos terminais do projeto removido, para o
   // main matar os ptys (que sobrevivem à troca de projeto e ficariam órfãos vivos após a remoção).
   // Opcional/appended por retrocompatibilidade (testes e chamadores antigos seguem válidos).
-  onProjectRemoved?: (nodeIds: string[], projectId?: string) => void
+  onProjectRemoved?: (nodeIds: string[], projectId?: string) => void,
+  // Resiliência · T6 (hibernação): chamado com os nodeIds dos terminais do projeto DESCARREGADO,
+  // para o main liberar os ptys (killByNode). Hibernar NÃO é switch nem remove: o projeto continua
+  // no índice, o canvas em disco fica intacto — só os processos morrem. Opcional/appended.
+  onHibernate?: (nodeIds: string[]) => void
 ): void {
   ipcMain.handle('projects:list', () => pm.list())
   // Fase 17 (Task 1): create agora aceita uma pasta (cwd) opcional — escolhida no renderer via
@@ -37,6 +41,14 @@ export function registerProjectIpc(
   })
   // Badge da sidebar (2026-07-14): nº de terminais por projeto.
   ipcMain.handle('projects:terminalCounts', () => pm.terminalCounts())
+  // Resiliência · T6: "Descarregar" um projeto NÃO-ativo — libera os agentes (ptys) daquele
+  // projeto sem tocar índice/ativo/canvas. ESCOPO É A EXIGÊNCIA DURA (incidente cross-project):
+  // terminalNodeIds lê SÓ projects/<id>.json por id explícito; matar é por nodeId daquele canvas.
+  // Ao reabrir o projeto, o canvas re-hidrata e os terminais re-spawnam (pty:attach → null):
+  // o trabalho volta de onde parou, os AGENTES reiniciam — trade-off declarado de liberar memória.
+  ipcMain.handle('projects:hibernate', (_e, id: string) => {
+    onHibernate?.(pm.terminalNodeIds(id))
+  })
   // Fase 15 (Task 3): flush explícito por id na troca de projeto. Via handle (não send/on) porque
   // o renderer precisa AGUARDAR a gravação terminar antes de chamar projects:switch — ao
   // contrário de persistence:save, aqui a ordem entre este flush e o switch importa.

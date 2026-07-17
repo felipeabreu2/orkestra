@@ -382,6 +382,18 @@ export class ProjectManager {
   // Badge da sidebar (2026-07-14): nº de terminais por projeto. Lê cada canvas e conta os nós
   // type==='terminal'. Best-effort — projeto sem arquivo/ilegível conta 0. Para o projeto ATIVO,
   // o renderer sobrepõe com a contagem ao vivo do canvasStore (aqui é o valor em disco).
+  // Resiliência · T6 (hibernação): os nodeIds dos TERMINAIS de um projeto, por id EXPLÍCITO —
+  // espelha a coleta de removedNodeIds do remove() e a leitura de terminalCounts(), sem nenhum
+  // efeito colateral. O escopo é a razão de existir: lê SÓ projects/<id>.json (id validado pelo
+  // mesmo guard de traversal), nunca o projeto ativo por engano — hibernar B com A ativo não pode
+  // tocar A (incidente cross-project). Nunca lança: id hostil/projeto inexistente/canvas
+  // missing/corrupt → [] (hibernar nada é um no-op seguro).
+  terminalNodeIds(id: string): string[] {
+    if (!isValidProjectId(id)) return []
+    const snap = this.readCanvas(this.canvasPath(id))
+    return (snap?.nodes ?? []).filter((n) => n.type === 'terminal').map((n) => n.id)
+  }
+
   terminalCounts(): Record<string, number> {
     const idx = this.list()
     const counts: Record<string, number> = {}

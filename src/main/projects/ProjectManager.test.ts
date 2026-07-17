@@ -274,6 +274,39 @@ describe('ProjectManager', () => {
     expect(r.removedNodeIds).toEqual([])
   })
 
+  // ── Resiliência · T6 (hibernação): terminalNodeIds por ID EXPLÍCITO ──────────────────────────
+  it('terminalNodeIds(id) devolve só os terminais DAQUELE projeto, na ordem do canvas', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const a = pm.list().activeId
+    const b = pm.create('B')
+    pm.saveCanvas(a, {
+      version: 2,
+      nodes: [{ id: 'ta', type: 'terminal' } as never],
+      edges: []
+    })
+    pm.saveCanvas(b.id, {
+      version: 2,
+      nodes: [
+        { id: 'tb1', type: 'terminal' } as never,
+        { id: 'nb', type: 'note' } as never,
+        { id: 'tb2', type: 'terminal' } as never
+      ],
+      edges: []
+    })
+    // ESCOPO (regressão do incidente cross-project): pedir B devolve os de B — nunca mistura com
+    // o ativo (A), mesmo sendo A o projeto exibido.
+    expect(pm.terminalNodeIds(b.id)).toEqual(['tb1', 'tb2'])
+    expect(pm.terminalNodeIds(a)).toEqual(['ta'])
+  })
+
+  it('terminalNodeIds nunca lança: projeto inexistente/canvas ausente/id hostil → []', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const b = pm.create('B') // canvas vazio
+    expect(pm.terminalNodeIds(b.id)).toEqual([])
+    expect(pm.terminalNodeIds('nao-existe')).toEqual([])
+    expect(pm.terminalNodeIds('../projects')).toEqual([])
+  })
+
   // Badge da sidebar (2026-07-14): terminalCounts conta os nós type=terminal de cada projeto.
   it('terminalCounts conta os terminais de cada projeto (0 quando ausente)', () => {
     const pm = new ProjectManager(dir); pm.bootstrap()

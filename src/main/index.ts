@@ -552,6 +552,11 @@ app.whenReady().then(async () => {
       portalStates.clearProject(projectId)
       portalConsoles.clearProject(projectId)
     }
+  }, (nodeIds) => {
+    // Resiliência · T6 (hibernação): "Descarregar" libera os ptys do projeto NÃO-ativo — o exato
+    // reuso do killByNode acima, sem tocar índice/ativo/canvas. Ao reabrir, os terminais
+    // re-spawnam (pty:attach → null): canvas volta de onde parou, agentes reiniciam.
+    for (const nodeId of nodeIds) ptyManager.killByNode(nodeId)
   })
   // Resiliência T4 — export de diagnóstico ("Ajuda → Reportar um Problema" / IPC do renderer).
   // As deps reais vivem SÓ aqui (dialog/fs); a composição coleta→REDIGE→salva é o módulo testado.
