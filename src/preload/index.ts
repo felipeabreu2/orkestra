@@ -218,11 +218,14 @@ const api = {
   // Fase 9 (Portais): o PortalNode reporta {name,url,title,text} ao main a cada did-finish-load
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
   // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.
-  portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state),
+  // T9: `projectId` = o projeto que o renderer exibia ao reportar (hint de escrita; a leitura no
+  // main resolve pelo projeto ATIVO) — snapshot/console de um projeto nunca respondem no outro.
+  portalState: (state: { name: string; projectId?: string | null } & PortalState): void =>
+    ipcRenderer.send('portal:state', state),
   // T8 (console do portal): o PortalNode repassa em batches (throttle no renderer) as linhas de
   // console-message do webview — o main as acumula num ring-buffer por nome (cap no
   // portalConsoleBuffer), servido em GET /portal/console. Fire-and-forget, como o portalState.
-  portalConsole: (payload: { name: string; entries: string[] }): void =>
+  portalConsole: (payload: { name: string; entries: string[]; projectId?: string | null }): void =>
     ipcRenderer.send('portal:console', payload),
   // T1 (round-trip do booleano): canal de VOLTA (renderer -> main) para o resultado de uma ação de
   // portal click/fill. Quando o comando chega com requestId (ver orchestration.onCommand), o

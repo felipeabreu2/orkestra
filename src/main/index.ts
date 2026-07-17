@@ -21,6 +21,7 @@ import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { screenshotFilename, isScreenshotOf } from './orchestration/portalScreenshot'
 import { pushConsole } from '../shared/portalConsoleBuffer'
+import { PortalStateStore } from './orchestration/portalStateStore'
 import { installOrq } from './orchestration/installOrq'
 import { buildEnvPath, resolveNvmBinDirs } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
@@ -118,13 +119,15 @@ let mirror: CanvasMirror = { nodes: [], edges: [] }
 // whenReady (o ProjectManager nasce lá), lido a cada request do OrchestrationServer e a cada
 // relay de comando. `let` + closure, mesmo padrão de mainWindow acima.
 let resolveActiveProjectId: () => string | undefined = () => undefined
-// Estado reportado por cada portal (nome -> {url,title,text}), atualizado via IPC 'portal:state'
-// a cada did-finish-load do <webview> correspondente (PortalNode); servido em GET /portal.
-const portalStates = new Map<string, PortalState>()
-// T8: console de cada portal (nome -> últimas linhas), alimentado via IPC 'portal:console' pelos
-// batches do PortalNode; ring-buffer com cap no pushConsole (uma página com log em loop não cresce
-// sem teto). Servido em GET /portal/console.
-const portalConsoles = new Map<string, string[]>()
+// Estado reportado por cada portal, atualizado via IPC 'portal:state' a cada did-finish-load do
+// <webview> correspondente (PortalNode); servido em GET /portal. T9: a chave é COMPOSTA
+// (projectId, name) — ver PortalStateStore — para um snapshot do projeto A nunca responder a um
+// `orq portal snapshot` rodado no projeto B (gap #8, resíduo cross-project).
+const portalStates = new PortalStateStore<PortalState>()
+// T8: console de cada portal (últimas linhas), alimentado via IPC 'portal:console' pelos batches
+// do PortalNode; ring-buffer com cap no pushConsole (uma página com log em loop não cresce sem
+// teto). Servido em GET /portal/console. T9: mesma chave composta do portalStates.
+const portalConsoles = new PortalStateStore<string[]>()
 // T1 (round-trip do booleano de portal click/fill): pendências de ação por requestId. A ponte
 // main->renderer é unidirecional (webContents.send), então o resultado da ação volta pelo canal
 // separado 'portal:result' (ipcMain.on lá embaixo) e resolve a promise correspondente. Timeout
@@ -207,9 +210,11 @@ const orchestration = new OrchestrationServer({
     const p = resolvePtyByName(name)
     return p ? { output: agentBus.read(p) } : null
   },
-  getPortalState: (name) => portalStates.get(name) ?? null,
+  // T9: a leitura resolve pelo projeto ATIVO do main (autoridade), não pelo hint do payload —
+  // snapshot/console só devolvem estado do projeto exibido; de outro projeto → null (404).
+  getPortalState: (name) => portalStates.get(resolveActiveProjectId() ?? null, name),
   // T8: linhas de console bufferizadas do portal (null → 404 na rota).
-  getPortalConsole: (name) => portalConsoles.get(name) ?? null,
+  getPortalConsole: (name) => portalConsoles.get(resolveActiveProjectId() ?? null, name),
   // T1: variante ASSÍNCRONA do relay para as ações que confirmam sucesso (click/fill). Gera um
   // requestId, registra a pendência e carimba o comando com ele no MESMO canal unidirecional
   // 'orchestration:command' (sem abrir canal novo por ação — minimiza a superfície); o renderer
@@ -407,21 +412,31 @@ app.whenReady().then(async () => {
   ipcMain.on('orchestration:sync', (_e, m: CanvasMirror) => {
     mirror = m
   })
-  ipcMain.on('portal:state', (_e, s: { name: string } & PortalState) => {
-    // T4: guarda o `dom` (lista de elementos interativos) ao lado de url/title/text — servido em
-    // GET /portal e impresso por `orq portal snapshot --dom`. Opcional (estados/portais legados sem
-    // o campo continuam válidos).
-    portalStates.set(s.name, { url: s.url, title: s.title, text: s.text, dom: s.dom })
-  })
+  ipcMain.on(
+    'portal:state',
+    (_e, s: { name: string; projectId?: string | null } & PortalState) => {
+      // T4: guarda o `dom` (lista de elementos interativos) ao lado de url/title/text — servido em
+      // GET /portal e impresso por `orq portal snapshot --dom`. Opcional (estados/portais legados
+      // sem o campo continuam válidos).
+      // T9: o projectId do payload é o projeto que o renderer EXIBIA ao reportar (hint de
+      // escrita); payload legado sem o campo cai no escopo null — nunca vaza para projetos reais.
+      const projectId = typeof s.projectId === 'string' ? s.projectId : null
+      portalStates.set(projectId, s.name, { url: s.url, title: s.title, text: s.text, dom: s.dom })
+    }
+  )
   // T8: batches de console-message vindos do PortalNode. O pushConsole re-aplica os tetos AQUI
   // (cap de linhas e de tamanho por linha) — o renderer também os aplica, mas o main não confia
   // no formato do que atravessa a ponte (entries é coerido item a item).
-  ipcMain.on('portal:console', (_e, p: { name?: unknown; entries?: unknown }) => {
-    if (typeof p?.name !== 'string' || !Array.isArray(p.entries)) return
-    const buf = portalConsoles.get(p.name) ?? []
-    for (const entry of p.entries) pushConsole(buf, typeof entry === 'string' ? entry : String(entry))
-    portalConsoles.set(p.name, buf)
-  })
+  ipcMain.on(
+    'portal:console',
+    (_e, p: { name?: unknown; entries?: unknown; projectId?: unknown }) => {
+      if (typeof p?.name !== 'string' || !Array.isArray(p.entries)) return
+      const projectId = typeof p.projectId === 'string' ? p.projectId : null
+      const buf = portalConsoles.get(projectId, p.name) ?? []
+      for (const entry of p.entries) pushConsole(buf, typeof entry === 'string' ? entry : String(entry))
+      portalConsoles.set(projectId, p.name, buf)
+    }
+  )
   // T1: canal de volta do round-trip de portal click/fill. O renderer devolve aqui o booleano de
   // sucesso da ação (via window.orkestra.portalResult), correlacionado pelo requestId que o main
   // carimbou no relay; o registry resolve a promise que o OrchestrationServer está aguardando.
@@ -509,11 +524,16 @@ app.whenReady().then(async () => {
       ? await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
       : await dialog.showOpenDialog({ properties: ['openFile'] })
     return r.canceled ? null : r.filePaths[0]
-  }, (nodeIds) => {
+  }, (nodeIds, projectId) => {
     // PTY-1 (auditoria 2026-07-14): ao remover um projeto, mata os ptys dos seus terminais — eles
     // sobrevivem à troca de projeto (re-attach), mas um projeto REMOVIDO não tem mais como
     // re-attachar, então seguiriam vivos (agentes consumindo CPU/RAM/tokens) e inalcançáveis.
     for (const nodeId of nodeIds) ptyManager.killByNode(nodeId)
+    // T9: estados/consoles de portal do projeto removido não têm mais leitor possível — fora do mapa.
+    if (projectId) {
+      portalStates.clearProject(projectId)
+      portalConsoles.clearProject(projectId)
+    }
   })
   // Árvore de arquivos (Fase 19 Task 1): serviço de fs + git para o nó de file-explorer do canvas
   // (renderer, Task 2). Sem estado próprio — não precisa de bootstrap. A dep `trash` (Onda 3 ·

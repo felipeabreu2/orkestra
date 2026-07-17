@@ -20,7 +20,7 @@ export function registerProjectIpc(
   // PTY-1 (auditoria 2026-07-14): chamado com os nodeIds dos terminais do projeto removido, para o
   // main matar os ptys (que sobrevivem à troca de projeto e ficariam órfãos vivos após a remoção).
   // Opcional/appended por retrocompatibilidade (testes e chamadores antigos seguem válidos).
-  onProjectRemoved?: (nodeIds: string[]) => void
+  onProjectRemoved?: (nodeIds: string[], projectId?: string) => void
 ): void {
   ipcMain.handle('projects:list', () => pm.list())
   // Fase 17 (Task 1): create agora aceita uma pasta (cwd) opcional — escolhida no renderer via
@@ -30,7 +30,9 @@ export function registerProjectIpc(
   ipcMain.handle('projects:rename', (_e, id: string, name: string) => pm.rename(id, name))
   ipcMain.handle('projects:remove', (_e, id: string) => {
     const { activeId, snapshot, removedNodeIds } = pm.remove(id)
-    onProjectRemoved?.(removedNodeIds) // mata os ptys dos terminais do projeto removido
+    // mata os ptys dos terminais do projeto removido; o id vai junto para limpezas por-projeto
+    // no chamador (T9: estados/consoles de portal do projeto removido saem do mapa)
+    onProjectRemoved?.(removedNodeIds, id)
     return { activeId, snapshot } // shape para o renderer é inalterado ({activeId, snapshot})
   })
   // Badge da sidebar (2026-07-14): nº de terminais por projeto.

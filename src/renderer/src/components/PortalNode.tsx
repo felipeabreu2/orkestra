@@ -3,6 +3,7 @@ import type { WebviewTag } from 'electron'
 import { registerPortal, unregisterPortal, subscribePortalDriving } from '../portalRegistry'
 import { snapshotScript, domSnapshotScript } from '../../../shared/portalScripts'
 import { pushConsole } from '../../../shared/portalConsoleBuffer'
+import { useCanvasStore } from '../store/canvasStore'
 import type { PortalState } from '../../../shared/orchestration'
 import './PortalNode.css'
 
@@ -60,7 +61,14 @@ export const PortalNode = forwardRef<
         ])
           .then(([state, dom]) => {
             if (disposed) return
-            window.orkestra.portalState({ name, ...state, dom: typeof dom === 'string' ? dom : '' })
+            // T9: carimba o projeto exibido AGORA (getState — valor fresco sem re-assinar o
+            // efeito), mesmo padrão do watch da árvore. O main usa como escopo de escrita.
+            window.orkestra.portalState({
+              name,
+              projectId: useCanvasStore.getState().activeProjectId ?? null,
+              ...state,
+              dom: typeof dom === 'string' ? dom : ''
+            })
           })
           .catch(() => {
             // best-effort: se a captura do snapshot falhar, só não reporta este ciclo — o
@@ -89,7 +97,11 @@ export const PortalNode = forwardRef<
         if (pending.length === 0) return
         const entries = pending
         pending = []
-        window.orkestra.portalConsole({ name, entries })
+        window.orkestra.portalConsole({
+          name,
+          entries,
+          projectId: useCanvasStore.getState().activeProjectId ?? null // T9: escopo de escrita
+        })
       }
       const onConsole = (e: Event): void => {
         // O shape do evento vem do CONTEÚDO do site (não confiável): level pode ser número
