@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useCanvasStore } from './canvasStore'
+import { buildMirror, resolveRecruitPreset } from '../hooks/useOrchestrationSync'
 import type { CanvasSnapshot } from '../../../shared/canvasSnapshot'
+import type { Node } from '@xyflow/react'
 
 beforeEach(() => {
-  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set(), generating: new Set() })
+  useCanvasStore.setState({ nodes: [], edges: [], attention: new Set(), generating: new Set(), restartEpoch: {} })
 })
 
 describe('canvasStore', () => {
@@ -166,6 +168,72 @@ describe('canvasStore', () => {
     expect(e.className).toContain('ork-edge--chain')
   })
 
+  // Conexões T4: estilo POR ARESTA (override) — o global (setEdgeStyle) continua sendo o padrão.
+  it('setEdgeStyleFor grava data.style na aresta alvo sem tocar no global nem no kind', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const globalBefore = useCanvasStore.getState().edgeStyle
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().setEdgeStyleFor(id, 'circuito')
+    const e = useCanvasStore.getState().edges[0]
+    expect(e.data).toMatchObject({ kind: 'agent', style: 'circuito' })
+    expect(useCanvasStore.getState().edgeStyle).toBe(globalBefore) // global intocado
+  })
+
+  it('setEdgeStyleFor entra no histórico (undo desfaz o override)', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().setEdgeStyleFor(id, 'curva')
+    expect((useCanvasStore.getState().edges[0].data as { style?: string }).style).toBe('curva')
+    useCanvasStore.getState().undo()
+    expect((useCanvasStore.getState().edges[0].data as { style?: string }).style).toBeUndefined()
+  })
+
+  it('setEdgeStyleFor com id inexistente é no-op (não cria histórico nem aresta)', () => {
+    useCanvasStore.getState().addTerminalNode()
+    useCanvasStore.getState().addTerminalNode()
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const before = useCanvasStore.getState().edges
+    useCanvasStore.getState().setEdgeStyleFor('nao-existe', 'curva')
+    expect(useCanvasStore.getState().edges).toBe(before) // mesma referência
+  })
+
+  it('data.style sobrevive ao round-trip serialize→hydrate (override não some no reload)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 400, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const id = useCanvasStore.getState().edges[0].id
+    useCanvasStore.getState().setEdgeStyleFor(id, 'circuito')
+
+    // Usa o snapshot REAL produzido por serialize() (não um objeto fabricado à mão).
+    const snap = useCanvasStore.getState().serialize()
+    expect(snap.edges[0].style).toBe('circuito')
+
+    useCanvasStore.getState().hydrate({ version: 2, nodes: [], edges: [] })
+    expect(useCanvasStore.getState().edges).toHaveLength(0)
+    useCanvasStore.getState().hydrate(snap)
+    const e = useCanvasStore.getState().edges[0]
+    expect(e.data).toMatchObject({ kind: 'agent', style: 'circuito' })
+  })
+
+  it('aresta sem override não ganha style no serialize nem na hidratação', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 0, y: 0 })
+    useCanvasStore.getState().addTerminalNode({ x: 400, y: 0 })
+    const [a, b] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: a.id, target: b.id, sourceHandle: null, targetHandle: null })
+    const snap = useCanvasStore.getState().serialize()
+    expect('style' in snap.edges[0]).toBe(false)
+    useCanvasStore.getState().hydrate(snap)
+    expect((useCanvasStore.getState().edges[0].data as { style?: string }).style).toBeUndefined()
+  })
+
   it('addNoteNode adiciona um nó note com html vazio', () => {
     useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
     const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!
@@ -173,6 +241,24 @@ describe('canvasStore', () => {
     expect((n.data as { html?: string }).html).toBe('')
     expect(n.width).toBe(240)
     expect(n.height).toBe(180)
+  })
+
+  it('addNoteNode aceita html/name iniciais (T8: drop de .md do Finder vira nota preenchida)', () => {
+    useCanvasStore.getState().addNoteNode({ x: 5, y: 5 }, { html: '<h1>Plano</h1>', name: 'plano' })
+    const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!
+    expect((n.data as { html?: string }).html).toBe('<h1>Plano</h1>')
+    expect((n.data as { name?: string }).name).toBe('plano')
+  })
+
+  it('updateNoteFilePath vincula e desvincula a nota de um arquivo .md (T9)', () => {
+    useCanvasStore.getState().addNoteNode({ x: 5, y: 5 })
+    const id = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!.id
+    useCanvasStore.getState().updateNoteFilePath(id, '/proj/plano.md')
+    let d = useCanvasStore.getState().nodes.find((x) => x.id === id)!.data as { filePath?: string }
+    expect(d.filePath).toBe('/proj/plano.md')
+    useCanvasStore.getState().updateNoteFilePath(id, undefined)
+    d = useCanvasStore.getState().nodes.find((x) => x.id === id)!.data as { filePath?: string }
+    expect(d.filePath).toBeUndefined()
   })
 
   it('updateNoteContent (legado/migração) ainda seta o content', () => {
@@ -279,6 +365,125 @@ describe('canvasStore', () => {
     expect(nodes[1].position).not.toEqual({ x: 80, y: 80 })
     // Posição deve seguir a fórmula: 80 + (length % 8) * 40 (múltiplo de 20 = alinhado ao grid)
     expect(nodes[1].position).toEqual({ x: 80 + 40, y: 80 + 40 })
+  })
+
+  // T3 (#6): recruit posiciona ABAIXO do Maestro e auto-conecta. recruitBelow cria o terminal,
+  // posiciona abaixo (offset horizontal por nº de filhos já ligados), cria a edge agent
+  // Maestro→recruta e devolve o id do novo nó.
+  it('recruitBelow posiciona o recruta ABAIXO do Maestro, cria edge agent e devolve o id', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 100 }, { name: 'Maestro' })
+    const maestro = useCanvasStore.getState().nodes[0]
+    const id = useCanvasStore.getState().recruitBelow(maestro.id, { name: 'Dev', preset: 'claude' })
+    const state = useCanvasStore.getState()
+    const recruit = state.nodes.find((n) => n.id === id)!
+    expect(recruit).toBeTruthy()
+    // (a) abaixo (y maior) e x alinhado ao Maestro
+    expect(recruit.position.y).toBeGreaterThan(maestro.position.y)
+    expect(recruit.position.x).toBe(maestro.position.x)
+    // (b) edge Maestro → recruta com kind agent
+    const edge = state.edges.find((e) => e.source === maestro.id && e.target === id)!
+    expect(edge).toBeTruthy()
+    expect(edge.data).toMatchObject({ kind: 'agent' })
+    // (c) devolve o id, e o recruta herda name/preset e nasce com autostart (auto-inicia o agente)
+    expect(typeof id).toBe('string')
+    expect((recruit.data as { name?: string }).name).toBe('Dev')
+    expect((recruit.data as { preset?: string }).preset).toBe('claude')
+    expect((recruit.data as { autostart?: boolean }).autostart).toBe(true)
+  })
+
+  it('recrutas sucessivos do mesmo Maestro não empilham (espaçados horizontalmente)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 100, y: 100 }, { name: 'Maestro' })
+    const maestro = useCanvasStore.getState().nodes[0]
+    const id1 = useCanvasStore.getState().recruitBelow(maestro.id, { name: 'Dev' })
+    const id2 = useCanvasStore.getState().recruitBelow(maestro.id, { name: 'Rev' })
+    const state = useCanvasStore.getState()
+    const r1 = state.nodes.find((n) => n.id === id1)!
+    const r2 = state.nodes.find((n) => n.id === id2)!
+    expect(r2.position.x).toBeGreaterThan(r1.position.x) // segundo recruta desloca para o lado
+    expect(state.edges.filter((e) => e.source === maestro.id)).toHaveLength(2)
+  })
+
+  // T7 (reassign): reatribuir troca SÓ o papel — posição, nome e conexões do nó ficam intactos.
+  // É a semântica que separa reassign de "dispensar e recrutar de novo".
+  it('reatribuir (updateTerminalRole) troca o papel preservando position, name e edges', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 }, { name: 'Dev', role: 'Dev', preset: 'claude' })
+    useCanvasStore.getState().addNoteNode({ x: 200, y: 6 })
+    const [dev, nota] = useCanvasStore.getState().nodes
+    useCanvasStore.getState().onConnect({ source: dev.id, target: nota.id, sourceHandle: null, targetHandle: null })
+    const edgesAntes = useCanvasStore.getState().edges.length
+
+    useCanvasStore.getState().updateTerminalRole(dev.id, 'Revisor')
+
+    const state = useCanvasStore.getState()
+    const depois = state.nodes.find((n) => n.id === dev.id)!
+    expect((depois.data as { role?: string }).role).toBe('Revisor')
+    expect(depois.position).toEqual({ x: 5, y: 6 }) // não moveu
+    expect((depois.data as { name?: string }).name).toBe('Dev') // não renomeou
+    expect((depois.data as { preset?: string }).preset).toBe('claude')
+    expect(state.edges).toHaveLength(edgesAntes) // não desconectou
+    expect(state.edges[0].source).toBe(dev.id)
+    expect(state.edges[0].target).toBe(nota.id)
+  })
+
+  // T7: o RESTART do processo. Não há como exercitar o pty em jsdom (window.orkestra não existe —
+  // por isso o optional chaining no store), mas o epoch é o sinal OBSERVÁVEL que faz o
+  // TerminalFlowNode remontar o TerminalNode via `key` (mesmo mecanismo do reconnect de SSH). Aqui
+  // provamos que o epoch sobe e que NADA do nó (papel/posição/edges) é tocado por ele.
+  it('restartTerminal bumpa o epoch de remount do nó sem tocar em nada do nó', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 }, { name: 'Dev', role: 'Revisor' })
+    const dev = useCanvasStore.getState().nodes[0]
+    expect(useCanvasStore.getState().restartEpoch[dev.id] ?? 0).toBe(0)
+
+    useCanvasStore.getState().restartTerminal(dev.id)
+    expect(useCanvasStore.getState().restartEpoch[dev.id]).toBe(1)
+
+    useCanvasStore.getState().restartTerminal(dev.id)
+    expect(useCanvasStore.getState().restartEpoch[dev.id]).toBe(2)
+
+    const depois = useCanvasStore.getState().nodes[0]
+    expect(depois.position).toEqual({ x: 5, y: 6 })
+    expect((depois.data as { role?: string }).role).toBe('Revisor')
+  })
+
+  it('restartTerminal em id inexistente é no-op (não cria epoch nem quebra)', () => {
+    useCanvasStore.getState().restartTerminal('nao-existe')
+    expect(useCanvasStore.getState().restartEpoch['nao-existe']).toBeUndefined()
+  })
+
+  // O epoch é EFÊMERO (como attention/generating): reiniciar um agente não pode sujar o snapshot
+  // salvo nem o histórico de undo.
+  it('restartEpoch não entra no serialize (efêmero)', () => {
+    useCanvasStore.getState().addTerminalNode({ x: 5, y: 6 }, { name: 'Dev' })
+    const dev = useCanvasStore.getState().nodes[0]
+    useCanvasStore.getState().restartTerminal(dev.id)
+    const snap = useCanvasStore.getState().serialize()
+    expect(snap).not.toHaveProperty('restartEpoch')
+    expect(snap.nodes[0].data).not.toHaveProperty('restartEpoch')
+  })
+
+  it('recruitBelow com fromId inexistente cai na cascata (sem edge, sem quebrar) e devolve id', () => {
+    const id = useCanvasStore.getState().recruitBelow('nao-existe', { name: 'Solto' })
+    const state = useCanvasStore.getState()
+    const recruit = state.nodes.find((n) => n.id === id)!
+    expect(recruit).toBeTruthy()
+    expect(state.edges).toHaveLength(0)
+    expect((recruit.data as { name?: string }).name).toBe('Solto')
+  })
+
+  // T5: Modo Maestro como toggle por terminal (data.maestro) — espelha o precedente data.monitor
+  // (mesmo caminho modal→store→serialize→mirror), por isso é de baixo risco.
+  it('addTerminalNode com maestro:true grava data.maestro e serialize preserva (round-trip)', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { maestro: true })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { maestro?: boolean }).maestro).toBe(true)
+    const snap = useCanvasStore.getState().serialize()
+    expect((snap.nodes.at(-1)!.data as { maestro?: boolean }).maestro).toBe(true)
+  })
+
+  it('addTerminalNode sem maestro nasce comum (data.maestro false, como monitor default)', () => {
+    useCanvasStore.getState().addTerminalNode(undefined, { preset: 'claude' })
+    const n = useCanvasStore.getState().nodes.at(-1)!
+    expect((n.data as { maestro?: boolean }).maestro).toBe(false)
   })
 
   it('addPortalNode cria um nó tipo portal com data.url e data.name "Portal N"', () => {
@@ -884,6 +1089,41 @@ describe('canvasStore', () => {
   })
 })
 
+// T5: o espelho enviado ao main precisa carregar data.maestro (para o gating server-side de T6
+// saber quem é Maestro). buildMirror é o builder puro extraído do useEffect do useOrchestrationSync.
+describe('buildMirror (espelho do canvas p/ o main)', () => {
+  it('inclui data.maestro no MirrorNode do terminal', () => {
+    const nodes = [
+      { id: 't1', type: 'terminal', position: { x: 0, y: 0 }, data: { name: 'M', preset: 'claude', maestro: true } }
+    ] as unknown as Node[]
+    const mirror = buildMirror(nodes, [])
+    expect(mirror.nodes[0].maestro).toBe(true)
+    expect(mirror.nodes[0].preset).toBe('claude')
+  })
+  it('terminal sem maestro → MirrorNode.maestro undefined (comum)', () => {
+    const nodes = [{ id: 't1', type: 'terminal', position: { x: 0, y: 0 }, data: { name: 'M' } }] as unknown as Node[]
+    const mirror = buildMirror(nodes, [])
+    expect(mirror.nodes[0].maestro).toBeUndefined()
+  })
+})
+
+// T4: recruit herda o preset do Maestro quando omitido ("cópia de si mesmo"); preset explícito
+// vence; from desconhecido cai no default seguro. Helper puro (sem servidor/DOM).
+describe('resolveRecruitPreset (herança de preset do Maestro — T4)', () => {
+  const mirror = { nodes: [{ id: 't1', type: 'terminal', name: 'M', preset: 'claude' }], edges: [] }
+  it('preset omitido herda o preset do Maestro (from)', () => {
+    expect(resolveRecruitPreset(mirror, 't1', '')).toBe('claude')
+    expect(resolveRecruitPreset(mirror, 't1', undefined)).toBe('claude')
+  })
+  it('preset explícito vence a herança', () => {
+    expect(resolveRecruitPreset(mirror, 't1', 'codex')).toBe('codex')
+  })
+  it('from desconhecido/ausente → default seguro shell', () => {
+    expect(resolveRecruitPreset(mirror, 'nao-existe', '')).toBe('shell')
+    expect(resolveRecruitPreset(mirror, undefined, undefined)).toBe('shell')
+  })
+})
+
 describe('sidebarCollapsed', () => {
   it('toggleSidebar inverte o valor e setSidebarCollapsed fixa', () => {
     const store = useCanvasStore.getState()
@@ -976,6 +1216,30 @@ describe('nó de arquivo', () => {
     expect(n.type).toBe('file')
     expect((n.data as { path?: string }).path).toBe('/a/b/nota.md')
     expect((n.data as { name?: string }).name).toBe('nota.md')
+  })
+
+  // T6 (arrastar árvore → canvas): o nó nasce na posição do drop e o `path` precisa sobreviver
+  // ao round-trip serialize→hydrate — um FileNode reidratado sem data.path renderiza vazio (o
+  // FileNode só chama filetree.read se tiver d.path). serialize é genérico sobre `data`, mas o
+  // teste trava a regressão: basta alguém entrar na lista de `delete rest.*` para o clip morrer.
+  it('addFileNode respeita a posição pedida (o ponto do drop, sem cascata)', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addFileNode({ x: 317, y: 42 }, { path: '/a/b.ts' })
+    expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 317, y: 42 })
+  })
+
+  it('o path do FileNode sobrevive ao round-trip serialize → hydrate', () => {
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().addFileNode({ x: 10, y: 20 }, { path: '/proj/src/main.ts' })
+    const snapshot = useCanvasStore.getState().serialize()
+    expect(snapshot.nodes[0].data).toMatchObject({ path: '/proj/src/main.ts', name: 'main.ts' })
+
+    useCanvasStore.setState({ nodes: [], edges: [], past: [], lastCommitTag: null })
+    useCanvasStore.getState().hydrate(snapshot, 'p1')
+    const n = useCanvasStore.getState().nodes[0]
+    expect(n.type).toBe('file')
+    expect((n.data as { path?: string }).path).toBe('/proj/src/main.ts')
+    expect(n.position).toEqual({ x: 10, y: 20 })
   })
 })
 
@@ -1423,5 +1687,83 @@ describe('undo mata pty e hydrate filtra edges órfãs', () => {
     })
     const edges = useCanvasStore.getState().edges
     expect(edges.map((e) => e.id)).toEqual(['e-ok']) // a órfã foi descartada
+  })
+})
+
+describe('nome de nota/grupo e auto-dissolver (Notas #10 / Canvas #12)', () => {
+  it('updateNoteName grava data.name; string vazia volta ao automático', () => {
+    useCanvasStore.getState().addNoteNode()
+    const id = useCanvasStore.getState().nodes[0].id
+    useCanvasStore.getState().updateNoteName(id, 'Roadmap')
+    expect(useCanvasStore.getState().nodes[0].data.name).toBe('Roadmap')
+    useCanvasStore.getState().updateNoteName(id, '')
+    expect(useCanvasStore.getState().nodes[0].data.name).toBe('')
+  })
+
+  it('updateGroupName grava data.name no grupo', () => {
+    useCanvasStore.setState({
+      nodes: [{ id: 'g', type: 'group', position: { x: 0, y: 0 }, data: {} }] as Node[]
+    })
+    useCanvasStore.getState().updateGroupName('g', 'Backend')
+    expect(useCanvasStore.getState().nodes[0].data.name).toBe('Backend')
+  })
+
+  it('removeNode auto-dissolve o grupo que ficou com 1 filho (Canvas #12 T3)', () => {
+    useCanvasStore.setState({
+      nodes: [
+        { id: 'g', type: 'group', position: { x: 100, y: 100 }, data: {} },
+        { id: 'a', type: 'note', position: { x: 10, y: 20 }, parentId: 'g', extent: 'parent', data: {} },
+        { id: 'b', type: 'note', position: { x: 30, y: 40 }, parentId: 'g', extent: 'parent', data: {} }
+      ] as Node[]
+    })
+    useCanvasStore.getState().removeNode('a')
+    const nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeUndefined()
+    const b = nodes.find((n) => n.id === 'b')!
+    expect(b.parentId).toBeUndefined()
+    expect(b.position).toEqual({ x: 130, y: 140 })
+  })
+
+  it('onNodesChange remove auto-dissolve o grupo que ficou com 1 filho (Canvas #12 T3 — Delete/Backspace)', () => {
+    useCanvasStore.setState({
+      nodes: [
+        { id: 'g', type: 'group', position: { x: 100, y: 100 }, data: {} },
+        { id: 'a', type: 'note', position: { x: 10, y: 20 }, parentId: 'g', extent: 'parent', data: {} },
+        { id: 'b', type: 'note', position: { x: 30, y: 40 }, parentId: 'g', extent: 'parent', data: {} }
+      ] as Node[]
+    })
+    useCanvasStore.getState().onNodesChange([{ id: 'a', type: 'remove' }])
+    const nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeUndefined()
+    const b = nodes.find((n) => n.id === 'b')!
+    expect(b.parentId).toBeUndefined()
+    expect(b.extent).toBeUndefined()
+    expect(b.position).toEqual({ x: 130, y: 140 })
+  })
+
+  it('onNodesChange sem change de remove NÃO dissolve grupo magro preexistente', () => {
+    useCanvasStore.setState({
+      nodes: [
+        { id: 'g', type: 'group', position: { x: 100, y: 100 }, data: {} },
+        { id: 'a', type: 'note', position: { x: 10, y: 20 }, parentId: 'g', extent: 'parent', data: {} }
+      ] as Node[]
+    })
+    useCanvasStore
+      .getState()
+      .onNodesChange([{ id: 'a', type: 'position', position: { x: 15, y: 25 } }])
+    let nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeDefined()
+    expect(nodes.find((n) => n.id === 'a')!.parentId).toBe('g')
+
+    useCanvasStore.getState().onNodesChange([{ id: 'a', type: 'select', selected: true }])
+    nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeDefined()
+
+    useCanvasStore
+      .getState()
+      .onNodesChange([{ id: 'g', type: 'dimensions', dimensions: { width: 200, height: 200 } }])
+    nodes = useCanvasStore.getState().nodes
+    expect(nodes.find((n) => n.id === 'g')).toBeDefined()
+    expect(nodes.find((n) => n.id === 'a')!.parentId).toBe('g')
   })
 })

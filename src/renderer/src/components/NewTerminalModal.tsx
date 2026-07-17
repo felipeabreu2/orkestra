@@ -1,12 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type JSX } from 'react'
 import { PRESETS, presetById } from '../../../shared/presets'
 import { PRESET_ROLES } from '../../../shared/roles'
+import type { RoleSidecar } from '../../../shared/roleSidecar'
 import { useCanvasStore } from '../store/canvasStore'
 import { Icon } from './Icon'
+import { RoleDiscoveryModal } from './RoleDiscoveryModal'
 import './NewTerminalModal.css'
 
-/** Ícone animado de cada preset — mapeia o id para um ícone do Lucide (nada de logotipos de
- * terceiros). Preset desconhecido cai no genérico "Bot". */
+/** Ícone de cada preset — mapeia o id para um ícone do Lucide (nada de logotipos de terceiros).
+ * Preset desconhecido cai no genérico "Bot". */
 function PresetIcon({ id }: { id: string }): JSX.Element {
   const name =
     id === 'shell'
@@ -21,11 +23,19 @@ function PresetIcon({ id }: { id: string }): JSX.Element {
   return <Icon name={name} size={22} animation="pop" />
 }
 
-// Papel = segmented deslizante (overlays §4.6/§6 "indicador deslizante"): mesma receita do thumb
-// azul da Topbar (Topbar.tsx `toolRefs`/`thumb`) — mede o botão ATIVO via ref e reposiciona um
-// pill absoluto por trás dele com `transform`+`--spring`. "Sem papel" entra como uma opção normal
-// (chave ROLE_NONE_KEY); as demais usam o `id` de PRESET_ROLES.
-const ROLE_NONE_KEY = 'none'
+// Opção de papel normalizada para a grade de chips (Aparência). `value` é o que grava em data.role
+// ('' = sem papel); `color` alimenta o dot e o tint do chip selecionado (via --role-color); `hint` é
+// a explicação de uma linha mostrada abaixo da grade. Papéis IMPORTADOS (T5) entram como chips iguais
+// aos presets — o `prompt` deles vive no registro do usuário e é resolvido no spawn (main), não aqui.
+type RoleChoice = { key: string; label: string; value: string; color: string; hint: string }
+
+const NONE_ROLE: RoleChoice = {
+  key: 'none',
+  label: 'Sem papel',
+  value: '',
+  color: 'var(--accent)',
+  hint: 'O terminal começa sem um papel definido.'
+}
 
 export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Element {
   const addTerminalNode = useCanvasStore((s) => s.addTerminalNode)
@@ -34,12 +44,27 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
   const [nameEdited, setNameEdited] = useState(false)
   const [tab, setTab] = useState<'details' | 'appearance'>('details')
   const [monitor, setMonitor] = useState(true)
+  const [maestro, setMaestro] = useState(false)
   const [role, setRole] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
+  // T5: papéis IMPORTADOS (registro ~/.orkestra/roles.json) entram na grade ao lado dos presets.
+  const [imported, setImported] = useState<RoleSidecar[]>([])
+  const [discovering, setDiscovering] = useState(false)
 
   useEffect(() => {
     nameRef.current?.focus()
     nameRef.current?.select()
+  }, [])
+
+  // Carrega o registro ao abrir (best-effort no main; falhar só significa grade sem importados).
+  useEffect(() => {
+    let alive = true
+    void window.orkestra.roles.discover().then((res) => {
+      if (alive) setImported(res.imported)
+    })
+    return () => {
+      alive = false
+    }
   }, [])
 
   const selectPreset = (id: string): void => {
@@ -54,24 +79,26 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
       preset,
       name: name.trim() || (presetById(preset)?.label ?? 'Terminal'),
       monitor,
+      maestro,
       role: role || undefined
     })
     onClose()
   }
 
-  // Thumb deslizante do segmented "Papel" — mesma mecânica do .ork-topbar-thumb (Topbar.tsx):
-  // mede offsetLeft/offsetWidth do botão ativo via ref e anima com transform+width (GPU, --spring).
-  // Remedida sempre que o papel ativo muda OU a aba "Aparência" (que monta os botões) reabre, já
-  // que a árvore desmonta enquanto a aba "Detalhes" está em foco.
-  const roleRefs = useRef<Record<string, HTMLButtonElement | null>>({})
-  const [roleThumb, setRoleThumb] = useState<{ left: number; width: number } | null>(null)
-  const activeRoleKey = role === '' ? ROLE_NONE_KEY : (PRESET_ROLES.find((r) => r.label === role)?.id ?? ROLE_NONE_KEY)
-
-  useLayoutEffect(() => {
-    if (tab !== 'appearance') return
-    const el = roleRefs.current[activeRoleKey]
-    if (el) setRoleThumb({ left: el.offsetLeft, width: el.offsetWidth })
-  }, [activeRoleKey, tab])
+  // Grade de papéis (Aparência): "Sem papel" + presets + importados, todos VISÍVEIS (quebram linha),
+  // no lugar do antigo segmented de largura fixa que cortava opções com 6+ papéis.
+  const roleChoices: RoleChoice[] = [
+    NONE_ROLE,
+    ...PRESET_ROLES.map((r) => ({ key: r.id, label: r.label, value: r.label, color: r.color, hint: r.hint })),
+    ...imported.map((r) => ({
+      key: `imp:${r.name.trim().toLowerCase()}`,
+      label: r.name,
+      value: r.name,
+      color: r.color,
+      hint: r.prompt
+    }))
+  ]
+  const selectedRole = roleChoices.find((c) => c.value === role) ?? NONE_ROLE
 
   return (
     <div className="ork-modal-backdrop" onClick={onClose}>
@@ -88,9 +115,6 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
         aria-modal="true"
         aria-label="Novo Terminal"
       >
-        {/* Header (overlays §4.6): ícone-marca (--gradient-brand) + título + fechar, hairline
-            própria encostada nas bordas do card — mesma estrutura do .mod-h do mockup
-            (docs/design-system/mockups/orkestra-overlays.html). */}
         <div className="ork-newterm-head">
           <span className="ork-newterm-head-icon" aria-hidden="true">
             <Icon name="SquareTerminal" size={14} animation="none" />
@@ -108,6 +132,7 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
               <button
                 key={p.id}
                 type="button"
+                aria-pressed={preset === p.id}
                 className={`ork-newterm-preset${preset === p.id ? ' ork-newterm-preset--active' : ''}`}
                 onClick={() => selectPreset(p.id)}
               >
@@ -119,9 +144,11 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
 
           <div className="ork-newterm-divider" />
 
-          <div className="ork-newterm-tabs">
+          <div className="ork-newterm-tabs" role="tablist" aria-label="Configuração do terminal">
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'details'}
               className={`ork-newterm-tab${tab === 'details' ? ' ork-newterm-tab--active' : ''}`}
               onClick={() => setTab('details')}
             >
@@ -129,6 +156,8 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'appearance'}
               className={`ork-newterm-tab${tab === 'appearance' ? ' ork-newterm-tab--active' : ''}`}
               onClick={() => setTab('appearance')}
             >
@@ -137,10 +166,8 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
           </div>
 
           {tab === 'details' ? (
-            <div className="ork-newterm-body">
+            <div className="ork-newterm-body" key="details">
               <span className="ork-newterm-field-label">Nome</span>
-              {/* Anel de foco (overlays §4.6/§6): :focus troca a borda pro accent e acrescenta
-                  --ring-focus (halo), com --spring na transição do box-shadow. */}
               <input
                 ref={nameRef}
                 className="ork-newterm-name"
@@ -156,62 +183,81 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
                 <span className="ork-newterm-field-label">Comando</span>
                 <span className="ork-newterm-field-value">{command ?? 'shell (sem comando)'}</span>
               </div>
-              <label className="ork-newterm-check">
-                <input type="checkbox" checked={monitor} onChange={(e) => setMonitor(e.target.checked)} />
-                <span>Monitorar atividade</span>
-                <span
-                  className="ork-newterm-info"
-                  title="Mostra um indicador quando o agente fica ocioso e envia uma notificação do sistema se a janela não estiver em foco."
-                  aria-hidden="true"
-                >
-                  <Icon name="Info" size={13} animation="none" />
-                </span>
-              </label>
+
+              <div className="ork-newterm-divider ork-newterm-divider--tight" />
+
+              <div className="ork-newterm-options">
+                <label className="ork-newterm-option">
+                  <input
+                    type="checkbox"
+                    checked={monitor}
+                    onChange={(e) => setMonitor(e.target.checked)}
+                    aria-describedby="opt-monitor-desc"
+                  />
+                  <span className="ork-newterm-option-text">
+                    <span className="ork-newterm-option-title">Monitorar atividade</span>
+                    <span className="ork-newterm-option-desc" id="opt-monitor-desc">
+                      Sinaliza quando o agente fica ocioso e notifica se a janela não estiver em foco.
+                    </span>
+                  </span>
+                </label>
+                <label className="ork-newterm-option">
+                  <input
+                    type="checkbox"
+                    checked={maestro}
+                    onChange={(e) => setMaestro(e.target.checked)}
+                    aria-describedby="opt-maestro-desc"
+                  />
+                  <span className="ork-newterm-option-text">
+                    <span className="ork-newterm-option-title">Maestro</span>
+                    <span className="ork-newterm-option-desc" id="opt-maestro-desc">
+                      Concede os verbos de gerência — recrutar, conectar, reatribuir e dispensar terminais.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           ) : (
-            <div className="ork-newterm-body">
-              <div className="ork-newterm-field-label">Papel (opcional)</div>
-              {/* Segmented deslizante (overlays §4.6/§6): thumb medido via ref, mesma receita do
-                  .ork-topbar-thumb (Topbar.tsx). */}
-              <div className="ork-newterm-seg">
-                {roleThumb && (
-                  <span
-                    className="ork-newterm-seg-thumb"
-                    aria-hidden="true"
-                    style={{ transform: `translateX(${roleThumb.left}px)`, width: `${roleThumb.width}px` }}
-                  />
-                )}
-                <button
-                  type="button"
-                  ref={(el) => {
-                    roleRefs.current[ROLE_NONE_KEY] = el
-                  }}
-                  className={`ork-newterm-seg-item${role === '' ? ' ork-newterm-seg-item--active' : ''}`}
-                  onClick={() => setRole('')}
-                >
-                  <span className="ork-newterm-seg-dot" style={{ background: 'var(--text-3)' }} aria-hidden="true" />
-                  Sem papel
-                </button>
-                {PRESET_ROLES.map((r) => {
-                  const active = role === r.label
+            <div className="ork-newterm-body" key="appearance">
+              <span className="ork-newterm-field-label" id="role-grid-label">
+                Papel (opcional)
+              </span>
+              {/* Grade de chips que QUEBRA LINHA — todos os papéis visíveis (sem scroll horizontal). */}
+              <div className="ork-newterm-roles" role="radiogroup" aria-labelledby="role-grid-label">
+                {roleChoices.map((c) => {
+                  const active = c.value === role
                   return (
                     <button
-                      key={r.id}
+                      key={c.key}
                       type="button"
-                      ref={(el) => {
-                        roleRefs.current[r.id] = el
-                      }}
-                      className={`ork-newterm-seg-item${active ? ' ork-newterm-seg-item--active' : ''}`}
-                      style={active ? { color: r.color } : undefined}
-                      onClick={() => setRole(r.label)}
-                      title={r.hint}
+                      role="radio"
+                      aria-checked={active}
+                      className={`ork-newterm-role${active ? ' ork-newterm-role--active' : ''}`}
+                      style={{ '--role-color': c.color } as CSSProperties}
+                      onClick={() => setRole(c.value)}
                     >
-                      <span className="ork-newterm-seg-dot" style={{ background: r.color }} aria-hidden="true" />
-                      {r.label}
+                      <span
+                        className="ork-newterm-role-dot"
+                        style={{ background: c.value === '' && !active ? 'var(--text-3)' : c.color }}
+                        aria-hidden="true"
+                      />
+                      {c.label}
                     </button>
                   )
                 })}
               </div>
+              {/* Dica do papel selecionado, inline (substitui o tooltip nativo lento do segmented). */}
+              <p className="ork-newterm-role-hint">{selectedRole.hint}</p>
+              {/* T5 — porta de entrada da descoberta: varre os sidecars e importa papéis escolhidos,
+                  que voltam já na grade acima. */}
+              <button
+                type="button"
+                className="ork-btn ork-btn--ghost ork-newterm-discover"
+                onClick={() => setDiscovering(true)}
+              >
+                <Icon name="Search" size={14} animation="none" />
+                Descobrir Responsabilidades
+              </button>
             </div>
           )}
         </div>
@@ -226,6 +272,11 @@ export function NewTerminalModal({ onClose }: { onClose: () => void }): JSX.Elem
           </button>
         </div>
       </div>
+      {/* T5 — IRMÃO do card, não filho: o card tem backdrop-filter (bloco de contenção p/ position:fixed).
+          Fica dentro do backdrop e depois do card no DOM, então empilha por cima. */}
+      {discovering && (
+        <RoleDiscoveryModal onClose={() => setDiscovering(false)} onImported={(next) => setImported(next)} />
+      )}
     </div>
   )
 }

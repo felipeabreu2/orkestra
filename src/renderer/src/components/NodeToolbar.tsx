@@ -3,17 +3,16 @@ import type { Node } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { Icon } from './Icon'
 import { NoteFormatBar } from './NoteFormatBar'
+import { ConnectionsPopover } from './ConnectionsPopover'
 
 // Barra de ações que abre abaixo da barra superior quando UM nó está selecionado (F04/F05,
 // imagem 4/5). Reusa o visual .ork-toolbar (fundo/borda/sombra/fade-in) com a âncora top-center
 // da .ork-arrange-toolbar. Terminal ganha "renomear"; todos os tipos têm ligações/reverter/apagar.
 export function NodeToolbar({ node }: { node: Node }): JSX.Element {
-  const edges = useCanvasStore((s) => s.edges)
   const removeNode = useCanvasStore((s) => s.removeNode)
   const undo = useCanvasStore((s) => s.undo)
   const canUndo = useCanvasStore((s) => s.past.length > 0)
 
-  const linkCount = edges.filter((e) => e.source === node.id || e.target === node.id).length
   const isTerminal = node.type === 'terminal'
   const isNote = node.type === 'note'
 
@@ -39,14 +38,7 @@ export function NodeToolbar({ node }: { node: Node }): JSX.Element {
           <Icon name="Pencil" size={16} animation="wiggle" />
         </button>
       )}
-      <span
-        className="ork-node-toolbar-links"
-        title={`${linkCount} conexão(ões) neste nó`}
-        aria-label={`${linkCount} conexões`}
-      >
-        <Icon name="GitBranch" size={16} animation="none" />
-        <span className="ork-node-toolbar-badge">{linkCount}</span>
-      </span>
+      <ConnectionsPopover nodeId={node.id} />
       <button
         className="ork-toolbar-btn ork-node-toolbar-icon"
         onClick={() => undo()}

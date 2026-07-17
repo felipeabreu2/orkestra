@@ -1,6 +1,14 @@
 import { createServer, type Server } from 'http'
 import { randomBytes, timingSafeEqual } from 'crypto'
-import type { CanvasMirror, OrchestrationCommand, PortalState } from '../../shared/orchestration'
+import type {
+  CanvasMirror,
+  OrchestrationCommand,
+  PortalActionResult,
+  PortalState
+} from '../../shared/orchestration'
+import { resolveContextNodes, formatContextBlocks } from '../../shared/contextResolver'
+import { serializeRoleSidecar } from '../../shared/roleSidecar'
+import { applyRoleEdit, resolveRoleSidecar } from '../../shared/roleEdit'
 
 // Fase 14 (Task 3): cap de tamanho do corpo dos POSTs — payloads acima disso respondem 413
 // antes de terminar de acumular (ver readJsonBody). 1 MB é folgado para os payloads reais
@@ -33,6 +41,55 @@ interface Opts {
   askRaw?: (name: string, data: string) => { ok: boolean; error?: string }
   check?: (name: string) => { output: string } | null
   getPortalState?: (name: string) => PortalState | null
+  // T1 (round-trip do booleano de portal click/fill): variante ASSÍNCRONA de emit para as ações
+  // que confirmam sucesso. A ponte main->renderer é unidirecional, então o main relaya o comando
+  // com um requestId e só resolve esta promise quando o renderer devolve o booleano (IPC
+  // portal:result); um timeout interno garante que ela sempre resolve. `null` = não havia renderer
+  // vivo para receber (mesma semântica BLD-6 do onCommand → 503). Ausente (fakes de teste antigos,
+  // orq legado) → o servidor cai no emit síncrono de sempre (fallback retrocompatível).
+  runPortalAction?: (cmd: OrchestrationCommand) => Promise<PortalActionResult | null>
+  // T8 (console do portal): linhas bufferizadas pelo main (ring-buffer alimentado pelo IPC
+  // portal:console do renderer). null/vazio → 404 na rota (sem logs não é erro do servidor).
+  // Ausente (fakes antigos) → mesma degradação 404 de getPortalState.
+  getPortalConsole?: (name: string) => string[] | null
+  // T4 (orq role): I/O do sidecar `role.json` do nó (~/.orkestra/agents/<nodeId>/role.json),
+  // INJETADO — este servidor não faz fs, e assim as rotas /role são testáveis sem tocar no disco
+  // do usuário. `readRoleSidecar` devolve o conteúdo cru (null = sem arquivo/ilegível — as rotas
+  // caem no papel do espelho via resolveRoleSidecar); `writeRoleSidecar` devolve se gravou
+  // (false → 500, o agente não pode receber "ok" por algo que não foi gravado). Ausentes (fakes
+  // antigos) → 404, mesma degradação de ask/check.
+  readRoleSidecar?: (nodeId: string) => string | null
+  writeRoleSidecar?: (nodeId: string, json: string) => boolean
+}
+
+// T6 (gating do Modo Maestro): um nó só pode recrutar/conectar/dispensar se for um Maestro. Fail-open
+// deliberado (mesma filosofia do escopo de projeto): sem `from` (orq legado/externo) ou nó desconhecido
+// no espelho → permite; só BLOQUEIA quando o nó existe e está EXPLICITAMENTE marcado maestro:false
+// (terminal comum criado pelo modal com o toggle desligado). data.maestro undefined (legado) = permitido.
+export function isMaestro(mirror: CanvasMirror, fromId: string | undefined): boolean {
+  if (!fromId) return true
+  const node = mirror.nodes.find((n) => n.id === fromId)
+  return !node || node.maestro !== false
+}
+
+// T4c (2026-07-16) — quem pode ESCREVER o `role.json` de um terminal.
+//
+// A T4 dispensou o gating do /role com uma premissa que a T4b derrubou: o sidecar era metadado
+// INERTE, então "o raio de dano é um arquivo". Depois da T4b ele virou a FONTE DO PROMPT EFETIVO no
+// spawn — escrever o role.json de um colega passou a ser escolher as instruções com que ele arranca.
+// Como o alvo do `role write/edit` é por NOME, qualquer recruta comum podia fazer isso: escalação de
+// privilégio num canvas multi-agente.
+//
+// Regra: auto-refino (callerId === targetId) é SEMPRE livre, Maestro ou não — é o caso de uso central
+// da T4 e não pode regredir. Escrever em TERCEIRO é verbo de gerência: exige maestro:true, e por isso
+// delega ao isMaestro (incluindo o fail-open dele para nó legado/desconhecido — decisão consciente,
+// fixada em testes; não "consertar" aqui por tabela).
+export function canWriteRole(mirror: CanvasMirror, callerId: string | undefined, targetId: string): boolean {
+  // Sem chamador (orq legado/externo, sem ORKESTRA_NODE_ID): mesmo fail-open de `from` ausente nos
+  // demais verbos — o isMaestro já decidiria assim, mas explicitar evita depender do acaso.
+  if (!callerId) return true
+  if (callerId === targetId) return true
+  return isMaestro(mirror, callerId)
 }
 
 export class OrchestrationServer {
@@ -131,6 +188,46 @@ export class OrchestrationServer {
     else res.writeHead(503).end('app unavailable')
   }
 
+  // T1: emite uma ação de portal (click/fill) que CONFIRMA sucesso e responde `{ok}` JSON. Com
+  // runPortalAction presente (produção), aguarda o round-trip do renderer: `null` = sem renderer
+  // vivo → 503 (mesma orientação BLD-6); senão 200 com o booleano da ação (o webview morto entre
+  // send e reply cai no timeout do registry → {ok:false}, resposta determinística, nunca pendura o
+  // agente). Sem runPortalAction (fakes antigos / orq legado), cai no onCommand síncrono mas
+  // responde no MESMO formato JSON — assim o orq lê o corpo de uma única forma. O `void async` aqui
+  // espelha o ramo askWait; o try/catch cobre uma runPortalAction que rejeite (transporte quebrado).
+  private emitPortalAction(cmd: OrchestrationCommand, res: import('http').ServerResponse): void {
+    if (!this.opts.runPortalAction) {
+      if (this.opts.onCommand(cmd)) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true }))
+      } else {
+        res.writeHead(503).end('app unavailable')
+      }
+      return
+    }
+    void (async () => {
+      try {
+        const result = await this.opts.runPortalAction!(cmd)
+        if (result === null) {
+          res.writeHead(503).end('app unavailable')
+          return
+        }
+        res.writeHead(200, { 'content-type': 'application/json' })
+        // T7: screenshot devolve também o caminho do PNG gravado; click/fill seguem só com o ok.
+        res.end(JSON.stringify(result.path ? { ok: result.ok, path: result.path } : { ok: result.ok }))
+      } catch {
+        res.writeHead(503).end('app unavailable')
+      }
+    })()
+  }
+
+  // T4: resolve o TERMINAL alvo do /role pelo nome no espelho (mesma regra best-effort por nome do
+  // resto do orq: nomes duplicados resolvem para o primeiro). Devolve o nó — as rotas precisam do
+  // `id` (chave do sidecar em disco) e do `role` (fallback quando não há arquivo).
+  private terminalByName(name: string): CanvasMirror['nodes'][number] | undefined {
+    return this.opts.getMirror().nodes.find((n) => n.type === 'terminal' && n.name === name)
+  }
+
   private handle(req: import('http').IncomingMessage, res: import('http').ServerResponse): void {
     if (!this.isAuthorized(req)) {
       res.writeHead(401).end('unauthorized')
@@ -164,17 +261,36 @@ export class OrchestrationServer {
     }
     if (req.method === 'POST' && req.url === '/recruit') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { name?: unknown; preset?: unknown; role?: unknown }
+        const parsed = raw as { name?: unknown; preset?: unknown; role?: unknown; from?: unknown }
+        // T4: `preset` é OPCIONAL — mesmo contrato de `role`. `orq recruit "Dev"` monta o corpo SEM
+        // o campo (JSON.stringify some com undefined); enquanto exigíamos string aqui, esse caminho
+        // morria em 400 antes de chegar ao renderer e a herança de preset (resolveRecruitPreset)
+        // era código inalcançável. Ausente → o renderer herda o preset do Maestro (`from`), com
+        // 'shell' como default seguro. Presente → segue tendo de ser string.
         if (
           typeof parsed.name !== 'string' ||
-          typeof parsed.preset !== 'string' ||
+          (parsed.preset !== undefined && typeof parsed.preset !== 'string') ||
           (parsed.role !== undefined && typeof parsed.role !== 'string')
         ) {
           res.writeHead(400).end('bad request')
           return
         }
+        // `from` (opcional, T3): id do nó do Maestro (ORKESTRA_NODE_ID) — o renderer usa para
+        // posicionar o recruta ABAIXO do Maestro e auto-conectar. Mesmo padrão retrocompatível
+        // de `/note`: ausente (orq legado) → undefined → o renderer cai na cascata.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
+          return
+        }
         this.emit(
-          { type: 'recruit', name: parsed.name, preset: parsed.preset, role: parsed.role as string | undefined },
+          {
+            type: 'recruit',
+            name: parsed.name,
+            preset: parsed.preset as string | undefined,
+            role: parsed.role as string | undefined,
+            from
+          },
           res
         )
       })
@@ -182,20 +298,102 @@ export class OrchestrationServer {
     }
     if (req.method === 'POST' && req.url === '/dismiss') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { target?: unknown }
+        const parsed = raw as { target?: unknown; from?: unknown }
         if (typeof parsed.target !== 'string') {
           res.writeHead(400).end('bad request')
+          return
+        }
+        // T6: `from` só serve ao gating — nunca vaza no comando emitido.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
           return
         }
         this.emit({ type: 'dismiss', target: parsed.target }, res)
       })
       return
     }
+    if (req.method === 'POST' && req.url === '/reassign') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; role?: unknown; from?: unknown }
+        // target e role são AMBOS obrigatórios: reatribuir sem papel não tem semântica (limpar o
+        // papel seria outro verbo), e o renderer precisa dos dois para resolver o nó e reiniciá-lo.
+        if (typeof parsed.target !== 'string' || typeof parsed.role !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        // T6: mesmo gating dos demais verbos de gerência (fail-open p/ `from` ausente/desconhecido).
+        // Ao contrário de /connect e /dismiss, o `from` VAI no comando emitido — espelha /recruit e
+        // deixa a origem da reatribuição auditável no renderer.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
+          return
+        }
+        this.emit({ type: 'reassign', target: parsed.target, role: parsed.role, from }, res)
+      })
+      return
+    }
+    // T4 (auto-refino do papel): escreve o prompt do papel do terminal alvo no sidecar. Dois modos
+    // exclusivos — {name, prompt} (substitui inteiro) ou {name, from, to} (troca UMA substring, via
+    // applyRoleEdit; `from` ausente no texto → grava o original, idempotente).
+    //
+    // ATENÇÃO ao `from` daqui: nas OUTRAS rotas `from` é o id do nó CHAMADOR (gating/posicionamento);
+    // aqui é o trecho de texto a substituir (contrato do plano, paridade com `maestri role edit`).
+    // Não reuse este corpo como referência de gating. Por isso o id do chamador chega em `caller`
+    // (T4c) e NÃO em `from`: o nome já estava tomado, com outro significado.
+    //
+    // Gating (T4c, revisão da decisão do T4 após a T4b ligar o sidecar ao spawn): auto-refino
+    // (caller === nó alvo) é livre para qualquer agente; escrever o papel de TERCEIRO exige
+    // maestro:true — ver canWriteRole. LEITURA (GET /role) segue livre, sem gating.
+    if (req.method === 'POST' && req.url === '/role') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { name?: unknown; prompt?: unknown; from?: unknown; to?: unknown; caller?: unknown }
+        const isWrite = typeof parsed.prompt === 'string'
+        const isEdit = typeof parsed.from === 'string' && typeof parsed.to === 'string'
+        // Exatamente um dos dois modos: nem nenhum (nada a fazer), nem os dois (qual vence?).
+        if (typeof parsed.name !== 'string' || isWrite === isEdit) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        const node = this.terminalByName(parsed.name)
+        if (!node || !this.opts.writeRoleSidecar) {
+          res.writeHead(404).end('not found')
+          return
+        }
+        // `caller` = ORKESTRA_NODE_ID do terminal que rodou o orq. Mesmo tratamento retrocompatível
+        // do `from` das outras rotas: ausente/não-string → undefined → fail-open. O 403 vem DEPOIS do
+        // 404 (o espelho inteiro já é legível via /list, então o 404 não vaza nada novo).
+        const caller = typeof parsed.caller === 'string' && parsed.caller !== '' ? parsed.caller : undefined
+        if (!canWriteRole(this.opts.getMirror(), caller, node.id)) {
+          res.writeHead(403).end('not a maestro')
+          return
+        }
+        const current = resolveRoleSidecar(this.opts.readRoleSidecar?.(node.id) ?? null, node)
+        // name/color do sidecar são PRESERVADOS: `role write/edit` mexe no prompt, não na identidade
+        // visual do papel (o badge do canvas continua vindo do papel do nó).
+        const prompt = isWrite
+          ? (parsed.prompt as string)
+          : applyRoleEdit(current.prompt, parsed.from as string, parsed.to as string)
+        if (!this.opts.writeRoleSidecar(node.id, serializeRoleSidecar({ ...current, prompt }))) {
+          res.writeHead(500).end('write failed')
+          return
+        }
+        res.writeHead(200).end('ok')
+      })
+      return
+    }
     if (req.method === 'POST' && req.url === '/connect') {
       this.readJsonBody(req, res, (raw) => {
-        const parsed = raw as { source?: unknown; target?: unknown }
+        const parsed = raw as { source?: unknown; target?: unknown; from?: unknown }
         if (typeof parsed.source !== 'string' || typeof parsed.target !== 'string') {
           res.writeHead(400).end('bad request')
+          return
+        }
+        // T6: `from` só serve ao gating — nunca vaza no comando emitido.
+        const from = typeof parsed.from === 'string' ? parsed.from : undefined
+        if (!isMaestro(this.opts.getMirror(), from)) {
+          res.writeHead(403).end('not a maestro')
           return
         }
         this.emit({ type: 'connect', source: parsed.source, target: parsed.target }, res)
@@ -220,7 +418,10 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.emit({ type: 'portalClick', target: parsed.target, selector: parsed.selector }, res)
+        this.emitPortalAction(
+          { type: 'portalClick', target: parsed.target, selector: parsed.selector },
+          res
+        )
       })
       return
     }
@@ -235,7 +436,7 @@ export class OrchestrationServer {
           res.writeHead(400).end('bad request')
           return
         }
-        this.emit(
+        this.emitPortalAction(
           { type: 'portalFill', target: parsed.target, selector: parsed.selector, text: parsed.text },
           res
         )
@@ -250,6 +451,76 @@ export class OrchestrationServer {
           return
         }
         this.emit({ type: 'portalEval', target: parsed.target, js: parsed.js }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/screenshot') {
+      // T7: captura de tela do portal. EXIGE o round-trip (runPortalAction): a resposta é o
+      // caminho do PNG que o main gravou, e sem o canal de volta não existe caminho a devolver —
+      // servidor legado/fake sem a opt responde 503 honesto, nunca um {ok:true} sem arquivo.
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown }
+        if (typeof parsed.target !== 'string') {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        if (!this.opts.runPortalAction) {
+          res.writeHead(503).end('screenshot indisponível (app sem round-trip de portal)')
+          return
+        }
+        this.emitPortalAction({ type: 'portalScreenshot', target: parsed.target }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/nav') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; action?: unknown }
+        // action é uma união FECHADA (enum), validada aqui: só back/forward/reload passam — sem
+        // superfície de string livre. O renderer aplica via método NATIVO do WebviewTag (T2).
+        if (
+          typeof parsed.target !== 'string' ||
+          (parsed.action !== 'back' && parsed.action !== 'forward' && parsed.action !== 'reload')
+        ) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        this.emit({ type: 'portalNavigate', target: parsed.target, action: parsed.action }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/scroll') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { target?: unknown; x?: unknown; y?: unknown }
+        // x/y devem chegar já numéricos (o orq coage no cliente); rejeitamos não-número aqui como
+        // defesa (o renderer ainda re-coage via scrollScript, barreira anti-injeção final — T3).
+        if (
+          typeof parsed.target !== 'string' ||
+          typeof parsed.x !== 'number' ||
+          typeof parsed.y !== 'number'
+        ) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        this.emit({ type: 'portalScroll', target: parsed.target, x: parsed.x, y: parsed.y }, res)
+      })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/portal/create') {
+      this.readJsonBody(req, res, (raw) => {
+        const parsed = raw as { name?: unknown; url?: unknown }
+        // name obrigatório; url opcional. A validação de ESQUEMA da url (isSafePortalUrl) fica no
+        // renderer (T5), junto do addPortalNode — mesma barreira SEC-3 do portalOpen; aqui só o
+        // contrato de tipos. url ausente → comando sem o campo (portal criado sem navegar).
+        if (typeof parsed.name !== 'string' || (parsed.url !== undefined && typeof parsed.url !== 'string')) {
+          res.writeHead(400).end('bad request')
+          return
+        }
+        this.emit(
+          typeof parsed.url === 'string'
+            ? { type: 'portalCreate', name: parsed.name, url: parsed.url }
+            : { type: 'portalCreate', name: parsed.name },
+          res
+        )
       })
       return
     }
@@ -318,6 +589,20 @@ export class OrchestrationServer {
         }
         return
       }
+      if (url.pathname === '/portal/console') {
+        // T8: linhas de console/erros bufferizadas do portal (ring-buffer alimentado pelo
+        // console-message do webview, via IPC portal:console). Vazio/desconhecido → 404, mesma
+        // degradação do /portal e do /check; servidor legado sem a opt idem.
+        const name = url.searchParams.get('name') ?? ''
+        const lines = this.opts.getPortalConsole?.(name) ?? null
+        if (lines && lines.length > 0) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ lines }))
+        } else {
+          res.writeHead(404).end('not found')
+        }
+        return
+      }
       if (url.pathname === '/portal') {
         const name = url.searchParams.get('name') ?? ''
         const result = this.opts.getPortalState?.(name) ?? null
@@ -329,27 +614,34 @@ export class OrchestrationServer {
         }
         return
       }
+      if (url.pathname === '/role') {
+        // T4: papel ATUAL do terminal alvo. Fonte: sidecar em disco → papel do nó no espelho
+        // (resolveRoleSidecar), então `role show` responde mesmo em terminal que nunca gravou
+        // arquivo (spawn anterior ao T3a). Nome desconhecido → 404, como /check.
+        const node = this.terminalByName(url.searchParams.get('name') ?? '')
+        if (!node) {
+          res.writeHead(404).end('not found')
+          return
+        }
+        const sidecar = resolveRoleSidecar(this.opts.readRoleSidecar?.(node.id) ?? null, node)
+        res.writeHead(200, { 'content-type': 'application/json' })
+        // Mesmo serializador do arquivo: a resposta é o sidecar, byte a byte no shape do contrato.
+        res.end(serializeRoleSidecar(sidecar))
+        return
+      }
       if (url.pathname === '/context') {
         // orq context: reúne o conteúdo legível de tudo (nota/arquivo/site) ligado a este terminal,
         // em QUALQUER direção. Resolvido aqui no servidor a partir do espelho — não depende do timing
         // do agente estar pronto no prompt (ao contrário da injeção via pty.write no momento da
         // ligação). `from` = ORKESTRA_NODE_ID do terminal que rodou o comando.
+        // Quick win #5: a resolução deixou de ser 1-salto (vizinhos diretos) e passou a atravessar
+        // a cadeia de NOTAS transitivamente (BFS com guarda anti-ciclo e maxDepth). A regra pura
+        // vive em ../../shared/contextResolver (sem HTTP/DOM); aqui só a plugamos ao espelho. O
+        // formato do bloco e o filtro de conteúdo vazio seguem idênticos (formatContextBlocks).
         const from = url.searchParams.get('from') ?? ''
-        const mirror = this.opts.getMirror()
-        const linked = new Set<string>()
-        for (const e of mirror.edges ?? []) {
-          if (e.source === from) linked.add(e.target)
-          if (e.target === from) linked.add(e.source)
-        }
-        const blocks = mirror.nodes
-          .filter((n) => linked.has(n.id) && n.type !== 'terminal' && (n.content ?? '').trim() !== '')
-          .map((n) => {
-            const label =
-              n.type === 'note' ? 'nota' : n.type === 'file' ? 'arquivo' : n.type === 'portal' ? 'site' : n.type
-            return `[contexto — ${label}: ${n.name}]\n${(n.content ?? '').trim()}`
-          })
+        const nodes = resolveContextNodes(this.opts.getMirror(), from)
         res.writeHead(200, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ context: blocks.join('\n\n') }))
+        res.end(JSON.stringify({ context: formatContextBlocks(nodes) }))
         return
       }
     }

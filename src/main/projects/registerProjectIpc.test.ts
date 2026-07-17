@@ -33,7 +33,11 @@ function fakeMgr() {
     getActive: vi.fn((): Project | undefined => fakeIndex().projects[0]),
     setCwd: vi.fn((_id: string, _cwd: string): void => {}),
     // Fase 18 (Task 4): ícone (emoji) do projeto.
-    setIcon: vi.fn((_id: string, _icon: string): void => {})
+    setIcon: vi.fn((_id: string, _icon: string): void => {}),
+    // Resiliência T6: hibernação (terminais por id explícito).
+    terminalNodeIds: vi.fn((_id: string): string[] => []),
+    // Batuta T5: leitura crua para o índice cross-projeto.
+    crossProjectCanvases: vi.fn(() => [])
   }
 }
 
@@ -165,6 +169,54 @@ describe('registerProjectIpc', () => {
 
     expect(killed).toEqual(['terminal-a', 'terminal-b'])
     expect(result).toEqual({ activeId: 'p1', snapshot: null })
+  })
+
+  // ── Resiliência · T6: hibernação de projeto ──────────────────────────────────────────────────
+  it('projects:hibernate chama onHibernate com os terminais DAQUELE id e não toca índice/ativo', async () => {
+    const mgr = fakeMgr()
+    mgr.terminalNodeIds = vi.fn((id: string) => (id === 'p2' ? ['t-b1', 't-b2'] : []))
+    const hibernated: string[] = []
+    const ipc = fakeIpcMain()
+    registerProjectIpc(
+      ipc as any,
+      mgr as unknown as ProjectManager,
+      undefined,
+      undefined,
+      undefined,
+      (ids) => hibernated.push(...ids)
+    )
+
+    await ipc.handlers.get('projects:hibernate')!({}, 'p2')
+
+    expect(mgr.terminalNodeIds).toHaveBeenCalledTimes(1)
+    expect(mgr.terminalNodeIds).toHaveBeenCalledWith('p2')
+    expect(hibernated).toEqual(['t-b1', 't-b2'])
+    // hibernar NÃO é switch nem remove: nada de mexer no índice/ativo/canvas
+    expect(mgr.switch).not.toHaveBeenCalled()
+    expect(mgr.remove).not.toHaveBeenCalled()
+    expect(mgr.saveCanvas).not.toHaveBeenCalled()
+  })
+
+  it('projects:hibernate sem onHibernate (chamador legado) é no-op seguro', async () => {
+    const mgr = fakeMgr()
+    mgr.terminalNodeIds = vi.fn(() => ['t1'])
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+    expect(() => ipc.handlers.get('projects:hibernate')!({}, 'p1')).not.toThrow()
+  })
+
+  // Batuta T5: o handler compõe crossProjectCanvases + buildCrossProjectIndex (pula o ativo).
+  it('projects:crossIndex devolve entradas dos projetos NÃO-ativos, cada uma com projectId', async () => {
+    const mgr = fakeMgr()
+    mgr.crossProjectCanvases = vi.fn(() => [
+      { project: { id: 'p1', name: 'A' }, nodes: [{ id: 't1', type: 'terminal', data: { name: 'Dev' } }] },
+      { project: { id: 'p2', name: 'B' }, nodes: [{ id: 't2', type: 'terminal', data: { name: 'Rev' } }] }
+    ])
+    mgr.list = vi.fn(() => ({ projects: [{ id: 'p1', name: 'A' }], activeId: 'p1' }))
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+    const idx = (await ipc.handlers.get('projects:crossIndex')!({})) as Array<{ projectId: string }>
+    expect(idx.map((e) => e.projectId)).toEqual(['p2']) // p1 é o ativo → pulado
   })
 
   // Fase 15 (Task 3): flush explícito por id na troca de projeto — precisa ser awaitable

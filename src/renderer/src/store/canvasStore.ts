@@ -9,11 +9,12 @@ import {
   type EdgeChange,
   type Connection
 } from '@xyflow/react'
-import type { CanvasSnapshot, PersistedNode } from '../../../shared/canvasSnapshot'
+import type { CanvasSnapshot, PersistedEdge, PersistedNode } from '../../../shared/canvasSnapshot'
 import { deriveEdgeKind, type EdgeKind } from '../edges/edgeKind'
-import { loadEdgeStyle, saveEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
+import { loadEdgeStyle, saveEdgeStyle, isEdgeStyle, type EdgeStyle } from '../edges/edgeStyle'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '../ui/sidebarCollapsed'
 import { basename } from '../ui/paths'
+import { dissolveThinGroups } from '../layout/groups'
 
 let terminalSeq = 1
 let portalSeq = 1
@@ -63,6 +64,44 @@ function persistNode(n: Node): PersistedNode {
   if (n.parentId) persisted.parentId = n.parentId
   if (n.extent === 'parent') persisted.extent = 'parent'
   return persisted
+}
+
+// Fábrica compartilhada de nó-terminal: gera o id interno e o objeto `data` completo (incluindo o
+// flag efêmero autostart, que faz o TerminalNode auto-rodar o comando do preset só na criação).
+// Extraída para T3 (#6) — addTerminalNode e recruitBelow criam o MESMO shape de nó; recruitBelow
+// precisa do id de volta para auto-conectar, então a criação vive aqui (retorna o Node) e cada
+// caller decide onde posicioná-lo e como inseri-lo no state.
+function makeTerminalNode(
+  pos: { x: number; y: number },
+  opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean; maestro?: boolean }
+): Node {
+  return {
+    id: `terminal-${crypto.randomUUID()}`,
+    type: 'terminal',
+    position: pos,
+    data: {
+      name: opts?.name ?? `Terminal ${terminalSeq++}`,
+      preset: opts?.preset ?? 'shell',
+      role: opts?.role ?? '',
+      // Fase 27 (Task 3): host remoto (ex.: "user@host") quando o nó nasce em modo SSH;
+      // undefined nos terminais locais. Deliberadamente NÃO está na lista de `delete rest.*` do
+      // serialize — precisa persistir e sobreviver ao round-trip serialize→hydrate.
+      sshHost: opts?.sshHost,
+      // Monitorar atividade (Fase 29): quando false, o indicador de atenção e a notificação do SO
+      // NÃO disparam para este terminal. Persiste (default true).
+      monitor: opts?.monitor ?? true,
+      // T5 (Modo Maestro como toggle): concede a este agente os verbos de gerência (recrutar,
+      // conectar, dispensar) — o enforcement real é server-side (T6, isMaestro sobre o espelho).
+      // Precedente idêntico ao monitor (persiste, entra no mirror). Default false (terminal comum).
+      maestro: opts?.maestro ?? false,
+      // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou de ser
+      // criado nesta sessão, para o TerminalNode auto-rodar o comando do preset apenas na criação,
+      // nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
+      autostart: true
+    },
+    width: 480,
+    height: 320
+  }
 }
 
 // Captura os nós de `ids` (grupos levam os filhos junto) + as edges cujas DUAS pontas foram
@@ -295,14 +334,33 @@ interface CanvasState {
   // atribui uma NOVA instância de Set (o zustand compara referência).
   generating: Set<string>
   setGenerating: (nodeId: string, on: boolean) => void
+  // T7 (reassign): epoch de REMOUNT por terminal. Bumpar o epoch de um id faz o TerminalFlowNode
+  // remontar seu TerminalNode (ele entra na `key`), e o TerminalNode remontado re-spawna o preset do
+  // zero — pegando o ORKESTRA_ROLE novo no env do pty (o wrapper `claude` o injeta via
+  // --append-system-prompt). Mesma mecânica do epoch de reconexão do SSH (TerminalFlowNode), mas no
+  // STORE em vez de useState local: o gatilho vem de FORA do componente (o comando reassign chega
+  // pelo useOrchestrationSync). Efêmero como attention/generating — NUNCA serializado (não entra em
+  // serialize()/hydrate() nem no histórico de undo; por isso vive aqui e não em `data` do nó).
+  restartEpoch: Record<string, number>
+  // Reinicia SÓ o processo do terminal `id`: mata o pty e bumpa o epoch (remount → re-spawn).
+  // Nada do nó é tocado — posição, nome, papel e conexões permanecem. No-op para id inexistente ou
+  // nó não-terminal.
+  restartTerminal: (id: string) => void
   addTerminalNode: (
     position?: { x: number; y: number } | undefined,
     // Fase 27 (Task 3): sshHost opcional — quando presente, o nó nasce em modo SSH (ver
     // TerminalNode.tsx). String livre aqui (a validação de formato via isValidSshHost já
     // acontece no main, no spawn — Task 2); a UI de criação (Task 4) valida antes por UX.
-    opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean }
+    opts?: { preset?: string; role?: string; name?: string; sshHost?: string; monitor?: boolean; maestro?: boolean }
   ) => void
-  addNoteNode: (position?: { x: number; y: number }, opts?: { width?: number; height?: number }) => void
+  // T3 (#6): cria um recruta ABAIXO do nó `fromId` (Maestro), auto-conectado por uma edge agent, e
+  // devolve o id do novo terminal. fromId inexistente → cascata legada (sem edge). Usado por
+  // useOrchestrationSync ao aplicar o comando recruit quando o `from` resolve a um terminal.
+  recruitBelow: (fromId: string, opts?: { preset?: string; role?: string; name?: string }) => string
+  addNoteNode: (
+    position?: { x: number; y: number },
+    opts?: { width?: number; height?: number; html?: string; name?: string }
+  ) => void
   addPortalNode: (
     position?: { x: number; y: number } | undefined,
     opts?: { name?: string; url?: string; width?: number; height?: number }
@@ -331,6 +389,13 @@ interface CanvasState {
   // updateNoteContent fica para compatibilidade/migração das notas antigas (Markdown → html).
   updateNoteHtml: (id: string, html: string) => void
   updateNoteColor: (id: string, color: string) => void
+  // Notas #10: nome personalizado da nota (data.name). '' = volta à nomeação automática pela 1ª
+  // linha do conteúdo (ver deriveNoteName). Canvas #12: nome do grupo (data.name).
+  updateNoteName: (id: string, name: string) => void
+  // T9 (notas .md em disco): vincula/desvincula a nota a um arquivo `.md` (undefined = desfaz o
+  // vínculo — o ARQUIVO nunca é apagado por aqui). Persiste como parte de node.data.
+  updateNoteFilePath: (id: string, filePath?: string) => void
+  updateGroupName: (id: string, name: string) => void
   updateTerminalName: (id: string, name: string) => void
   updateTerminalRole: (id: string, role: string) => void
   updatePortalUrl: (id: string, url: string) => void
@@ -371,6 +436,12 @@ interface CanvasState {
   // Fase 22 (Task 1): remove uma edge pelo id — usado pelo badge/UI da edge tipada (Task 2) para
   // desconectar sem passar por onEdgesChange (que espera EdgeChange[] do próprio React Flow).
   removeEdge: (id: string) => void
+  // Conexões T4: override de estilo POR ARESTA, gravado em `edge.data.style` e persistido no
+  // snapshot (PersistedEdge.style). Nome deliberadamente diferente do `setEdgeStyle` acima, que é
+  // a preferência GLOBAL/efêmera de UI: sobrecarregar o mesmo nome por aridade tornaria ambíguo
+  // qual das duas semânticas (canvas inteiro × uma aresta) o call site quis. TypedEdge resolve
+  // as duas com resolveEdgeStyle(data.style, global). Entra no histórico, como removeEdge.
+  setEdgeStyleFor: (id: string, style: EdgeStyle) => void
   // R6: remove de uma vez TODAS as conexões que tocam um nó (como source ou target). Retorna à
   // mesma referência de state quando o nó não tem nenhuma edge (no-op — o Zustand pula o update).
   removeEdgesForNode: (nodeId: string) => void
@@ -460,40 +531,53 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       else next.delete(nodeId)
       return { generating: next }
     }),
+  restartEpoch: {},
+  restartTerminal: (id): void => {
+    // Guard de tipo: só terminais têm pty/TerminalNode para remontar (id inexistente → no-op, sem
+    // criar entrada no mapa). `window.orkestra` não existe nos testes (jsdom sem preload) — mesmo
+    // optional chaining de removeNode. Matar ANTES do bump espelha o reconnect do SSH: o pty morto
+    // faz o attach do remount falhar, e o TerminalNode cai no caminho de spawn (sem dois ptys).
+    if (get().nodes.find((n) => n.id === id)?.type !== 'terminal') return
+    window.orkestra?.pty?.killForNode(id)
+    set((state) => ({ restartEpoch: { ...state.restartEpoch, [id]: (state.restartEpoch[id] ?? 0) + 1 } }))
+  },
   addTerminalNode: (position, opts): void =>
     set((state) => {
       const pos = position ?? { x: 80 + (state.nodes.length % 8) * 40, y: 80 + (state.nodes.length % 8) * 40 }
       return {
         ...histPatch(state),
-        nodes: [
-          ...state.nodes,
-          {
-            id: `terminal-${crypto.randomUUID()}`,
-            type: 'terminal',
-            position: pos,
-            data: {
-              name: opts?.name ?? `Terminal ${terminalSeq++}`,
-              preset: opts?.preset ?? 'shell',
-              role: opts?.role ?? '',
-              // Fase 27 (Task 3): host remoto (ex.: "user@host") quando o nó nasce em modo SSH;
-              // undefined nos terminais locais. Deliberadamente NÃO está na lista de `delete
-              // rest.*` do serialize — precisa persistir e sobreviver ao round-trip
-              // serialize→hydrate (ao contrário de `autostart`, que é efêmero).
-              sshHost: opts?.sshHost,
-              // Monitorar atividade (Fase 29): quando false, o indicador de atenção e a
-              // notificação do SO NÃO disparam para este terminal. Persiste (default true).
-              monitor: opts?.monitor ?? true,
-              // Efêmero: nunca deve ser persistido (ver serialize) — sinaliza que este nó acabou
-              // de ser criado nesta sessão, para o TerminalNode auto-rodar o comando do preset
-              // apenas na criação, nunca ao hidratar de um snapshot salvo (Fase 7 Task 2).
-              autostart: true
-            },
-            width: 480,
-            height: 320
-          }
-        ]
+        nodes: [...state.nodes, makeTerminalNode(pos, opts)]
       }
     }),
+  // T3 (#6): recruit posiciona ABAIXO do Maestro e auto-conecta. Cria o terminal com a MESMA
+  // fábrica de addTerminalNode (herda autostart:true → o agente auto-inicia), posicionado abaixo
+  // do Maestro (offset horizontal por nº de recrutas já ligados abaixo, para não empilhar), cria a
+  // edge agent Maestro→recruta (via onConnect, igual ao arraste manual) e devolve o id. Fallback:
+  // fromId inexistente → cascata atual, sem edge (não quebra o orq legado/externo).
+  recruitBelow: (fromId, opts): string => {
+    const state0 = get()
+    const from = state0.nodes.find((n) => n.id === fromId)
+    const pos = from
+      ? {
+          // count = recrutas-terminais já ligados ABAIXO deste Maestro (edges source===fromId para
+          // um terminal); cada um empurra o próximo +1 largura para a direita, evitando empilhar.
+          x:
+            from.position.x +
+            state0.edges.filter(
+              (e) => e.source === fromId && state0.nodes.find((n) => n.id === e.target)?.type === 'terminal'
+            ).length *
+              ((from.width ?? 480) + 40),
+          y: from.position.y + (from.height ?? 320) + 80
+        }
+      : { x: 80 + (state0.nodes.length % 8) * 40, y: 80 + (state0.nodes.length % 8) * 40 }
+    const node = makeTerminalNode(pos, opts)
+    set((state) => ({ ...histPatch(state), nodes: [...state.nodes, node] }))
+    // Auto-conecta só quando o Maestro existe (o kind sai como 'agent': terminal↔terminal).
+    if (from) {
+      get().onConnect({ source: fromId, target: node.id, sourceHandle: null, targetHandle: null })
+    }
+    return node.id
+  },
   addNoteNode: (position = { x: 120, y: 120 }, opts): void =>
     set((state) => ({
       ...histPatch(state),
@@ -503,7 +587,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           id: `note-${crypto.randomUUID()}`,
           type: 'note',
           position,
-          data: { html: '', color: undefined },
+          // T8: html/name iniciais opcionais — drop de um .md do Finder cria a nota já preenchida
+          // (name entra só quando veio: data.name vazio significa "nomear pela 1ª linha").
+          data: {
+            html: opts?.html ?? '',
+            color: undefined,
+            ...(opts?.name ? { name: opts.name } : {})
+          },
           width: opts?.width ?? 240,
           height: opts?.height ?? 180
         }
@@ -608,6 +698,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       ...histPatch(state, 'notecolor:' + id),
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, color } } : n))
     })),
+  updateNoteName: (id, name): void =>
+    set((state) => ({
+      ...histPatch(state, 'notename:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
+  updateNoteFilePath: (id, filePath): void =>
+    set((state) => ({
+      ...histPatch(state, 'notefile:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, filePath } } : n))
+    })),
+  updateGroupName: (id, name): void =>
+    set((state) => ({
+      ...histPatch(state, 'groupname:' + id),
+      nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, name } } : n))
+    })),
   updateTerminalName: (id, name): void =>
     set((state) => ({
       ...histPatch(state, 'rename:' + id),
@@ -684,7 +789,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
       return {
         ...histPatch(state),
-        nodes: nodes.filter((n) => n.id !== id),
+        // Canvas #12 (T3): após remover o nó, auto-dissolve qualquer grupo que tenha ficado com
+        // <2 membros (ex.: sobrou 1 filho). Idempotente — no-op se nenhum grupo ficou magro.
+        nodes: dissolveThinGroups(nodes.filter((n) => n.id !== id)),
         edges: state.edges.filter((e) => e.source !== id && e.target !== id),
         attention,
         generating
@@ -856,7 +963,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         generating = new Set(generating)
         for (const rid of removed) generating.delete(rid)
       }
-      return { ...hist, nodes: applyNodeChanges(changes, state.nodes), attention, generating }
+      // Canvas #12 (T3): mesmo auto-dissolver do removeNode (× / palette), agora no caminho do
+      // React Flow (Delete/Backspace) — sem isso, apagar um filho pela tecla deixava o grupo órfão.
+      // Só num 'remove': um position/select/dimensions não pode dissolver um grupo magro que o
+      // usuário ainda está montando. Reusa o helper puro (nada de regra duplicada aqui) — ele já
+      // é idempotente e devolve a MESMA referência quando não há grupo magro.
+      const applied = applyNodeChanges(changes, state.nodes)
+      const nodes = removed.length > 0 ? dissolveThinGroups(applied) : applied
+      return { ...hist, nodes, attention, generating }
     })
   },
   onEdgesChange: (changes): void =>
@@ -919,6 +1033,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return count
   },
   removeEdge: (id): void => set((state) => ({ ...histPatch(state), edges: state.edges.filter((e) => e.id !== id) })),
+  setEdgeStyleFor: (id, style): void =>
+    set((state) => {
+      // Id inexistente devolve a MESMA referência (no-op: sem re-render e sem entrada no histórico).
+      if (!state.edges.some((e) => e.id === id)) return state
+      return {
+        ...histPatch(state),
+        edges: state.edges.map((e) => (e.id === id ? { ...e, data: { ...e.data, style } } : e))
+      }
+    }),
   removeEdgesForNode: (nodeId): void =>
     set((state) => {
       const next = state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
@@ -932,13 +1055,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     // autostart (efêmero — senão todo reload re-rodaria o comando do preset, Fase 7 Task 2) e
     // parentId/extent só quando presentes (Fase 18 Task 3).
     nodes: get().nodes.map(persistNode),
-    edges: get().edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle,
-      targetHandle: e.targetHandle
-    }))
+    edges: get().edges.map((e) => {
+      const persisted: PersistedEdge = {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle
+      }
+      // Conexões T4: o override por-aresta é CONTEÚDO (escolha do usuário), ao contrário do kind
+      // (derivado dos tipos dos nós na hidratação) — só ele sai daqui de `data`, e só quando
+      // existe, mantendo o snapshot enxuto para as arestas que seguem o estilo global.
+      if (isEdgeStyle(e.data?.style)) persisted.style = e.data.style
+      return persisted
+    })
   }),
   hydrate: (snapshot, projectId): void => {
     // Scan hydrated nodes for Terminal/Portal names and update terminalSeq/portalSeq to avoid
@@ -1006,7 +1136,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         sourceHandle: e.sourceHandle,
         targetHandle: e.targetHandle,
         type: 'typed',
-        data: { kind },
+        // Conexões T4: `style` (override por-aresta) é reanexado a partir do snapshot — sem isto o
+        // override sumiria a cada reload, porque `data` é recomposto do zero aqui. Só entra quando
+        // é um EdgeStyle conhecido: um snapshot corrompido/futuro não deve plantar lixo em data
+        // (e TypedEdge, via resolveEdgeStyle, ainda cairia no global de qualquer forma).
+        data: isEdgeStyle(e.style) ? { kind, style: e.style } : { kind },
         className: `ork-edge--${kind}`
       }
     })

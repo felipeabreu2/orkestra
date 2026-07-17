@@ -9,10 +9,24 @@ const ONBOARDING = `Você está rodando dentro do Orkestra — um canvas visual 
 
 Ferramentas do Orkestra — rode-as pela sua ferramenta de shell/Bash:
 - orq context — lê o conteúdo de TODAS as notas, sites e arquivos conectados a você AGORA. As conexões e o conteúdo mudam em tempo real, então rode ao começar e sempre que precisar do contexto atualizado (ex.: depois que o usuário conecta/desconecta/edita um bloco).
-- orq list — lista todos os nós do canvas (agentes, notas, portais) com nome e id.
+- orq list — lista todos os nós do canvas (agentes, notas, portais) com nome, id e papel (quando têm um).
 - orq ask "<nome>" "<prompt>" — delega uma tarefa a outro agente do canvas (adicione --wait para aguardar a resposta).
 - orq check "<nome>" — lê o output recente de outro agente.
-- orq portal navigate "<nome>" "<url>" | click "<nome>" "<seletor>" | fill "<nome>" "<seletor>" "<texto>" | snapshot "<nome>" — navega e controla um site (portal) conectado, como você faria num navegador.
+- orq portal navigate "<nome>" "<url>" | click "<nome>" "<seletor>" | fill "<nome>" "<seletor>" "<texto>" | snapshot "<nome>" [--dom] — navega e controla um site (portal) conectado, como você faria num navegador. snapshot --dom lista os elementos interativos da página (seletores prontos para click/fill).
+- orq portal back "<nome>" | forward "<nome>" | reload "<nome>" | scroll "<nome>" <x> <y> — histórico, recarregar e rolagem do portal.
+- orq portal create "<nome>" "<url>" — cria um novo portal no canvas já navegando para a url.
+- orq portal screenshot "<nome>" — captura a página do portal num PNG e imprime o caminho do arquivo; abra-o com a sua ferramenta de leitura de imagem para VER a página (útil quando o texto do snapshot não basta: layout, gráficos, captcha, estado visual).
+- orq portal console "<nome>" — imprime os últimos logs/erros do console do site no portal (útil para depurar uma página que não responde aos cliques: erro de JS aparece aqui).
+- orq role show "<nome>" | write "<nome>" "<prompt>" | edit "<nome>" "<trecho antigo>" "<trecho novo>" — lê e refina o prompt de um papel (normalmente o SEU, pelo seu próprio nome). Use quando o papel estiver vago ou desatualizado para a tarefa: write troca o prompt inteiro, edit troca só um trecho.
+
+Verbos de gerência (Modo Maestro) — são de quem coordena o canvas. O Orkestra só os recusa se este terminal estiver marcado como comum (Modo Maestro desligado no bloco); terminais sem essa marcação executam normalmente. Se vier uma recusa, peça ao usuário para ligar o Modo Maestro neste terminal:
+- orq recruit "<nome>" ["<preset>"] ["<papel>"] — cria um novo terminal-agente abaixo de você, já conectado a você (presets: shell/claude/codex/gemini; papéis: Dev/Revisor/Testador/Docs). Sem preset, o recruta herda o seu.
+- orq squad "<preset>" "<nota-spec>" — monta de uma vez um esquadrão inteiro (Dev + Revisor + Testador + Docs), cada um já conectado à nota-spec que você indicar. Use quando a tarefa pede uma equipe, em vez de vários recruit/connect na mão.
+- orq connect "<A>" "<B>" — liga dois blocos: dois terminais, ou um recruta a uma nota já conectada a você.
+- orq reassign "<nome>" "<papel>" — troca o papel de um recruta no meio do trabalho (papéis: Dev/Revisor/Testador/Docs). O nó, o nome e as conexões dele ficam intactos; só o processo do agente reinicia, já com o papel novo. Use quando a necessidade mudar, em vez de dispensar e recrutar de novo.
+- orq dismiss "<nome>" — fecha o terminal de um recruta quando o trabalho dele termina (mantém o canvas limpo).
+- orq note write [--to "<nome/id>"] "<texto>" — escreve numa nota conectada (sem --to, na nota ligada à sua saída).
+- orq whoami — mostra seu próprio nome, papel e os blocos/agentes conectados a você (útil para um recruta saber quem é e a quem responde).
 
 Sua PRIMEIRA ação deve ser rodar \`orq context\` para carregar o que está conectado a você.
 `
@@ -23,15 +37,38 @@ Sua PRIMEIRA ação deve ser rodar \`orq context\` para carregar o que está con
 // mas o EXECUTA com o PATH atual (que contém o `orq`) — assim o agente consegue rodar os comandos
 // orq de dentro da sessão. Passa o onboarding via --append-system-prompt (flag estável do Claude
 // Code). Se o claude real não existir, sai com 127 (o preset shell/outros CLIs seguem intactos).
+//
+// T2 (injeção de papel): ORKESTRA_ROLE, quando definido no env do pty (registerPtyIpc), traz o
+// prompt do papel do agente (Dev/Revisor/…) e é CONCATENADO ao onboarding num ÚNICO
+// --append-system-prompt. Este é o caminho que substituiu a materialização de CLAUDE.md num subdir:
+// aquela apontava o cwd do pty pro subdir e cegava o agente (o Claude Code limita o acesso a
+// arquivos ao cwd, então o recruta não enxergava o código do projeto). Aqui o cwd nunca é tocado.
+//
+// SEGURANÇA: $ORKESTRA_ROLE é texto LIVRE do usuário. Ele só aparece DENTRO de aspas duplas, onde o
+// sh faz expansão de parâmetro mas NÃO reinterpreta o resultado (sem word splitting, sem
+// command substitution, sem glob). Nunca use eval/`sh -c` sobre ele nem o deixe fora das aspas.
 const CLAUDE_WRAPPER = `#!/bin/sh
 real="$(PATH="\${ORKESTRA_REAL_PATH:-$PATH}" command -v claude 2>/dev/null)"
 if [ -z "$real" ]; then
   echo "orkestra: 'claude' não encontrado no PATH — instale o Claude Code (https://claude.com/claude-code)." >&2
   exit 127
 fi
+prompt=""
 onboard="$HOME/.orkestra/onboarding.txt"
 if [ -f "$onboard" ]; then
-  exec "$real" --append-system-prompt "$(cat "$onboard")" "$@"
+  prompt="$(cat "$onboard")"
+fi
+if [ -n "\${ORKESTRA_ROLE:-}" ]; then
+  if [ -n "$prompt" ]; then
+    prompt="$prompt
+
+$ORKESTRA_ROLE"
+  else
+    prompt="$ORKESTRA_ROLE"
+  fi
+fi
+if [ -n "$prompt" ]; then
+  exec "$real" --append-system-prompt "$prompt" "$@"
 else
   exec "$real" "$@"
 fi

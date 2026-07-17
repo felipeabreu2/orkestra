@@ -1,0 +1,130 @@
+/* Popover de inspeção de conexões por nó (T3 do plano de Conexões). Reusa os tokens do design
+   system (bg/border/shadow/accent) e o visual do contador do NodeToolbar (.ork-node-toolbar-links
+   + .ork-node-toolbar-badge continuam valendo — o gatilho vira <button>, só zeramos o chrome). */
+
+.ork-conn-wrap {
+  position: relative;
+  display: flex;
+}
+
+/* O gatilho reusa .ork-node-toolbar-links, mas agora é <button>: zera o chrome nativo e mantém a
+   cor/vibrancy herdada daquela classe. */
+.ork-conn-toggle {
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ork-conn-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  max-width: 300px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+}
+
+.ork-conn-empty {
+  padding: 8px 10px;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.ork-conn-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ork-conn-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.ork-conn-row-main:hover {
+  background: var(--bg-2);
+}
+
+.ork-conn-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chip do tipo de conexão — espelha as cores do badge da aresta (.ork-edge-badge--<kind>) sem
+   depender daquela classe (evita cascata entre arquivos). */
+.ork-conn-kind {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: var(--fs-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+}
+.ork-conn-kind--agent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ork-conn-kind--chain {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.ork-conn-kind--note {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.ork-conn-kind--portal,
+.ork-conn-kind--link {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+
+.ork-conn-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-conn-remove:hover {
+  background: var(--bg-2);
+  color: var(--err);
+}

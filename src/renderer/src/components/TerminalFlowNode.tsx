@@ -1,14 +1,33 @@
-import { type CSSProperties } from 'react'
+import { useCallback, useState, type CSSProperties } from 'react'
 import { NodeResizer, useReactFlow, type NodeProps } from '@xyflow/react'
 import { NodeHandles } from './NodeHandles'
 import { useNodeVisibility } from '../nodeVisibility'
-import { TerminalNode } from './TerminalNode'
+import { TerminalNode, type SshConnState } from './TerminalNode'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Icon } from './Icon'
 import { useCanvasStore } from '../store/canvasStore'
 import { roleMeta } from '../../../shared/roles'
 import { nodeStateClass, type NodeState } from './nodeState'
 import './nodes.css'
+
+// Onda 2 (Trilha A): mapa puro do estado da conexão SSH para o visual do badge. Estilo INLINE
+// (o CSS base .ork-ssh-badge — accent sólido — é o estado "conectado"; os modificadores de cor
+// vivem aqui para não depender de mudança em nodes.css). "connecting" esmaece; "closed" pinta de
+// erro. O título carrega o host e a dica de reconectar.
+function sshBadgeMeta(state: SshConnState, sshHost: string): { title: string; style?: CSSProperties } {
+  switch (state) {
+    case 'connected':
+      return { title: `Remoto: ${sshHost}` }
+    case 'closed':
+      return {
+        title: `Sessão SSH encerrada (${sshHost}) — clique em reconectar`,
+        style: { background: 'var(--err)' }
+      }
+    case 'connecting':
+    default:
+      return { title: `Conectando… (${sshHost})`, style: { opacity: 0.55 } }
+  }
+}
 
 export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element {
   const removeNode = useCanvasStore((s) => s.removeNode)
@@ -36,6 +55,27 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
   // (addTerminalNode({sshHost}), ver canvasStore). Puro prop-read de data, igual preset
   // acima — NÃO é um seletor do store, então não corre risco do loop de render do zustand v5.
   const sshHost = (data as { sshHost?: string })?.sshHost
+  // Onda 2 (Trilha A): estado da conexão SSH — LOCAL/efêmero (useState, nunca serializado; o
+  // canvasStore é intocado). O TerminalNode filho o EMITE via onConnState (connecting→connected
+  // no 1º output, closed no exit). Só tem sentido quando sshHost está presente.
+  const [sshConn, setSshConn] = useState<SshConnState>('connecting')
+  // Onda 2 (Trilha A/T3): epoch de reconexão — bumpar força o REMOUNT do TerminalNode (via `key`),
+  // que re-spawna `ssh <sshHost>` do zero (o pty morto não é re-attachável). Efêmero, fora de
+  // `data` → nunca entra no snapshot/undo. Reusa 100% do caminho de spawn existente.
+  const [reconnectEpoch, setReconnectEpoch] = useState(0)
+  // T7 (reassign): epoch de reinício vindo do STORE — bumpado por restartTerminal quando um Maestro
+  // reatribui o papel deste terminal (o gatilho nasce fora deste componente, no useOrchestrationSync,
+  // então não pode ser um useState local como o reconnectEpoch do SSH acima). Entra na `key` do
+  // TerminalNode pelo mesmo motivo: remontar re-spawna o preset, agora com o ORKESTRA_ROLE novo no
+  // env do pty. Seletor lê só o número DESTE id (não o mapa inteiro) — mesma disciplina de
+  // hasAttention/generating: só re-renderiza quando o valor muda para o próprio nó.
+  const restartEpoch = useCanvasStore((s) => s.restartEpoch[id] ?? 0)
+  const reconnect = useCallback((): void => {
+    // mata qualquer pty zumbi do nó (no-op se já saiu) antes de remontar, evitando dois ptys.
+    window.orkestra.pty.killForNode(id)
+    setSshConn('connecting')
+    setReconnectEpoch((e) => e + 1)
+  }, [id])
   // Papel do agente — metadado visual (sem efeito no LLM). `resolved` casa o preset (por id OU
   // label, case-insensitive) ou cai no neutro `var(--text-2)` p/ texto livre. O SELETOR inline de
   // papel foi REMOVIDO do header (2026-07-15, a pedido) — o papel agora é definido pela Command
@@ -107,9 +147,26 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
             aria-label="Nome do terminal"
           />
           {sshHost && (
-            <span className="ork-ssh-badge" title={`Remoto: ${sshHost}`}>
-              SSH
-            </span>
+            <>
+              <span
+                className="ork-ssh-badge"
+                role="status"
+                style={sshBadgeMeta(sshConn, sshHost).style}
+                title={sshBadgeMeta(sshConn, sshHost).title}
+              >
+                SSH
+              </span>
+              {sshConn === 'closed' && (
+                <button
+                  className="nodrag ork-node-iconbtn"
+                  onClick={reconnect}
+                  aria-label="Reconectar sessão SSH"
+                  title="Reconectar"
+                >
+                  <Icon name="RotateCw" size={13} animation="none" />
+                </button>
+              )}
+            </>
           )}
           {role.trim() !== '' && (
             <span className="ork-role-badge" title={resolved.hint || undefined}>
@@ -140,7 +197,18 @@ export function TerminalFlowNode({ id, selected, data }: NodeProps): JSX.Element
         {visible ? (
           <div className="nodrag nowheel ork-node-body">
             <ErrorBoundary>
-              <TerminalNode nodeId={id} preset={preset} sshHost={sshHost} />
+              {/* key inclui o epoch de reconexão: bumpá-lo remonta o TerminalNode → re-spawn do
+                  `ssh <sshHost>` (T3). onConnState liga o estado da conexão ao badge (T2).
+                  restartEpoch (T7) usa o MESMO mecanismo, disparado pelo store: reatribuir o papel
+                  remonta e re-spawna o agente com o ORKESTRA_ROLE novo. */}
+              <TerminalNode
+                key={`${id}:${reconnectEpoch}:${restartEpoch}`}
+                nodeId={id}
+                preset={preset}
+                role={role}
+                sshHost={sshHost}
+                onConnState={sshHost ? setSshConn : undefined}
+              />
             </ErrorBoundary>
           </div>
         ) : (

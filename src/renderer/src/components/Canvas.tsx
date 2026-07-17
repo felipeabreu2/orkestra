@@ -6,13 +6,13 @@ import {
   Controls,
   MiniMap,
   useReactFlow,
-  type NodeChange,
   type NodeProps,
   type Connection
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './Canvas.css'
 import { useCanvasStore, hasWidgetClipboard, absolutePositionOf } from '../store/canvasStore'
+import { selectionChangesToFocus } from '../canvas/frameNode'
 import { TerminalFlowNode } from './TerminalFlowNode'
 import { NoteNode } from './NoteNode'
 import { PortalFlowNode } from './PortalFlowNode'
@@ -24,14 +24,20 @@ import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
 import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
-import { emitNewProject } from '../ui/appEvents'
+import { emitNewProject, FRAME_NODE_EVENT } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
+import { AttentionHud } from './AttentionHud'
 import { CreateOverlay } from './CreateOverlay'
 import { CanvasContextMenu, type ContextMenuItem } from './CanvasContextMenu'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useCanvasPersistence } from '../hooks/useCanvasPersistence'
 import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
+import { readDroppedPaths } from '../terminal/dropPaths'
+import { isPathDrop, isDropOnNode, fileNodeDropPositions } from './canvasDrop'
+import { mdFileToNoteData } from '../notes/mdDropToNote'
+import { resetFocus } from '../ui/resetFocus'
+import { AgentHealthPanel } from './AgentHealthPanel'
 
 // REN-3 (auditoria 2026-07-14): cada nó renderiza dentro do seu próprio ErrorBoundary. Um
 // data.scene do Excalidraw (DrawNode) ou html do TipTap (NoteNode) corrompido faz o componente
@@ -143,6 +149,8 @@ export function Canvas(): JSX.Element {
   // Enquanto != null, o CreateOverlay captura o gesto e cria o item com a posição/tamanho arrastados.
   const [pendingTool, setPendingTool] = useState<'note' | 'portal' | 'filetree' | 'draw' | null>(null)
   const [minimapOn, setMinimapOn] = useState(true)
+  // Resiliência T7: painel de saúde dos agentes (⇧H) — overlay derivado dos Sets do store.
+  const [healthOpen, setHealthOpen] = useState(false)
   // Cor da máscara do MiniMap derivada do --bg-0 em runtime (ver readBgMask acima, §4.11). Um
   // MutationObserver no data-theme do <html> (o flip de tema vive em theme.ts/ThemeToggle, fora
   // deste arquivo) rederiva a cor no flip — mantém a máscara alinhada ao fundo do canvas nos dois
@@ -178,6 +186,43 @@ export function Canvas(): JSX.Element {
     })
     return off
   }, [setAttention])
+
+  // Ombro T2: quando o usuário clica na notificação nativa de "agente ocioso", o main envia
+  // agent:frame com o nodeId. Enquadra (fitView) e seleciona esse nó, reusando o helper puro do
+  // Shift+A. Nó ausente (agente de outro projeto/removido) = no-op seguro: fitView num id
+  // inexistente e selectionChangesToFocus devolvendo [] não quebram nada.
+  useEffect(() => {
+    const off = window.orkestra.onAgentFrame((nodeId) => {
+      fitView({ nodes: [{ id: nodeId }], duration: 300 })
+      const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, nodeId)
+      if (changes.length) onNodesChange(changes)
+    })
+    return off
+  }, [fitView, onNodesChange])
+
+  // Resiliência T1 — o item de menu "Visualizar → Resetar Foco" chega por aqui (view:reset-focus).
+  // Mesmo efeito do atalho ⌘Esc: solta xterm/webview prendendo o teclado, foco volta ao pane.
+  useEffect(() => {
+    const off = window.orkestra.view.onResetFocus(() => {
+      resetFocus(document.querySelector<HTMLElement>('.react-flow__pane'))
+    })
+    return off
+  }, [])
+
+  // Batuta T5 — foco de nó pós-troca de projeto (cross-projeto): a ProjectsSidebar troca o projeto
+  // e emite FRAME_NODE_EVENT quando o canvas do alvo já montou; aqui só enquadramos/selecionamos,
+  // reusando o MESMO caminho do onAgentFrame acima. Nó ausente = no-op seguro.
+  useEffect(() => {
+    const onFrame = (e: Event): void => {
+      const nodeId = (e as CustomEvent<{ nodeId: string }>).detail?.nodeId
+      if (!nodeId) return
+      fitView({ nodes: [{ id: nodeId }], duration: 300 })
+      const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, nodeId)
+      if (changes.length) onNodesChange(changes)
+    }
+    window.addEventListener(FRAME_NODE_EVENT, onFrame)
+    return () => window.removeEventListener(FRAME_NODE_EVENT, onFrame)
+  }, [fitView, onNodesChange])
 
   // Fix border-beam preso — tentativa 3 (2026-07-15): `generating` é 100% derivado por CONTEÚDO
   // da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) — ver
@@ -287,6 +332,14 @@ export function Canvas(): JSX.Element {
         setPaletteOpen((o) => !o)
         return
       }
+      // Resiliência T1 — Cmd/Ctrl+Esc: RESET DE FOCO. Comando, não texto: precisa rodar ANTES do
+      // guard isTypingTarget justamente porque o caso de uso é um xterm/webview PRENDENDO o
+      // teclado. Puramente foco (resetFocus não toca em nós/edges).
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Escape') {
+        e.preventDefault()
+        resetFocus(document.querySelector<HTMLElement>('.react-flow__pane'))
+        return
+      }
       // Cmd/Ctrl+G (agrupar) / Cmd/Ctrl+Shift+G (desagrupar) — Fase 18 Task 3: mesmo raciocínio
       // do Cmd+K acima (comando, não texto) — roda ANTES do isTypingTarget guard, então
       // funciona mesmo com um input/terminal focado (ex.: logo após renomear um terminal).
@@ -349,6 +402,14 @@ export function Canvas(): JSX.Element {
         setMinimapOn((o) => !o)
         return
       }
+      // Resiliência T7 — ⇧H: painel de saúde dos agentes (gerando/aguardando/ocioso). Mesmo grupo
+      // de atalhos de VISÃO do ⇧M/⇧A acima (guardados por isTypingTarget — digitar "H" numa nota
+      // não pode abrir painel).
+      if (e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault()
+        setHealthOpen((o) => !o)
+        return
+      }
       // Shift+A (Fase 20 Task 2): foca o próximo nó em `attention` (agentes ociosos aguardando o
       // usuário) — cicla pelos ids presentes no Set a cada pressionar repetido, via
       // attentionCycleRef. Não faz nada (no-op) se `attention` estiver vazio. Só ENQUADRA
@@ -363,15 +424,24 @@ export function Canvas(): JSX.Element {
         attentionCycleRef.current = idx + 1
         const targetId = ids[idx]
         fitView({ nodes: [{ id: targetId }], duration: 300 })
-        const changes: NodeChange[] = []
-        for (const n of useCanvasStore.getState().nodes) {
-          if (n.id === targetId) {
-            if (!n.selected) changes.push({ id: n.id, type: 'select', selected: true })
-          } else if (n.selected) {
-            changes.push({ id: n.id, type: 'select', selected: false })
-          }
-        }
+        const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, targetId)
         if (changes.length) onNodesChange(changes)
+        return
+      }
+      // Canvas #12 (T1): ⇧T arranja em grade os nós selecionados (ou todos, se nada selecionado).
+      // Lê o estado VIVO (getState), como o Shift+A acima, para não depender do closure do efeito.
+      if (e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault()
+        const st = useCanvasStore.getState()
+        const selected = st.nodes.filter((n) => n.selected)
+        const src = selected.length ? selected : st.nodes
+        const pos = src.map((n) => ({
+          id: n.id,
+          position: absolutePositionOf(n, st.nodes),
+          width: n.width,
+          height: n.height
+        }))
+        if (pos.length) st.setNodePositions(gridArrange(pos))
         return
       }
     }
@@ -410,6 +480,9 @@ export function Canvas(): JSX.Element {
       {pendingTool && <CreateOverlay onCreate={handleCreateNode} onCancel={() => setPendingTool(null)} />}
       {/* Wordmark removido daqui (Fase 15 Task 3): a marca agora vive no topo da ProjectsSidebar
           (App.tsx) — isso também resolve a antiga sobreposição wordmark/Controls do React Flow. */}
+      {/* Ombro T5: HUD dos agentes aguardando você — irmão da toolbar, derivado do Set `attention`
+          (some quando vazio). Overlay clicável que enquadra cada nó (reusa o helper do Shift+A). */}
+      <AttentionHud />
       {selectedNodes.length === 1 && <NodeToolbar node={selectedNodes[0]} />}
       {selectedNodes.length >= 2 && (
         <div className="ork-toolbar ork-arrange-toolbar" role="toolbar" aria-label="Alinhar e organizar seleção">
@@ -497,6 +570,58 @@ export function Canvas(): JSX.Element {
         maxZoom={2}
         snapToGrid
         snapGrid={[20, 20]}
+        // T6 (árvore → canvas): soltar uma linha de arquivo da árvore em área VAZIA cria um
+        // FileNode ali. O React Flow repassa props de div desconhecidas para o seu wrapper, que
+        // é onde o drop borbulha — por isso os handlers vivem aqui e não num <div> extra.
+        //
+        // Não roubar o drop da T2: o TerminalNode escuta `drop` no PRÓPRIO elemento (listener
+        // nativo, sem stopPropagation) para escrever o caminho no pty, então o mesmo evento
+        // CHEGA aqui em seguida. Sem guard, um drop no terminal escreveria no pty E criaria um
+        // FileNode por baixo. isDropOnNode desambigua pelo alvo do evento (é o que o plano pede)
+        // — mais robusto que ler defaultPrevented, porque App.tsx já dá preventDefault global no
+        // drop (anti-navegação p/ file://), o que tornaria esse flag sempre ambíguo.
+        onDragOver={(e) => {
+          // T8 (notas): além do payload interno da árvore, aceitamos arquivos EXTERNOS do Finder
+          // ('Files') — .md/.markdown/.txt viram notas no drop.
+          if (!isPathDrop(e.dataTransfer.types) && !e.dataTransfer.types.includes('Files')) return
+          if (isDropOnNode(e.target as Element)) return // o nó (ex.: terminal) trata o seu drop
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }}
+        onDrop={(e) => {
+          if (isDropOnNode(e.target as Element)) return
+          if (isPathDrop(e.dataTransfer.types)) {
+            e.preventDefault()
+            // Sem resolveFile: aqui só tratamos o payload interno (isPathDrop já garantiu), que
+            // traz o caminho absoluto pronto — o ramo de File externo do readDroppedPaths não roda.
+            const paths = readDroppedPaths(e.dataTransfer)
+            if (paths.length === 0) return
+            const origin = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+            const positions = fileNodeDropPositions(origin, paths.length)
+            paths.forEach((path, i) => addFileNode(positions[i], { path }))
+            return
+          }
+          // T8 (notas): arquivo EXTERNO do Finder — .md/.markdown/.txt viram NOTAS preenchidas
+          // (mdFileToNoteData: conteúdo COPIADO; o vínculo vivo com o arquivo é a T9). Outros
+          // tipos são ignorados aqui (imagem em NOTA entra pelo editor — T6; o preventDefault
+          // global do App já impede a navegação para file://). Lê via File.text() — o renderer
+          // não toca em fs.
+          const files = Array.from(e.dataTransfer.files ?? [])
+          if (files.length === 0) return
+          e.preventDefault()
+          const origin = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+          const positions = fileNodeDropPositions(origin, files.length)
+          files.forEach((file, i) => {
+            void file
+              .text()
+              .then((text) => {
+                const nota = mdFileToNoteData(file.name, text)
+                if (!nota) return
+                addNoteNode(positions[i], { html: nota.html, name: nota.name })
+              })
+              .catch(() => {}) // leitura falhou (arquivo sumiu no meio) — sem nota, sem quebra
+          })
+        }}
         // R4: botão direito no vazio abre o menu de "criar aqui" (posição convertida pro canvas);
         // no nó, o menu de ações do nó. onMoveStart fecha o menu ao começar um pan/zoom.
         onPaneContextMenu={(e) => {
@@ -561,6 +686,18 @@ export function Canvas(): JSX.Element {
       </ReactFlow>
       {ctxMenu && (
         <CanvasContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenuItems()} onClose={() => setCtxMenu(null)} />
+      )}
+      {/* Resiliência T7: painel de saúde (⇧H). Clicar numa linha enquadra e seleciona o agente —
+          o mesmíssimo gesto do Shift+A/notificação clicável. */}
+      {healthOpen && (
+        <AgentHealthPanel
+          onFocusNode={(nodeId) => {
+            fitView({ nodes: [{ id: nodeId }], duration: 300 })
+            const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, nodeId)
+            if (changes.length) onNodesChange(changes)
+          }}
+          onClose={() => setHealthOpen(false)}
+        />
       )}
     </div>
   )

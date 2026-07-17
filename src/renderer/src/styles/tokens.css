@@ -85,6 +85,18 @@
   /* terminal (xterm) */
   --term-bg: #0B0C11;
   --term-fg: #C3CBD9;
+  /* realce de sintaxe (CodeMirror, Onda 3 · editor da árvore) — paleta do Xcode "Default (Dark)",
+     a escolha Apple/HIG coerente com o resto do design. NÃO reusa --paper-*: aqueles são hues de
+     tag idênticos nos dois temas e ilegíveis sobre fundo claro (ex.: --paper-yellow #FFD60A no
+     branco). Consumidos só via cmTheme.ts (var(--syn-*)), que é tema-aware de graça. */
+  --syn-keyword: #FC5FA3;
+  --syn-string: #FC6A5D;
+  --syn-number: #D0BF69;
+  --syn-comment: #6C7986;
+  --syn-type: #5DD8FF;
+  --syn-function: #67B7A4;
+  --syn-meta: #FD8F3F;
+  --syn-link: #41A1C0;
   /* materiais / vidro */
   --glass-1: rgba(22, 23, 29, .70);
   --glass-2: rgba(23, 24, 30, .90);
@@ -216,6 +228,16 @@
   --note-ink: #5A4A1A;
   --term-bg: #F7F8FA;
   --term-fg: #1D2230;
+  /* realce de sintaxe no CLARO — paleta do Xcode "Default (Light)" (mesmos papéis, hues
+     escurecidos para contraste sobre --bg-1 branco). */
+  --syn-keyword: #AD3DA4;
+  --syn-string: #D12F1B;
+  --syn-number: #272AD8;
+  --syn-comment: #707F8C;
+  --syn-type: #0B4F79;
+  --syn-function: #326D74;
+  --syn-meta: #78492A;
+  --syn-link: #155A8A;
 }
 /* Papéis (roles) no claro: escurecer o TEXTO do chip (o hue de fundo fica a
    ~12–15%); ex. Dev texto #1A7A43, Revisor #B45A09. Receita de chip: fundo

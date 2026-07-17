@@ -11,6 +11,18 @@ export function resolveInitialEdgeStyle(stored: string | null): EdgeStyle {
   return 'corda'
 }
 
+// Conexões T4: estilo POR ARESTA. `dataStyle` vem de `edge.data.style` — ou seja, de um snapshot
+// em disco, que pode estar corrompido ou ter sido escrito por uma versão futura do app. Por isso o
+// parâmetro é `unknown` e qualquer valor que não seja um EdgeStyle conhecido cai no global (que já
+// é sempre válido, vindo de resolveInitialEdgeStyle). Ausência de override = seguir o global.
+export function isEdgeStyle(value: unknown): value is EdgeStyle {
+  return value === 'curva' || value === 'circuito' || value === 'corda'
+}
+
+export function resolveEdgeStyle(dataStyle: unknown, global: EdgeStyle): EdgeStyle {
+  return isEdgeStyle(dataStyle) ? dataStyle : global
+}
+
 export function nextEdgeStyle(current: EdgeStyle): EdgeStyle {
   if (current === 'curva') return 'circuito'
   if (current === 'circuito') return 'corda'

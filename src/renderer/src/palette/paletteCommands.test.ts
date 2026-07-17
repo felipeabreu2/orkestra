@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+// jsdom porque o rótulo/indexação de nota derivam o texto do `data.html` via `htmlToText`
+// (DOMParser inerte, SEC-1) — o mesmo caminho da produção.
 import { describe, it, expect, vi } from 'vitest'
 import { buildPaletteItems, nodeLabel, type PaletteActions } from './paletteCommands'
 
@@ -15,7 +18,10 @@ function noopActions(): PaletteActions {
     removeEdge: vi.fn(),
     addSshTerminal: vi.fn(),
     toggleEdgeStyle: vi.fn(),
-    removeEdgesForNode: vi.fn()
+    removeEdgesForNode: vi.fn(),
+    openInEditor: vi.fn(),
+    newProject: vi.fn(),
+    openNodeInProject: vi.fn()
   }
 }
 
@@ -23,6 +29,22 @@ describe('nodeLabel', () => {
   it('usa o nome do terminal, senão o tipo', () => {
     expect(nodeLabel({ id: 't1', type: 'terminal', data: { name: 'Dev' } })).toBe('Dev')
     expect(nodeLabel({ id: 'n1', type: 'note', data: {} })).toContain('Nota')
+  })
+
+  // A nota real guarda o corpo em `data.html` (TipTap) — nunca em `data.content`. O rótulo tem que
+  // mostrar a prévia a partir do html, senão TODA nota aparece como "Nota" sem prévia.
+  it('nota: prévia derivada do data.html (shape real de produção)', () => {
+    expect(nodeLabel({ id: 'n1', type: 'note', data: { html: '<p>Plano de deploy</p>', color: undefined } })).toBe(
+      'Nota: Plano de deploy'
+    )
+  })
+
+  it('nota: cai em data.content quando não há html (nota legada)', () => {
+    expect(nodeLabel({ id: 'n1', type: 'note', data: { content: 'legado' } })).toBe('Nota: legado')
+  })
+
+  it('nota: nota vazia (html: "") continua "Nota"', () => {
+    expect(nodeLabel({ id: 'n1', type: 'note', data: { html: '', color: undefined } })).toBe('Nota')
   })
 })
 
@@ -34,6 +56,28 @@ describe('buildPaletteItems', () => {
     expect(labels).toContain('Criar Nota')
     expect(labels).toContain('Criar Portal')
     expect(labels).toContain('Criar Árvore de Arquivos')
+  })
+
+  // T4 — ações globais já existentes no app expostas na paleta (reusam callbacks reais do Topbar):
+  // "Abrir no editor de código" e "Novo projeto", ambas kind 'action' (nenhum kind novo).
+  it('expõe "Abrir no editor de código" como ação global e run aciona openInEditor', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions })
+    const editor = items.find((i) => i.id === 'action:editor')
+    expect(editor?.label).toBe('Abrir no editor de código')
+    expect(editor?.kind).toBe('action')
+    editor?.run?.()
+    expect(actions.openInEditor).toHaveBeenCalled()
+  })
+
+  it('expõe "Novo projeto" como ação global e run aciona newProject', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions })
+    const project = items.find((i) => i.id === 'action:project')
+    expect(project?.label).toBe('Novo projeto')
+    expect(project?.kind).toBe('action')
+    project?.run?.()
+    expect(actions.newProject).toHaveBeenCalled()
   })
 
   it('item global "Criar terminal SSH remoto" tem input e input.submit aciona addSshTerminal', () => {
@@ -136,7 +180,7 @@ describe('buildPaletteItems', () => {
   })
 
   it('nó não-terminal selecionado não oferece renomear/definir papel', () => {
-    const note = { id: 'n1', type: 'note', data: { content: 'oi' }, selected: true }
+    const note = { id: 'n1', type: 'note', data: { html: '<p>oi</p>', color: undefined }, selected: true }
     const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [note], actions: noopActions() })
     expect(items.some((i) => i.id.startsWith('ctx:rename:'))).toBe(false)
     expect(items.some((i) => i.id.startsWith('ctx:role:'))).toBe(false)
@@ -165,6 +209,40 @@ describe('buildPaletteItems', () => {
     expect(items.some((i) => i.id.startsWith('ctx:ask:'))).toBe(false)
   })
 
+  // T2: o item de navegação de uma nota carrega o corpo INTEIRO em searchText (para a busca
+  // fuzzy indexar o conteúdo), mantendo o label curto (truncado por nodeLabel).
+  //
+  // O shape é o REAL: `data.html` (o que addNoteNode/updateNoteHtml produzem). O teste antigo
+  // fabricava `data.content`, um shape que a produção nunca gera — ficava verde enquanto a busca
+  // pelo corpo estava quebrada para toda nota de verdade.
+  it('item node de nota indexa o corpo inteiro em searchText (label segue truncado)', () => {
+    const content =
+      'reunião sobre kubernetes e deploy contínuo — precisamos revisar o pipeline de CI e os manifests do cluster de produção'
+    const note = { id: 'n1', type: 'note', data: { html: `<p>${content}</p>`, color: undefined } }
+    const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [], actions: noopActions() })
+    const item = items.find((i) => i.id === 'node:n1')
+    expect(item?.label.startsWith('Nota: ')).toBe(true)
+    expect(item?.label.length).toBeLessThanOrEqual('Nota: '.length + 24)
+    expect(item?.searchText).toContain('kubernetes')
+    expect(item?.searchText).toContain('produção')
+    expect(item?.searchText).toBe(content)
+  })
+
+  // Retrocompat: nota antiga (pré-TipTap) ainda indexa pelo `data.content`.
+  it('item node de nota legada (data.content) ainda indexa o corpo', () => {
+    const note = { id: 'n1', type: 'note', data: { content: 'anotação legada sobre kubernetes' } }
+    const items = buildPaletteItems({ nodes: [note], edges: [], selectedNodes: [], actions: noopActions() })
+    expect(items.find((i) => i.id === 'node:n1')?.searchText).toBe('anotação legada sobre kubernetes')
+  })
+
+  // T2: tipos que não são nota não recebem searchText (só notas indexam corpo).
+  it('nós não-nota não recebem searchText', () => {
+    const term = { id: 't1', type: 'terminal', data: { name: 'A' } }
+    const items = buildPaletteItems({ nodes: [term], edges: [], selectedNodes: [], actions: noopActions() })
+    const item = items.find((i) => i.id === 'node:t1')
+    expect(item?.searchText).toBeUndefined()
+  })
+
   it('desconectar tem id único quando ambos os endpoints estão selecionados', () => {
     const a = { id: 't1', type: 'terminal', data: { name: 'A' }, selected: true }
     const b = { id: 't2', type: 'terminal', data: { name: 'B' }, selected: true }
@@ -172,5 +250,44 @@ describe('buildPaletteItems', () => {
     const items = buildPaletteItems({ nodes: [a, b], edges, selectedNodes: [a, b], actions: noopActions() })
     const discIds = items.filter((i) => i.kind === 'disconnect').map((i) => i.id)
     expect(new Set(discIds).size).toBe(discIds.length) // todos únicos
+  })
+
+  // ── Batuta · T5: itens de nós de OUTROS projetos ─────────────────────────────────────────────
+  it('crossProjectNodes viram itens kind=node com o projeto no label e o projectId carregado', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({
+      nodes: [],
+      edges: [],
+      selectedNodes: [],
+      crossProjectNodes: [
+        { nodeId: 'x1', projectId: 'p2', projectName: 'Backend', type: 'note', label: 'Nota: kube', searchText: 'kubernetes deploy' }
+      ],
+      actions
+    })
+    const item = items.find((i) => i.id === 'xnode:p2:x1')!
+    expect(item.kind).toBe('node')
+    expect(item.label).toBe('Nota: kube · Backend') // projeto anexado (tie-break favorece o local)
+    expect(item.projectId).toBe('p2')
+    expect(item.searchText).toBe('kubernetes deploy')
+  })
+
+  it('run de um item cross-projeto chama openNodeInProject(projectId, nodeId)', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({
+      nodes: [],
+      edges: [],
+      selectedNodes: [],
+      crossProjectNodes: [
+        { nodeId: 'x1', projectId: 'p2', projectName: 'Backend', type: 'terminal', label: 'Dev' }
+      ],
+      actions
+    })
+    items.find((i) => i.id === 'xnode:p2:x1')!.run!()
+    expect(actions.openNodeInProject).toHaveBeenCalledWith('p2', 'x1')
+  })
+
+  it('sem crossProjectNodes (undefined) nada muda — retrocompatível', () => {
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions: noopActions() })
+    expect(items.some((i) => i.id.startsWith('xnode:'))).toBe(false)
   })
 })

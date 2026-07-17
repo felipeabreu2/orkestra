@@ -1,0 +1,103 @@
+/* Resiliência · T7 — painel de saúde dos agentes (overlay no canto do canvas, toggle ⇧H). */
+.ork-health {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  min-width: 220px;
+  max-width: 300px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-2, 0 8px 24px rgba(0, 0, 0, 0.18));
+}
+
+.ork-health-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-1);
+  color: var(--text-2);
+}
+.ork-health-title {
+  flex: 1;
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+}
+.ork-health-close {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.ork-health-close:hover {
+  color: var(--text-1);
+}
+
+.ork-health-empty {
+  padding: var(--space-1-5);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.ork-health-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  padding: var(--space-1) var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.ork-health-row:hover {
+  background: var(--bg-2);
+}
+
+.ork-health-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cor SEMÂNTICA por estado — mesma linguagem do resto do app: gerando = accent (o beam),
+   aguardando = warn (pede o usuário), ocioso = neutro. */
+.ork-health-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.ork-health-dot--gerando {
+  background: var(--accent);
+}
+.ork-health-dot--aguardando {
+  background: var(--warn);
+}
+.ork-health-dot--ocioso {
+  background: var(--text-3);
+}
+
+.ork-health-status {
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+.ork-health-status--gerando {
+  color: var(--accent);
+}
+.ork-health-status--aguardando {
+  color: var(--warn);
+}

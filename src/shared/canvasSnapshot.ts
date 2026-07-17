@@ -20,6 +20,13 @@ export interface PersistedEdge {
   // persistidos para a edge reconectar no mesmo lado após reload.
   sourceHandle?: string | null
   targetHandle?: string | null
+  // Conexões T4: override de estilo desta aresta ('curva' | 'circuito' | 'corda'), ausente quando
+  // ela segue a preferência global do canvas. Escolha do usuário, então é conteúdo e persiste —
+  // ao contrário do `kind`, que é sempre re-derivado dos tipos dos nós na hidratação. Tipado como
+  // string porque o snapshot vem de disco (pode estar corrompido ou vir de uma versão futura);
+  // quem lê valida com isEdgeStyle/resolveEdgeStyle (renderer/src/edges/edgeStyle.ts). O tipo
+  // EdgeStyle não é importado aqui de propósito: src/shared não pode depender do renderer.
+  style?: string
 }
 
 export interface CanvasSnapshot {

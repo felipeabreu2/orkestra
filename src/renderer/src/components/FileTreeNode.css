@@ -14,15 +14,15 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .ork-filetree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px 3px 0;
-  font-size: 12.5px;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px 0;
+  font-size: var(--fs-sm);
   color: var(--text-1);
   cursor: pointer;
   white-space: nowrap;
@@ -39,7 +39,7 @@
   display: inline-flex;
   justify-content: center;
   color: var(--text-3);
-  font-size: 10px;
+  font-size: var(--fs-2xs);
 }
 
 .ork-filetree-name {
@@ -49,20 +49,69 @@
   text-overflow: ellipsis;
 }
 
-/* Marca de status git (M/A/?/D) — cor via inline style (var(--warn|ok|err), calculada em
-   gitMarker()); o token em si permanece só aqui como referência de qual variável é usada. */
+/* Marca de status git (M/A/?/D) — cor SEMÂNTICA via inline style (--warn modificado, --ok
+   adicionado, --err removido, --text-3 untracked), calculada em gitMarker(); nunca um accent de
+   papel (é status, não decoração). O token em si permanece só aqui como referência. */
 .ork-filetree-gitmark {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  padding-right: 2px;
+  font-size: var(--fs-xs);
+  font-weight: var(--weight-semibold);
+  padding-right: var(--space-0-5);
 }
 
 .ork-filetree-msg {
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: var(--space-1-5) var(--space-2-5);
+  font-size: var(--fs-sm);
   color: var(--text-3);
+}
+
+/* ── Onda 3 · T10: rodapé de busca + resultados ─────────────────────────────────────────────── */
+/* Rodapé fixo abaixo da lista rolável (a lista tem flex:1; isto não rola junto). */
+.ork-filetree-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1-5);
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+}
+.ork-filetree-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.ork-filetree-search-input:focus {
+  outline: none;
+}
+.ork-filetree-search-input::placeholder {
+  color: var(--text-3);
+}
+
+/* Resultado da busca por conteúdo: onde (arquivo:linha, mono) + trecho da linha (mudo, elíptico).
+   O trecho é informação de contexto, não conteúdo para ler — quem quer ler clica e abre na linha. */
+.ork-filetree-hit {
+  padding-left: 8px;
+}
+.ork-filetree-hit-loc {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+.ork-filetree-hit-snippet {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
 }
 .ork-filetree-msg--err {
   color: var(--err);
@@ -71,15 +120,15 @@
   color: var(--warn);
 }
 
-/* Empty-state ("Nenhuma pasta selecionada" + botão Escolher pasta), centralizado no corpo. */
+/* Empty-state (voz de dois tempos "Nenhuma pasta. Escolha uma." + botão), centralizado no corpo. */
 .ork-filetree-choose {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 16px;
+  gap: var(--space-2-5);
+  padding: var(--space-4);
   text-align: center;
 }
 
@@ -96,8 +145,8 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--border);
 }
 
@@ -107,18 +156,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 
+/* Botão de copiar caminho = ghost (§4.9): controle transparente com hairline; hover reforça a
+   borda e o texto. */
 .ork-filetree-copybtn {
   flex: 0 0 auto;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-2);
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: var(--fs-xs);
+  padding: 3px var(--space-2);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -134,15 +185,330 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px;
+  padding: var(--space-2);
 }
 
 .ork-filetree-pre {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
   color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* Editor embutido (Onda 3 · T4): barra de ações fixa + CodeMirror rolável ocupando o resto do
+   corpo. Era um <textarea> monospace sem realce (Onda 2); virou EditorView com realce de sintaxe,
+   find/replace e ir-para-linha — ver FileEditor.tsx. */
+.ork-filetree-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ork-filetree-editor-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  /* 4 ações (salvar/citar/buscar/linha) num nó de 300px de largura: se o usuário estreitar o nó,
+     a barra quebra em duas linhas em vez de vazar por fora do card. */
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Botão de ação do editor (salvar/citar) = ghost com ícone, mesmo idioma do copiar-caminho. */
+.ork-filetree-editbtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  padding: 3px var(--space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ork-filetree-editbtn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+.ork-filetree-editbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ork-filetree-editor-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+
+/* Host do EditorView (CodeMirror). Só o CONTINÊINER mora aqui: cor, fonte, cursor, seleção,
+   gutter e painéis de busca vêm do tema em editor/cmTheme.ts, escrito sobre os mesmos tokens
+   (var(--…)) — por isso claro↔escuro acompanha o app sem JS. Este bloco só resolve o layout: o
+   editor precisa de ALTURA para o próprio scroller funcionar dentro do flex do nó. */
+.ork-filetree-cm {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.ork-filetree-cm .cm-editor {
+  height: 100%;
+}
+
+/* ── Onda 3 · T8: branch no header + modo Diff ───────────────────────────────────────────────── */
+
+/* Chip da branch atual: metadado discreto ao lado do título — nunca compete com o nome da pasta.
+   Encolhe (min-width:0 + ellipsis) antes de empurrar os botões do header pra fora: nomes de branch
+   longos ("feat/alguma-coisa-bem-descritiva") são a regra, não a exceção. */
+.ork-filetree-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+.ork-filetree-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+/* Toggle Lista↔Diff ligado: accent (é estado de um controle, não status semântico) — o hover
+   vermelho herdado de .ork-node-iconbtn (idioma de "fechar") não deve vencer aqui. */
+.ork-node-iconbtn--on,
+.ork-node-iconbtn--on:hover {
+  color: var(--accent);
+  background: var(--accent-weak);
+}
+
+/* Diff textual: uma linha = um elemento (o realce é por linha inteira, como no `git diff` do
+   terminal). Sem wrap — linhas longas rolam na horizontal em vez de quebrar e desalinhar a
+   leitura dos +/-. */
+.ork-filetree-diff {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-1);
+}
+
+.ork-filetree-diffline {
+  white-space: pre;
+  padding: 0 var(--space-1);
+  border-radius: 2px;
+}
+/* Cor SEMÂNTICA (§4.13), igual ao overlay da árvore: adicionado=--ok, removido=--err. O fundo é
+   um véu fraco (não a cor cheia) pra não virar um bloco berrante num nó pequeno. */
+.ork-filetree-diffline--add {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.ork-filetree-diffline--del {
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}
+/* Cabeçalho de hunk (@@) = âncora de navegação: destacado, mas neutro (accent, não status). */
+.ork-filetree-diffline--hunk {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+/* `diff --git`, `index`, `+++/---`: ruído necessário — presente, recuado no contraste. */
+.ork-filetree-diffline--meta {
+  color: var(--text-3);
+}
+
+/* Onda 3 · T12: hunk SELECIONADO para citar ao agente. O realce é uma barra na borda esquerda, não
+   um fundo: as linhas do hunk já carregam o fundo semântico de add/del (§4.13), e um segundo véu
+   por cima embaralharia "isto foi adicionado" com "isto está selecionado". Marca o bloco inteiro,
+   que é a unidade citável. */
+.ork-filetree-diffline--picked {
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.ork-filetree-diffline--picked.ork-filetree-diffline--add {
+  background: color-mix(in srgb, var(--ok) 12%, color-mix(in srgb, var(--accent) 10%, transparent));
+}
+.ork-filetree-diffline--picked.ork-filetree-diffline--del {
+  background: color-mix(in srgb, var(--err) 12%, color-mix(in srgb, var(--accent) 10%, transparent));
+}
+/* O corpo do diff é clicável (clique = seleciona o hunk), então o cursor tem de avisar. */
+.ork-filetree-diffline {
+  cursor: pointer;
+}
+
+/* Onda 3 · T9 — watch de filesystem DEGRADADO: o auto-refresh não está funcionando (falha ao
+   assinar, ou o watcher morreu: limite de FDs, pasta removida, permissão). Cor SEMÂNTICA (--warn,
+   o mesmo "atenção" do overlay git de modificado), nunca um accent de papel — é status, não
+   decoração. Existe porque uma árvore congelada com cara de viva é a pior falha possível aqui: o
+   usuário precisa VER que voltou a depender do clique manual. O `title` do botão diz o porquê. */
+.ork-filetree-refresh--degraded {
+  color: var(--warn);
+}
+
+/* ── Onda 3 · T11: menu de git de ESCRITA (commit / branch) ─────────────────────────────────────
+   O chip de branch (T8) virou o gatilho do menu, então precisa de affordance de botão — mas segue
+   discreto: é um chip informativo que ACEITA clique, não uma call-to-action. Reset do <button>
+   nativo, porque .ork-filetree-branch nasceu como <span>. */
+button.ork-filetree-branch {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-2xs);
+}
+button.ork-filetree-branch:hover {
+  color: var(--text-2);
+  border-color: var(--border);
+}
+.ork-filetree-branch--open {
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-color: var(--border-strong);
+}
+
+/* Painel do menu: encostado no header, acima do corpo da árvore. */
+.ork-filetree-gitmenu {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2-weak);
+  padding: var(--space-1-5);
+}
+.ork-filetree-gitmenu-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ork-filetree-gitmenu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.ork-filetree-gitmenu-item:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.ork-filetree-gitmenu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* T13: item destrutivo do menu de mutação (Excluir). Vermelho SEMÂNTICO — mesma convenção do
+   ork-ctxmenu-item--danger do canvas. */
+.ork-filetree-gitmenu-item--danger {
+  color: var(--err);
+}
+.ork-filetree-gitmenu-item--danger:hover:not(:disabled) {
+  background: var(--err-weak);
+  color: var(--err);
+}
+.ork-node-go--danger {
+  color: var(--err);
+  border-color: var(--err);
+}
+
+.ork-filetree-gitform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.ork-filetree-gitform-row {
+  display: flex;
+  gap: var(--space-1-5);
+}
+.ork-filetree-gitinput {
+  width: 100%;
+  padding: var(--space-1) var(--space-1-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  resize: vertical;
+}
+.ork-filetree-gitinput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Preview do commit: a LISTA do que entra/fica de fora. Monoespaçada e rolável — é a promessa que
+   a confirmação faz, então precisa caber inteira mesmo com muitos arquivos. */
+.ork-filetree-gitpreview {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-1-5);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ork-filetree-githint {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+}
+
+/* Erro do git: cor SEMÂNTICA (--err), literal e dispensável só pelo × — uma operação que falhou não
+   pode sumir sozinha da tela. */
+.ork-filetree-giterr {
+  color: var(--err);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+}
+.ork-filetree-giterr--banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--err-weak);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ork-filetree-gitok {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--ok-weak);
+  color: var(--ok);
+  font-size: var(--fs-2xs);
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { OrchestrationServer } from './OrchestrationServer'
+import { OrchestrationServer, isMaestro } from './OrchestrationServer'
 import type { CanvasMirror, OrchestrationCommand } from '../../shared/orchestration'
+import { serializeRoleSidecar, parseRoleSidecar, buildRoleSidecar } from '../../shared/roleSidecar'
 
 let server: OrchestrationServer | undefined
 afterEach(async () => { await server?.stop(); server = undefined })
@@ -13,9 +14,11 @@ function makeServer(
     ask?: (name: string, prompt: string) => { ok: boolean; error?: string }
     askWait?: (name: string, prompt: string) => Promise<{ ok: boolean; output?: string; error?: string }>
     check?: (name: string) => { output: string } | null
-    getPortalState?: (name: string) => { url: string; title: string; text: string } | null
+    getPortalState?: (name: string) => { url: string; title: string; text: string; dom?: string } | null
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
+    readRoleSidecar?: (nodeId: string) => string | null
+    writeRoleSidecar?: (nodeId: string, json: string) => boolean
   } = {}
 ) {
   server = new OrchestrationServer({
@@ -28,6 +31,61 @@ function makeServer(
   })
   return server
 }
+
+// Auditoria (2026-07-16): o helper de gating não tinha NENHUM teste unitário — as rotas o
+// exercitavam só por dentro, e o caso `maestro: undefined` (todo terminal criado ANTES do toggle
+// existir, ou seja, todo snapshot legado) não era coberto em lugar nenhum. Foi assim que o desvio
+// entre o plano ("sem flag → bloqueia") e o código ("sem flag → permite") passou despercebido.
+// Estes testes FIXAM o fail-open como decisão consciente (ver docs/planejamento/modo-maestro.md,
+// T6): fechar o gating quebraria em silêncio os terminais que já estão no canvas do usuário, e
+// isto é UX de orquestração local, não fronteira de segurança. Se um destes ficar vermelho, a
+// pergunta certa é "quem mudou o comportamento?", não "como faço o teste passar?".
+describe('isMaestro (gating do Modo Maestro)', () => {
+  const node = (id: string, maestro?: boolean): CanvasMirror['nodes'][number] => ({
+    id,
+    type: 'terminal',
+    name: id,
+    ...(maestro === undefined ? {} : { maestro })
+  })
+  const mirror = (nodes: CanvasMirror['nodes']): CanvasMirror => ({ nodes, edges: [] })
+
+  it('nó EXPLICITAMENTE marcado maestro:true → permite', () => {
+    expect(isMaestro(mirror([node('m1', true)]), 'm1')).toBe(true)
+  })
+
+  it('nó EXPLICITAMENTE marcado maestro:false → bloqueia', () => {
+    expect(isMaestro(mirror([node('c1', false)]), 'c1')).toBe(false)
+  })
+
+  // O caso que motivou estes testes. `maestro: undefined` é o estado de TODO terminal serializado
+  // antes de o toggle existir. Permitir é deliberado (retrocompat com snapshots legados).
+  it('nó SEM a flag (maestro: undefined — snapshot legado) → PERMITE', () => {
+    expect(isMaestro(mirror([node('legado')]), 'legado')).toBe(true)
+  })
+
+  // Fail-open no desconhecido, mesma filosofia do escopo de projeto: um `from` que não resolve a
+  // nenhum nó do espelho (nó recém-fechado, espelho defasado, id inventado) não deve travar o verbo.
+  it('from que não resolve a nenhum nó do espelho → permite (fail-open)', () => {
+    expect(isMaestro(mirror([node('m1', true)]), 'fantasma')).toBe(true)
+  })
+
+  it('espelho vazio → permite (nada resolve)', () => {
+    expect(isMaestro(mirror([]), 'qualquer')).toBe(true)
+  })
+
+  // Sem `from` = orq legado/externo, que não injeta ORKESTRA_NODE_ID. Permite sem sequer olhar o
+  // espelho — nem mesmo quando há um maestro:false lá dentro.
+  it('sem from (orq legado/externo) → permite mesmo com nós maestro:false no espelho', () => {
+    expect(isMaestro(mirror([node('c1', false)]), undefined)).toBe(true)
+  })
+
+  it('resolve o nó pelo id certo quando há vários no espelho', () => {
+    const m = mirror([node('m1', true), node('c1', false), node('legado')])
+    expect(isMaestro(m, 'm1')).toBe(true)
+    expect(isMaestro(m, 'c1')).toBe(false)
+    expect(isMaestro(m, 'legado')).toBe(true)
+  })
+})
 
 describe('OrchestrationServer', () => {
   it('GET /list com token retorna o espelho', async () => {
@@ -244,6 +302,35 @@ describe('OrchestrationServer', () => {
     expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
   })
 
+  // T3 (#6): /recruit lê o `from` opcional (id do nó do Maestro) e o inclui no comando emitido —
+  // o renderer usa esse id para posicionar o recruta abaixo do Maestro e auto-conectar. Espelha
+  // o padrão de `/note` (from opcional, retrocompatível).
+  it('POST /recruit com from inclui o campo no comando emitido', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', preset: 'claude', role: 'Reviewer', from: 't1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer', from: 't1' }])
+  })
+
+  it('POST /recruit sem from (legado) continua emitindo sem o campo (retrocompat, como /note)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', preset: 'claude', role: 'Reviewer' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude', role: 'Reviewer' }])
+  })
+
   it('POST /recruit sem role (opcional) ainda emite o comando', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [] }, commands)
@@ -257,7 +344,38 @@ describe('OrchestrationServer', () => {
     expect(commands).toEqual([{ type: 'recruit', name: 'Rev', preset: 'claude' }])
   })
 
-  it('POST /recruit com body vazio (sem name/preset) retorna 400', async () => {
+  // T4 (Modo Maestro): `preset` é OPCIONAL na API. `orq recruit "Dev"` monta o corpo SEM o campo
+  // (JSON.stringify some com undefined); exigi-lo aqui devolvia 400 antes de o comando chegar ao
+  // renderer — deixando a herança de preset (resolveRecruitPreset) inalcançável na prática. Sem
+  // preset, o comando sai sem o campo e o renderer herda o do Maestro (default seguro 'shell').
+  it('POST /recruit sem preset emite o comando sem o campo (herança resolvida no renderer)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Dev', from: 't1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'recruit', name: 'Dev', from: 't1' }])
+  })
+
+  // Opcional != sem contrato: quando presente, o preset continua tendo de ser string.
+  it('POST /recruit com preset não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Dev', preset: 42 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /recruit com body vazio (sem name) retorna 400', async () => {
     const commands: OrchestrationCommand[] = []
     const s = makeServer({ nodes: [] }, commands)
     const { port, token } = await s.start()
@@ -267,6 +385,195 @@ describe('OrchestrationServer', () => {
       body: JSON.stringify({})
     })
     expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // --- T6: gating server-side (só Maestro recruta/conecta/dispensa) ---
+
+  it('POST /recruit de nó NÃO-Maestro (from com maestro:false) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', preset: 'claude', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /recruit de Maestro (from com maestro:true) emite normalmente (200)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', preset: 'claude', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toHaveLength(1)
+  })
+
+  it('POST /recruit sem from (legado) emite mesmo com Maestros no espelho (fail-open 200)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', preset: 'claude' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toHaveLength(1)
+  })
+
+  it('POST /connect de NÃO-Maestro (from=c1) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/connect`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'A', target: 'B', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /connect de Maestro (from=m1) emite {source,target} sem vazar from', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/connect`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'A', target: 'B', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'connect', source: 'A', target: 'B' }])
+  })
+
+  it('POST /dismiss de NÃO-Maestro (from=c1) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'X', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /dismiss de Maestro (from=m1) emite {target} sem vazar from', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'X', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'dismiss', target: 'X' }])
+  })
+
+  // T7 (reassign): rota nova. Contrato igual aos demais verbos de gerência — valida target/role
+  // string (400), aplica o gating de Maestro (403) e emite o comando com o `from` (o renderer não
+  // usa o from aqui, mas mantê-lo no comando espelha o recruit e deixa a origem auditável).
+  it('POST /reassign emite um comando reassign', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor', from: 'm1' }])
+  })
+
+  it('POST /reassign sem from (legado) emite sem o campo', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor' }])
+  })
+
+  it('POST /reassign com target não-string retorna 400 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 42, role: 'Revisor' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /reassign com role ausente retorna 400 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /reassign de NÃO-Maestro (from com maestro:false) retorna 403 e não emite', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor', from: 'c1' })
+    })
+    expect(res.status).toBe(403)
+    expect(commands).toEqual([])
+  })
+
+  it('POST /reassign de Maestro (from com maestro:true) emite normalmente (200)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'm1', type: 'terminal', name: 'Maestro', maestro: true }] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/reassign`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'Dev', role: 'Revisor', from: 'm1' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'reassign', target: 'Dev', role: 'Revisor', from: 'm1' }])
+  })
+
+  it('escopo de projeto (409) vem ANTES do gating de Maestro (403)', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [{ id: 'c1', type: 'terminal', name: 'Comum', maestro: false }] }, commands, {
+      getActiveProjectId: () => 'proj-B'
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/recruit`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json', 'x-orkestra-project': 'proj-A' },
+      body: JSON.stringify({ name: 'X', preset: 'claude', from: 'c1' })
+    })
+    expect(res.status).toBe(409) // projeto não-ativo é 409 (global), nunca chega ao 403 da rota
     expect(commands).toEqual([])
   })
 
@@ -426,6 +733,120 @@ describe('OrchestrationServer', () => {
     expect(commands).toEqual([])
   })
 
+  // --- T2: navegação dedicada (POST /portal/nav, action ∈ {back,forward,reload}) ---
+
+  it('POST /portal/nav emite portalNavigate para cada action válida', async () => {
+    for (const action of ['back', 'forward', 'reload'] as const) {
+      const commands: OrchestrationCommand[] = []
+      const s = makeServer({ nodes: [] }, commands)
+      const { port, token } = await s.start()
+      const res = await fetch(`http://127.0.0.1:${port}/portal/nav`, {
+        method: 'POST',
+        headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+        body: JSON.stringify({ target: 'P', action })
+      })
+      expect(res.status).toBe(200)
+      expect(commands).toEqual([{ type: 'portalNavigate', target: 'P', action }])
+      await s.stop()
+    }
+  })
+
+  it('POST /portal/nav com action fora da união fechada retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/nav`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', action: 'evil' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // --- T3: rolagem dedicada (POST /portal/scroll, x/y devem ser number) ---
+
+  it('POST /portal/scroll emite portalScroll com x/y numéricos', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/scroll`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', x: 0, y: 800 })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalScroll', target: 'P', x: 0, y: 800 }])
+  })
+
+  it('POST /portal/scroll com x não-numérico retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/scroll`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'P', x: '800', y: 0 })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // --- T5: agente cria portais (POST /portal/create, name string, url opcional) ---
+
+  it('POST /portal/create emite portalCreate com {name, url}', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/create`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Docs', url: 'https://example.com' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalCreate', name: 'Docs', url: 'https://example.com' }])
+  })
+
+  it('POST /portal/create só com name (url ausente) emite sem o campo url', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/create`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Vazio' })
+    })
+    expect(res.status).toBe(200)
+    expect(commands).toEqual([{ type: 'portalCreate', name: 'Vazio' }])
+  })
+
+  it('POST /portal/create com name não-string retorna 400', async () => {
+    const commands: OrchestrationCommand[] = []
+    const s = makeServer({ nodes: [] }, commands)
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal/create`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 123, url: 'https://example.com' })
+    })
+    expect(res.status).toBe(400)
+    expect(commands).toEqual([])
+  })
+
+  // T4: GET /portal repassa o campo dom (novo) quando presente no estado.
+  it('GET /portal repassa o campo dom quando presente no estado', async () => {
+    const getPortalState = vi
+      .fn()
+      .mockReturnValue({ url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' })
+    const s = makeServer({ nodes: [] }, [], { getPortalState })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/portal?name=P`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ url: 'https://x', title: 'X', text: 'corpo', dom: '[button] #enviar — Enviar' })
+  })
+
   it('GET /portal?name=P devolve o estado injetado por getPortalState', async () => {
     const getPortalState = vi.fn().mockReturnValue({ url: 'https://x', title: 'X', text: 'conteúdo' })
     const s = makeServer({ nodes: [] }, [], { getPortalState })
@@ -578,4 +999,452 @@ describe('OrchestrationServer', () => {
     expect(res.status).toBe(503)
   })
 
+  // T1+T2 (quick win #5): o /context atravessa a cadeia de NOTAS transitivamente. Antes resolvia
+  // só 1 salto (vizinhos diretos), então uma neta ligada por uma cadeia nota→nota ficava de fora.
+  it('GET /context atravessa a cadeia de notas transitivamente (raiz E filha entram)', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 'T', type: 'terminal', name: 'Agente' },
+        { id: 'A', type: 'note', name: 'Raiz', content: 'conteúdo da raiz' },
+        { id: 'B', type: 'note', name: 'Filha', content: 'conteúdo da filha' }
+      ],
+      edges: [
+        { source: 'T', target: 'A' },
+        { source: 'A', target: 'B' }
+      ]
+    }
+    const s = makeServer(mirror, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    const { context } = (await res.json()) as { context: string }
+    // Raiz primeiro (BFS), depois a filha alcançada pela cadeia note↔note.
+    expect(context).toBe(
+      '[contexto — nota: Raiz]\nconteúdo da raiz\n\n[contexto — nota: Filha]\nconteúdo da filha'
+    )
+  })
+
+  it('GET /context de um terminal sem nada ligado devolve { context: "" }', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [{ id: 'T', type: 'terminal', name: 'Agente' }],
+      edges: []
+    }
+    const s = makeServer(mirror, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ context: '' })
+  })
+
+  it('GET /context atravessa nota-raiz vazia e traz só a filha com conteúdo (filtro de vazio preservado)', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 'T', type: 'terminal', name: 'Agente' },
+        { id: 'A', type: 'note', name: 'Índice', content: '' },
+        { id: 'B', type: 'note', name: 'Filha', content: 'só a filha tem conteúdo' }
+      ],
+      edges: [
+        { source: 'T', target: 'A' },
+        { source: 'A', target: 'B' }
+      ]
+    }
+    const s = makeServer(mirror, [])
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ context: '[contexto — nota: Filha]\nsó a filha tem conteúdo' })
+  })
+
+  it('GET /context com x-orkestra-project divergente do ativo retorna 409 (herda o escopo de projeto)', async () => {
+    const mirror: CanvasMirror = {
+      nodes: [
+        { id: 'T', type: 'terminal', name: 'Agente' },
+        { id: 'A', type: 'note', name: 'Raiz', content: 'x' }
+      ],
+      edges: [{ source: 'T', target: 'A' }]
+    }
+    const s = makeServer(mirror, [], { getActiveProjectId: () => 'proj-B' })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/context?from=T`, {
+      headers: { 'x-orkestra-token': token, 'x-orkestra-project': 'proj-A' }
+    })
+    expect(res.status).toBe(409)
+  })
+
+})
+
+// T4 (orq role): endpoints de leitura/escrita do papel. O I/O do sidecar é injetado (o servidor não
+// faz fs); os fakes abaixo carregam o texto REAL do serializeRoleSidecar de produção — um shape
+// inventado aqui provaria só que o teste concorda consigo mesmo.
+describe('OrchestrationServer — /role (T4)', () => {
+  const terminal = (id: string, name: string, role?: string): CanvasMirror['nodes'][number] => ({
+    id,
+    type: 'terminal',
+    name,
+    ...(role === undefined ? {} : { role })
+  })
+  const roleJson = (prompt: string): string =>
+    serializeRoleSidecar({ name: 'Revisor', color: 'var(--paper-orange)', prompt })
+
+  it('GET /role?name= devolve o sidecar do nó alvo (do disco)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: (id) => (id === 'n1' ? roleJson('papel em disco') : null)
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Rev`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      name: 'Revisor',
+      color: 'var(--paper-orange)',
+      prompt: 'papel em disco'
+    })
+  })
+
+  it('GET /role sem arquivo em disco deriva do papel do nó (mesmo prompt que o spawn injeta)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => null
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Rev`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(buildRoleSidecar('revisor'))
+  })
+
+  it('GET /role de um nome que não existe no espelho → 404', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], { readRoleSidecar: () => null })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Fantasma`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('POST /role {name,prompt} grava o prompt novo preservando name/color do sidecar', async () => {
+    const written: Array<[string, string]> = []
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('papel antigo'),
+      writeRoleSidecar: (id, json) => {
+        written.push([id, json])
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', prompt: 'papel novo' })
+    })
+    expect(res.status).toBe(200)
+    expect(written).toHaveLength(1)
+    expect(written[0][0]).toBe('n1')
+    // Volta pelo parser de produção: o que foi gravado tem de ser um sidecar válido de verdade.
+    expect(parseRoleSidecar(written[0][1])).toEqual({
+      name: 'Revisor',
+      color: 'var(--paper-orange)',
+      prompt: 'papel novo'
+    })
+  })
+
+  it('POST /role {name,from,to} troca UMA substring do prompt atual', async () => {
+    const written: string[] = []
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('revise o auth e o auth'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', from: 'auth', to: 'billing' })
+    })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('revise o billing e o auth')
+  })
+
+  it('POST /role com from ausente no prompt grava o texto original (idempotente, sem erro)', async () => {
+    const written: string[] = []
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('texto original'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', from: 'inexistente', to: 'x' })
+    })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('texto original')
+  })
+
+  it('POST /role sem prompt nem from/to → 400', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev' })
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /role de um nome que não existe no espelho → 404 (nada é gravado)', async () => {
+    let calls = 0
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Fantasma', prompt: 'x' })
+    })
+    expect(res.status).toBe(404)
+    expect(calls).toBe(0)
+  })
+
+  it('POST /role com falha de I/O na gravação → 500 (o agente NÃO recebe "ok" por algo não gravado)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      readRoleSidecar: () => roleJson('x'),
+      writeRoleSidecar: () => false
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', prompt: 'y' })
+    })
+    expect(res.status).toBe(500)
+  })
+
+  // Escopo de projeto: papel é contexto do agente e não pode vazar entre projetos — as duas rotas
+  // herdam o 409 do guard global (nenhuma exceção para /role).
+  it('/role com x-orkestra-project divergente do ativo retorna 409 (GET e POST)', async () => {
+    const s = makeServer({ nodes: [terminal('n1', 'Rev', 'revisor')] }, [], {
+      getActiveProjectId: () => 'proj-B',
+      readRoleSidecar: () => roleJson('x'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const headers = { 'x-orkestra-token': token, 'x-orkestra-project': 'proj-A', 'content-type': 'application/json' }
+    expect((await fetch(`http://127.0.0.1:${port}/role?name=Rev`, { headers })).status).toBe(409)
+    const post = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'Rev', prompt: 'y' })
+    })
+    expect(post.status).toBe(409)
+  })
+
+  // Decisão (T4): `role` NÃO entra no gating de Maestro. O caso de uso é auto-refino — o agente
+  // reescrevendo o PRÓPRIO papel —, não um verbo de gerência sobre terceiros; um recruta comum
+  // (maestro:false) precisa poder refinar o que ele é.
+  it('um terminal comum (maestro:false) pode escrever o papel — role não é verbo de gerência', async () => {
+    const s = makeServer(
+      { nodes: [{ id: 'n1', type: 'terminal', name: 'Rev', role: 'revisor', maestro: false }] },
+      [],
+      { readRoleSidecar: () => roleJson('x'), writeRoleSidecar: () => true }
+    )
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Rev', prompt: 'y', from: undefined })
+    })
+    expect(res.status).toBe(200)
+  })
+})
+
+// T4c (escalação de privilégio, 2026-07-16): a T4 dispensou o gating porque o sidecar era metadado
+// INERTE ("o raio de dano é um arquivo"). A T4b derrubou essa premissa: o sidecar virou a fonte do
+// prompt efetivo no spawn. Como o alvo do `role write/edit` é por NOME, um recruta comum podia
+// reescrever o role.json de um colega e escolher as instruções com que ele arranca — controle sobre
+// o comportamento de outro agente, não mais um arquivo de metadado.
+//
+// Regra que vigora: escrever o PRÓPRIO papel é sempre livre (auto-refino, o caso de uso da T4);
+// escrever o de TERCEIRO exige maestro:true. Leitura (GET /role) segue livre.
+describe('OrchestrationServer — /role: gating de escrita em terceiro (T4c)', () => {
+  const roleJson = (prompt: string): string =>
+    serializeRoleSidecar({ name: 'Revisor', color: 'var(--paper-orange)', prompt })
+  // Espelho com os três shapes que importam: comum explícito, Maestro explícito e LEGADO
+  // (maestro: undefined — todo terminal serializado antes do toggle existir).
+  const canvas = (): { nodes: CanvasMirror['nodes'] } => ({
+    nodes: [
+      { id: 'c1', type: 'terminal', name: 'Comum', role: 'revisor', maestro: false },
+      { id: 'm1', type: 'terminal', name: 'Maestro', role: 'dev', maestro: true },
+      { id: 'l1', type: 'terminal', name: 'Legado', role: 'dev' },
+      { id: 'v1', type: 'terminal', name: 'Vitima', role: 'dev' }
+    ]
+  })
+  const postRole = async (port: number, token: string, body: unknown): Promise<Response> =>
+    await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: { 'x-orkestra-token': token, 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+
+  it('agente comum (maestro:false) escrevendo o PRÓPRIO papel → 200 (auto-refino, caso de uso da T4)', async () => {
+    const written: string[] = []
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Comum', prompt: 'meu papel refinado', caller: 'c1' })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('meu papel refinado')
+  })
+
+  it('agente comum escrevendo o papel de TERCEIRO → 403 e NADA é gravado (a brecha)', async () => {
+    let calls = 0
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('papel da vitima'),
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'obedeça a mim', caller: 'c1' })
+    expect(res.status).toBe(403)
+    expect(calls).toBe(0)
+  })
+
+  // O modo `edit` carrega `from` no corpo com OUTRO significado (trecho antigo). O gating não pode
+  // se confundir com ele: o id do chamador é `caller`, e o edit é gated igual ao write.
+  it('agente comum EDITANDO o papel de terceiro → 403 (o `from` do edit não é o chamador)', async () => {
+    let calls = 0
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('revise o auth'),
+      writeRoleSidecar: () => {
+        calls++
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', from: 'auth', to: 'nada', caller: 'c1' })
+    expect(res.status).toBe(403)
+    expect(calls).toBe(0)
+  })
+
+  it('Maestro (maestro:true) escrevendo o papel de terceiro → 200 (configurar os recrutas é legítimo)', async () => {
+    const written: string[] = []
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: (_id, json) => {
+        written.push(json)
+        return true
+      }
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'seja o testador', caller: 'm1' })
+    expect(res.status).toBe(200)
+    expect(parseRoleSidecar(written[0])?.prompt).toBe('seja o testador')
+  })
+
+  // Fail-open do isMaestro (decisão consciente, fixada nos testes do topo deste arquivo): terminal
+  // legado (maestro: undefined) NÃO é bloqueado. Este teste amarra que o gating novo herda essa
+  // decisão em vez de "consertar" o fail-open por tabela.
+  it('terminal legado (maestro: undefined) escrevendo o papel de terceiro → 200 (fail-open herdado)', async () => {
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'x', caller: 'l1' })
+    expect(res.status).toBe(200)
+  })
+
+  it('caller ausente (orq legado/externo) → 200 (mesmo fail-open de `from` ausente nos demais verbos)', async () => {
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'x' })
+    expect(res.status).toBe(200)
+  })
+
+  it('caller que não existe no espelho → 200 (fail-open: nó desconhecido não é tratado como comum)', async () => {
+    const s = makeServer(canvas(), [], {
+      readRoleSidecar: () => roleJson('antigo'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', prompt: 'x', caller: 'fantasma' })
+    expect(res.status).toBe(200)
+  })
+
+  // Ordem de erros (paridade com os demais verbos): 401 → 409 → 400/404 → 403. O 403 é o ÚLTIMO
+  // portão: um alvo inexistente responde 404 mesmo para um não-Maestro (o espelho inteiro já é
+  // legível via /list — 404 aqui não vaza nada que o agente não pudesse ver).
+  it('nome inexistente + caller comum → 404 (o 403 é o último portão, não mascara o 404)', async () => {
+    const s = makeServer(canvas(), [], { readRoleSidecar: () => null, writeRoleSidecar: () => true })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Fantasma', prompt: 'x', caller: 'c1' })
+    expect(res.status).toBe(404)
+  })
+
+  it('corpo inválido (nem prompt nem from/to) + caller comum → 400 (validação antes do gating)', async () => {
+    const s = makeServer(canvas(), [], { readRoleSidecar: () => null, writeRoleSidecar: () => true })
+    const { port, token } = await s.start()
+    const res = await postRole(port, token, { name: 'Vitima', caller: 'c1' })
+    expect(res.status).toBe(400)
+  })
+
+  it('escopo de projeto vence o gating: projeto não-ativo → 409 mesmo com caller válido', async () => {
+    const s = makeServer(canvas(), [], {
+      getActiveProjectId: () => 'proj-B',
+      readRoleSidecar: () => roleJson('x'),
+      writeRoleSidecar: () => true
+    })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role`, {
+      method: 'POST',
+      headers: {
+        'x-orkestra-token': token,
+        'x-orkestra-project': 'proj-A',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ name: 'Comum', prompt: 'x', caller: 'c1' })
+    })
+    expect(res.status).toBe(409)
+  })
+
+  // Decisão (T4c): LEITURA segue livre. Ler o papel de um colega é ordens de grandeza menos perigoso
+  // que escrevê-lo (não muda o comportamento de ninguém) e "saber com quem falo" é valor declarado do
+  // projeto — a mesma motivação que surfaçou o papel no `orq list`, que já é livre para todos.
+  it('GET /role de um TERCEIRO segue livre (leitura não é gated)', async () => {
+    const s = makeServer(canvas(), [], { readRoleSidecar: () => roleJson('papel da vitima') })
+    const { port, token } = await s.start()
+    const res = await fetch(`http://127.0.0.1:${port}/role?name=Vitima`, {
+      headers: { 'x-orkestra-token': token }
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { prompt: string }).prompt).toBe('papel da vitima')
+  })
 })

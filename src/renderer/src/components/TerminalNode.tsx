@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { presetById } from '../../../shared/presets'
 import { registerTerminalPty, unregisterTerminalPty } from '../terminal/terminalRegistry'
-import { pathsToTerminalInput } from '../terminal/dropPaths'
+import { pathsToTerminalInput, readDroppedPaths, ORKESTRA_PATH_MIME } from '../terminal/dropPaths'
 import { xtermThemeFromTokens } from '../terminal/xtermTheme'
 import { screenIsGenerating } from '../terminal/generatingSignal'
 import { useCanvasStore } from '../store/canvasStore'
@@ -14,19 +14,38 @@ import { useCanvasStore } from '../store/canvasStore'
 // clássico (reagenda a cada chunk) NUNCA chegaria a disparar.
 const GENERATING_SCAN_THROTTLE_MS = 150
 
+// Onda 2 (Trilha A): estado da sessão SSH deste terminal. "connected" = o processo `ssh` está
+// vivo e falando (o prompt de senha também conta como output) — NÃO tentamos parsear sucesso de
+// auth do stream (frágil); é o sinal honesto e suficiente para o MVP.
+export type SshConnState = 'connecting' | 'connected' | 'closed'
+
 export function TerminalNode({
   nodeId,
   preset,
-  sshHost
+  role,
+  sshHost,
+  onConnState
 }: {
   nodeId?: string
   preset?: string
+  // Papel do agente (Dev/Revisor/...): propagado ao main p/ injetar a instrução de arranque no
+  // cwd do pty (CLAUDE.md/AGENTS.md; ver registerPtyIpc). Vazio/ausente = nenhuma injeção.
+  role?: string
   // Fase 27 (Task 3): quando presente, este terminal spawna `ssh <sshHost>` em vez de um shell
   // local (ver o branch de spawnOpts abaixo). Passado como prop por TerminalFlowNode, mesmo
   // padrão de preset — não lido diretamente de data aqui.
   sshHost?: string
+  // Onda 2 (Trilha A): reporta o estado da conexão SSH ao pai (TerminalFlowNode), que renderiza o
+  // badge conectando/conectado/caiu. Só é chamado quando sshHost está presente. O estado vive no
+  // pai (useState local, efêmero — nunca serializado); este componente apenas o EMITE.
+  onConnState?: (state: SshConnState) => void
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  // Ref para o callback de estado: o useEffect roda com deps [] (mount-once), então lê o callback
+  // mais recente via ref em vez de capturá-lo no fechamento (evita stale closure sem re-rodar o
+  // efeito, que recriaria o xterm/pty).
+  const onConnStateRef = useRef(onConnState)
+  onConnStateRef.current = onConnState
 
   useEffect(() => {
     const el = containerRef.current
@@ -73,6 +92,9 @@ export function TerminalNode({
     fit.fit()
 
     let disposeData = (): void => {}
+    // Onda 2 (Trilha A): unsubscribe do pty:exit (assinado em connect() quando há sshHost) —
+    // chamado no cleanup para não vazar listener no ipcRenderer (teto de 200).
+    let disposeExit = (): void => {}
     let ptyId = ''
     let disposed = false
 
@@ -133,7 +155,7 @@ export function TerminalNode({
     // independente de ser um shell local ou uma sessão ssh.
     const spawnOpts = sshHost
       ? { cols: term.cols, rows: term.rows, nodeId, sshHost }
-      : { cols: term.cols, rows: term.rows, nodeId, initialCommand }
+      : { cols: term.cols, rows: term.rows, nodeId, initialCommand, preset, role }
 
     // Liga este xterm a um pty (recém-criado OU reconectado): saída do pty -> xterm, teclado ->
     // pty, resize -> pty, e registra nodeId->ptyId no registry do renderer. Idêntico nos dois
@@ -142,12 +164,25 @@ export function TerminalNode({
     const connect = (id: string): void => {
       ptyId = id
       if (nodeId) registerTerminalPty(nodeId, id)
+      // Onda 2 (Trilha A): o PRIMEIRO chunk de output do `ssh` (prompt/senha/banner) prova que o
+      // processo está vivo e falando → badge vira "conectado". Guardado num flag local (dispara
+      // uma vez).
+      let firstData = true
       disposeData = window.orkestra.pty.onData(id, (data) => {
+        if (firstData) {
+          firstData = false
+          if (sshHost) onConnStateRef.current?.('connected')
+        }
         // callback (não `scheduleGeneratingScan()` solto após o write): garante que o buffer do
         // xterm já processou ESTE chunk antes de varrer — term.write pode adiar o parsing de
         // chunks grandes para não travar a UI, e ler o buffer cedo demais arriscaria varrer o
         // estado ANTERIOR ao chunk que acabou de chegar.
         term.write(data, scheduleGeneratingScan)
+      })
+      // Onda 2 (Trilha A): exit do pty (encaminhado pelo main, T1) → badge "caiu". Só relevante
+      // para SSH; para terminal local o cleanup zera tudo de qualquer forma.
+      disposeExit = window.orkestra.pty.onExit(id, () => {
+        if (sshHost) onConnStateRef.current?.('closed')
       })
       term.onData((data) => window.orkestra.pty.write(id, data))
       term.onResize(({ cols, rows }) => window.orkestra.pty.resize(id, cols, rows))
@@ -158,6 +193,8 @@ export function TerminalNode({
     // TerminalNode), reconecta a ele e restaura o scrollback — NÃO cria um shell novo, então o
     // que estava rodando (agente, build…) continua de onde parou. Só faz spawn na primeira vez.
     const start = async (): Promise<void> => {
+      // Onda 2 (Trilha A): abre em "conectando…" no modo SSH, antes do attach/spawn.
+      if (sshHost) onConnStateRef.current?.('connecting')
       const attached = nodeId ? await window.orkestra.pty.attach(nodeId) : null
       if (disposed) return
       if (attached) {
@@ -167,6 +204,9 @@ export function TerminalNode({
         // acenderia no PRÓXIMO chunk que chegasse depois do re-attach.
         if (attached.buffer) term.write(attached.buffer, scheduleGeneratingScan)
         connect(attached.ptyId)
+        // Re-attach de um pty SOBREVIVENTE: o processo `ssh` está vivo (não re-dispara "primeiro
+        // chunk"), então tratamos como já conectado — ver nota T2 no plano.
+        if (sshHost) onConnStateRef.current?.('connected')
         return
       }
       const id = await window.orkestra.pty.spawn(spawnOpts)
@@ -176,28 +216,61 @@ export function TerminalNode({
     }
     void start().catch((err) => {
       term.write(`\r\n[spawn failed] ${String(err)}\r\n`)
+      // Onda 2 (Trilha A): falha de spawn no modo SSH também vira "caiu".
+      if (sshHost) onConnStateRef.current?.('closed')
     })
 
     const ro = new ResizeObserver(() => fit.fit())
     ro.observe(el)
 
-    // Arrastar arquivos (do Finder) para o terminal insere seus caminhos, como num terminal
-    // nativo. dragover.preventDefault habilita o drop E impede o Chromium de navegar para o
-    // arquivo; getPathForFile (preload/webUtils) resolve o caminho absoluto; pathsToTerminalInput
-    // aspa cada um (seguro p/ espaços/unicode) e escreve no pty deste terminal.
+    // Arrastar arquivos para o terminal insere seus caminhos, como num terminal nativo. Duas
+    // origens: (a) arquivos do Finder (dataTransfer.files, resolvidos via getPathForFile do
+    // preload) e (b) uma linha de arquivo da própria árvore do canvas (FileTreeNode marca o
+    // caminho no MIME ORKESTRA_PATH_MIME). dragover.preventDefault habilita o drop E impede o
+    // Chromium de navegar para o arquivo; readDroppedPaths unifica as duas origens e
+    // pathsToTerminalInput aspa cada caminho (seguro p/ espaços/unicode) antes de escrever no pty.
     const onDragOver = (e: DragEvent): void => {
-      if (e.dataTransfer?.types.includes('Files')) {
+      const types = e.dataTransfer?.types
+      if (types && (types.includes('Files') || types.includes(ORKESTRA_PATH_MIME))) {
         e.preventDefault()
-        e.dataTransfer.dropEffect = 'copy'
+        e.dataTransfer!.dropEffect = 'copy'
       }
     }
     const onDrop = (e: DragEvent): void => {
-      if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
+      if (!e.dataTransfer) return
+      const hasInternal = e.dataTransfer.types.includes(ORKESTRA_PATH_MIME)
+      if (!hasInternal && e.dataTransfer.files.length === 0) return
       e.preventDefault()
       if (!ptyId) return
-      const paths = Array.from(e.dataTransfer.files)
-        .map((f) => window.orkestra.getPathForFile(f))
-        .filter((p) => p.length > 0)
+      // readDroppedPaths resolve os caminhos LOCAIS de forma SÍNCRONA aqui (o dataTransfer não
+      // sobrevive a um await), antes de qualquer transferência assíncrona.
+      const paths = readDroppedPaths(e.dataTransfer, (f) => window.orkestra.getPathForFile(f))
+      if (paths.length === 0) return
+      // Onda 2 (Trilha B): num terminal SSH o caminho LOCAL é inútil (o agente remoto não o
+      // enxerga). Envia cada arquivo por `scp` (via IPC ssh:scpDrop, que valida host + sanitiza o
+      // nome no MAIN) e escreve o caminho REMOTO no PTY. O renderer nunca monta comando de shell —
+      // só passa (host, localPath). Sequencial p/ não saturar conexões scp paralelas.
+      if (sshHost) {
+        const capturedPtyId = ptyId
+        void (async () => {
+          const remotePaths: string[] = []
+          for (const local of paths) {
+            try {
+              const remote = await window.orkestra.ssh.scpDrop(sshHost, local)
+              remotePaths.push(remote)
+            } catch (err) {
+              // mesmo tom discreto do [spawn failed] — erro legível, sem inserir caminho nenhum.
+              term.write(`\r\n[scp falhou] ${String(err)}\r\n`)
+            }
+          }
+          const text = pathsToTerminalInput(remotePaths)
+          if (text) {
+            window.orkestra.pty.write(capturedPtyId, text)
+            term.focus()
+          }
+        })()
+        return
+      }
       const text = pathsToTerminalInput(paths)
       if (text) {
         window.orkestra.pty.write(ptyId, text)
@@ -214,6 +287,9 @@ export function TerminalNode({
       el.removeEventListener('dragover', onDragOver)
       el.removeEventListener('drop', onDrop)
       disposeData()
+      // Onda 2 (Trilha A): solta o listener de pty:exit (higiene; não sinaliza "caiu" aqui — no
+      // desmonte por suspensão/troca de projeto o pty SEGUE vivo e será re-attachado).
+      disposeExit()
       if (nodeId) unregisterTerminalPty(nodeId)
       // Fase 31: NÃO matar o pty aqui. Ao trocar de projeto, o TerminalNode desmonta mas o
       // processo deve continuar rodando — ele é reconectado (attach) quando o nó reaparece. O

@@ -1,10 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
-import { rankItems } from '../search'
+import { rankItems, matchRanges } from '../search'
 import { buildPaletteItems, type PaletteItem } from '../palette/paletteCommands'
 import { nextEdgeStyle } from '../edges/edgeStyle'
 import { isValidSshHost } from '../../../shared/ssh'
+import { emitNewProject, emitSwitchProject } from '../ui/appEvents'
+import type { CrossProjectNode } from '../../../shared/crossProjectIndex'
 import { AskAgentPanel } from './AskAgentPanel'
 import { Icon } from './Icon'
 import './CommandPalette.css'
@@ -48,6 +50,24 @@ const KIND_GROUP_LABELS: Record<PaletteItem['kind'], string> = {
   disconnect: 'Desconectar'
 }
 
+// T3 — realce dos caracteres combinados: quebra o `label` nos intervalos casados (matchRanges,
+// puro/testado em search.test.ts) e envolve os trechos casados em <b>. `rankItems` não muda — o
+// realce é derivado à parte, então zero risco ao ranqueamento. Match só-no-corpo (searchText) não
+// tem trecho no label → nenhum <b> (comportamento aceito, ver plano T3).
+function renderLabel(label: string, query: string): JSX.Element {
+  const ranges = matchRanges(query, label)
+  if (ranges.length === 0) return <>{label}</>
+  const parts: JSX.Element[] = []
+  let cursor = 0
+  ranges.forEach(([start, end], i) => {
+    if (cursor < start) parts.push(<Fragment key={`p${i}`}>{label.slice(cursor, start)}</Fragment>)
+    parts.push(<b key={`b${i}`}>{label.slice(start, end)}</b>)
+    cursor = end
+  })
+  if (cursor < label.length) parts.push(<Fragment key="tail">{label.slice(cursor)}</Fragment>)
+  return <>{parts}</>
+}
+
 export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -77,7 +97,25 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   const removeEdgesForNode = useCanvasStore((s) => s.removeEdgesForNode)
   const edgeStyle = useCanvasStore((s) => s.edgeStyle)
   const setEdgeStyle = useCanvasStore((s) => s.setEdgeStyle)
+  const activeCwd = useCanvasStore((s) => s.activeCwd)
   const { setCenter } = useReactFlow()
+
+  // Batuta T5: nós dos projetos NÃO-ativos, carregados UMA vez ao abrir a paleta (o main pula o
+  // projeto ativo, que já vem do canvasStore ao vivo). Read-only; falha de IPC degrada para "só o
+  // canvas atual" (a busca local segue funcionando).
+  const [crossNodes, setCrossNodes] = useState<CrossProjectNode[]>([])
+  useEffect(() => {
+    let cancelled = false
+    window.orkestra.projects
+      .crossIndex()
+      .then((idx) => {
+        if (!cancelled) setCrossNodes(idx)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Autofocus na busca ao montar — e de volta pra ela sempre que o modo input fecha (Esc), já
   // que a tela de input desmonta o <input> da busca, e remontar um elemento não devolve o foco
@@ -113,6 +151,21 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
     addTerminalNode(undefined, { name: `SSH: ${h}`, sshHost: h })
   }
 
+  // T4: mesma ação da Topbar ("Abrir no editor de código"), agora também na paleta. O main tenta
+  // VS Code/Cursor/… e cai no gerenciador de arquivos se nenhum estiver instalado. No-op silencioso
+  // sem pasta vinculada (mesmo padrão do SSH inválido acima) — nada de toast/erro.
+  const openInEditor = (): void => {
+    if (activeCwd) void window.orkestra.ide.open(activeCwd)
+  }
+
+  // Batuta T5: abrir um nó de OUTRO projeto. A troca de projeto (flush + switch + hydrate) é da
+  // ProjectsSidebar; aqui só pedimos por evento (com o nó a focar) e fechamos a paleta. A sidebar
+  // troca e, quando o canvas do alvo estiver montado, emite o frame que o Canvas enquadra.
+  const openNodeInProject = (projectId: string, nodeId: string): void => {
+    emitSwitchProject(projectId, nodeId)
+    onClose()
+  }
+
   const items = useMemo(
     () =>
       buildPaletteItems({
@@ -122,6 +175,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           .filter((n) => n.selected)
           .map((n) => ({ id: n.id, type: n.type, data: n.data as Record<string, unknown>, selected: true })),
         edgeStyle,
+        crossProjectNodes: crossNodes,
         actions: {
           addTerminalNode,
           addNoteNode,
@@ -135,7 +189,10 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           removeEdge,
           addSshTerminal,
           toggleEdgeStyle: () => setEdgeStyle(nextEdgeStyle(edgeStyle)),
-          removeEdgesForNode
+          removeEdgesForNode,
+          openInEditor,
+          newProject: emitNewProject,
+          openNodeInProject
         }
       }),
     [
@@ -151,9 +208,11 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
       onConnect,
       removeEdge,
       addSshTerminal,
+      openInEditor,
       edgeStyle,
       setEdgeStyle,
-      removeEdgesForNode
+      removeEdgesForNode,
+      crossNodes
     ]
   )
 
@@ -266,7 +325,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
                         onMouseEnter={() => setSelectedIndex(index)}
                         onClick={() => runItem(item)}
                       >
-                        <span className="ork-palette-item-label">{item.label}</span>
+                        <span className="ork-palette-item-label">{renderLabel(item.label, query)}</span>
                         <span className="ork-palette-item-kind">{KIND_LABELS[item.kind]}</span>
                       </div>
                     </Fragment>

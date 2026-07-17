@@ -404,6 +404,41 @@
   background: color-mix(in srgb, var(--note-ink) 35%, transparent);
 }
 
+/* Notas #10 (T2): quando a nota tem nome (ou está sendo renomeada), a faixa vira um título —
+   esconde o "puxador" (::before), alinha à esquerda e mostra o nome. O arraste segue funcionando
+   pela própria faixa; o input de rename é `nodrag`. */
+.ork-note-drag--named {
+  justify-content: flex-start;
+  height: 18px;
+  padding: 0 8px;
+}
+.ork-note-drag--named::before {
+  display: none;
+}
+.ork-note-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.ork-note--colored .ork-note-name {
+  color: color-mix(in srgb, var(--note-ink) 75%, transparent);
+}
+.ork-note-name-input {
+  width: 100%;
+  height: 16px;
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
 .ork-note-editor {
   flex: 1;
   min-height: 0;
@@ -454,6 +489,28 @@
 .ork-note-editor .ProseMirror img {
   max-width: 100%;
   border-radius: var(--radius-sm);
+}
+
+/* Modo raw (T7): edição do Markdown cru num textarea que ocupa a mesma área do editor. Fonte mono
+   e sem borda para não competir com o post-it; nodrag/nowheel no elemento (React Flow não rouba o
+   texto/scroll). */
+.ork-note-raw {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  color: var(--text-1);
+}
+.ork-note--colored .ork-note-raw {
+  color: var(--note-ink);
 }
 
 /* Onda 6 (F03): rodapé do terminal com a rota da pasta. `direction: rtl` corta o começo do
@@ -619,6 +676,12 @@
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-2);
   z-index: 10;
+  /* Conexões T4: o popover passou a ter mais de um botão (estilo + desconectar) — empilha e
+     alinha à esquerda em vez de deixar os dois lado a lado. */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
 .ork-edge-pop-btn {
   padding: 3px 10px;
@@ -629,9 +692,14 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
+  text-align: left;
 }
 .ork-edge-pop-btn:hover {
   background: var(--bg-2);
+}
+/* Ação destrutiva: só ela fica vermelha no hover (antes era a regra base, quando "Desconectar"
+   era o único botão do popover). */
+.ork-edge-pop-btn--danger:hover {
   color: var(--err);
 }
 
@@ -752,4 +820,31 @@
 .ork-find-btn--text {
   padding: 0 8px;
   font-weight: var(--weight-medium);
+}
+/* T10: toggle Aa (case-sensitive) ligado — mesmo vocabulário de estado ativo dos icon-buttons. */
+.ork-find-btn--on {
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-color: var(--border-strong);
+}
+
+/* T6 (notas): aviso transiente de colagem de imagem recusada (teto de bytes/formato). */
+.ork-note-imgmsg {
+  padding: var(--space-0-5) var(--space-1-5);
+  font-size: var(--fs-2xs);
+  color: var(--warn);
+  background: var(--warn-weak);
+}
+
+/* T9 (notas): crachá do vínculo com arquivo .md, na faixa de arraste. Discreto quando saudável;
+   --warn quando o sync degradou (arquivo sumiu, escrita recusada). */
+.ork-note-filebadge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding-right: var(--space-1);
+  color: var(--text-3);
+}
+.ork-note-filebadge--warn {
+  color: var(--warn);
 }

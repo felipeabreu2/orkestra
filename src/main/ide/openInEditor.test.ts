@@ -12,6 +12,15 @@ describe('openInEditor', () => {
     expect(tryExec).toHaveBeenNthCalledWith(2, 'cursor', ['/proj'])
   })
 
+  // Onda 1 · T3: o duplo-clique na árvore manda um ARQUIVO (não a pasta do projeto). A lógica é a
+  // mesma — este caso trava o contrato: o path chega intacto em tryExec, sem virar dirname.
+  it('abre um ARQUIVO (não só a pasta do projeto) passando o caminho intacto', async () => {
+    const tryExec = vi.fn(async (cmd: string) => cmd === 'code')
+    const res = await openInEditor('/x/a.ts', { tryExec })
+    expect(res).toEqual({ ok: true, editor: 'code' })
+    expect(tryExec).toHaveBeenCalledWith('code', ['/x/a.ts'])
+  })
+
   it('cai no gerenciador de arquivos quando nenhum editor funciona', async () => {
     const tryExec = vi.fn(async () => false)
     const openFiles = vi.fn(async () => true)

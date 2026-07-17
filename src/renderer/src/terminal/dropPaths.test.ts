@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { quotePathForShell, pathsToTerminalInput } from './dropPaths'
+import {
+  quotePathForShell,
+  pathsToTerminalInput,
+  readDroppedPaths,
+  ORKESTRA_PATH_MIME
+} from './dropPaths'
 
 describe('quotePathForShell', () => {
   it('envolve o caminho em aspas simples', () => {
@@ -25,5 +30,35 @@ describe('pathsToTerminalInput', () => {
   })
   it('lista vazia devolve string vazia', () => {
     expect(pathsToTerminalInput([])).toBe('')
+  })
+  it('um único caminho com espaço fica seguro dentro das aspas', () => {
+    expect(pathsToTerminalInput(['/a b/c.ts'])).toBe("'/a b/c.ts' ")
+  })
+})
+
+describe('readDroppedPaths', () => {
+  it('drag interno da árvore: lê o caminho do MIME próprio', () => {
+    const dt = { types: [ORKESTRA_PATH_MIME], getData: () => '/a b/c.ts', files: [] }
+    expect(readDroppedPaths(dt)).toEqual(['/a b/c.ts'])
+  })
+  it('MIME interno presente mas vazio devolve []', () => {
+    const dt = { types: [ORKESTRA_PATH_MIME], getData: () => '', files: [] }
+    expect(readDroppedPaths(dt)).toEqual([])
+  })
+  it('sem MIME e sem arquivos devolve []', () => {
+    const dt = { types: [], getData: () => '', files: [] }
+    expect(readDroppedPaths(dt)).toEqual([])
+  })
+  it('drop externo (Finder): resolve cada File via o resolvedor do chamador, ignorando vazios', () => {
+    const f1 = { name: 'a' } as unknown as File
+    const f2 = { name: 'b' } as unknown as File
+    const resolve = (f: File): string => ((f as unknown as { name: string }).name === 'a' ? '/x/a' : '')
+    const dt = { types: ['Files'], getData: () => '', files: [f1, f2] }
+    expect(readDroppedPaths(dt, resolve)).toEqual(['/x/a'])
+  })
+  it('MIME interno tem prioridade sobre arquivos externos presentes', () => {
+    const f1 = { name: 'a' } as unknown as File
+    const dt = { types: [ORKESTRA_PATH_MIME, 'Files'], getData: () => '/interno', files: [f1] }
+    expect(readDroppedPaths(dt, () => '/externo')).toEqual(['/interno'])
   })
 })

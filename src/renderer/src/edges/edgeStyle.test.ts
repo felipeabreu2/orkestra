@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { resolveInitialEdgeStyle, nextEdgeStyle, loadEdgeStyle, saveEdgeStyle } from './edgeStyle'
+import { resolveInitialEdgeStyle, nextEdgeStyle, loadEdgeStyle, saveEdgeStyle, resolveEdgeStyle } from './edgeStyle'
 
 describe('edgeStyle', () => {
   beforeEach(() => {
@@ -31,5 +31,25 @@ describe('edgeStyle', () => {
     expect(loadEdgeStyle()).toBe('circuito')
     saveEdgeStyle('corda')
     expect(loadEdgeStyle()).toBe('corda')
+  })
+
+  describe('resolveEdgeStyle (override por aresta)', () => {
+    it('data.style válido sobrepõe o global', () => {
+      expect(resolveEdgeStyle('circuito', 'corda')).toBe('circuito')
+      expect(resolveEdgeStyle('corda', 'curva')).toBe('corda')
+      expect(resolveEdgeStyle('curva', 'circuito')).toBe('curva')
+    })
+
+    it('sem data.style cai no global', () => {
+      expect(resolveEdgeStyle(undefined, 'corda')).toBe('corda')
+      expect(resolveEdgeStyle(null, 'circuito')).toBe('circuito')
+    })
+
+    it('data.style inválido cai no global (data vem de snapshot em disco)', () => {
+      expect(resolveEdgeStyle('lixo', 'corda')).toBe('corda')
+      expect(resolveEdgeStyle(42, 'curva')).toBe('curva')
+      expect(resolveEdgeStyle({}, 'circuito')).toBe('circuito')
+      expect(resolveEdgeStyle('', 'corda')).toBe('corda')
+    })
   })
 })

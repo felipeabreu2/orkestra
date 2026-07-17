@@ -1,4 +1,9 @@
 import { interpretEscapes } from './escapes'
+import { describeSelf } from './whoami'
+import { planSquad } from './squad'
+import { formatListLine } from './list'
+import { parseRoleCommand, ROLE_USAGE } from './role'
+import type { CanvasMirror } from '../shared/orchestration'
 
 export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; out: string }> {
   // orq depende do fetch global (Node >= 18). Sem ele, cada comando abaixo lançaria um
@@ -24,22 +29,43 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
   }
   // Erro padrão de resposta não-ok: o 409 do escopo de projeto ganha uma orientação acionável
   // para o agente (é uma condição esperada, não um bug); o resto mantém o "orq: erro <status>".
-  const errOut = (res: { status: number }): string =>
+  // `forbidden` (T4c): o 403 default fala dos verbos de gerência, mas o /role o devolve por outro
+  // motivo (escrever o papel de um terceiro sem ser Maestro) — quem chama passa a orientação certa.
+  const errOut = (res: { status: number }, forbidden?: string): string =>
     res.status === 409
       ? 'orq: este terminal pertence a um projeto que NÃO está ativo no Orkestra — os comandos orq atuam sobre o projeto aberto na tela. Avise o usuário e aguarde ele voltar para o projeto deste terminal.'
       : res.status === 503
         ? 'orq: o Orkestra está sem janela ativa no momento — o comando NÃO foi aplicado. Abra/reative a janela e tente de novo.'
-        : `orq: erro ${res.status}`
+        : res.status === 403
+          ? (forbidden ??
+            'orq: este terminal não é um Maestro — os verbos de gerência (recruit/connect/reassign/dismiss) só têm efeito num Maestro. Peça ao usuário para ativar o Modo Maestro neste terminal.')
+          : `orq: erro ${res.status}`
 
   const [cmd, sub, ...rest] = argv
   try {
+    // T2 (quick win #7): "recrutas sabem quem são". Reusa GET /list (nenhum endpoint novo — herda o
+    // escopo de projeto/409 de graça), resolve o próprio nó por ORKESTRA_NODE_ID e delega ao helper
+    // puro describeSelf. Código != 0 quando o nó não pôde ser identificado (orq externo/legado sem
+    // NODE_ID, ou id sem correspondência no espelho).
+    const whoami = async (): Promise<{ code: number; out: string }> => {
+      const res = await fetch(`${base}/list`, { headers })
+      if (!res.ok) return { code: 1, out: errOut(res) }
+      const mirror = (await res.json()) as CanvasMirror
+      const nodeId = env.ORKESTRA_NODE_ID ?? ''
+      const found = nodeId !== '' && mirror.nodes.some((n) => n.id === nodeId)
+      return { code: found ? 0 : 1, out: describeSelf(mirror, nodeId) }
+    }
+    if (cmd === 'whoami') return await whoami()
     if (cmd === 'list') {
+      // `list --me` é um alias de whoami (conveniência); whoami é o comando principal (mais legível).
+      if (argv.includes('--me')) return await whoami()
       const res = await fetch(`${base}/list`, { headers })
       // Sem o check, um 409 (projeto não-ativo) viraria erro de parse de JSON mascarado como
       // "falha de conexão" — o agente precisa da mensagem real do errOut.
       if (!res.ok) return { code: 1, out: errOut(res) }
-      const mirror = (await res.json()) as { nodes: { id: string; type: string; name: string }[] }
-      const out = mirror.nodes.map((n) => `${n.type}\t${n.name}\t${n.id}`).join('\n')
+      const mirror = (await res.json()) as CanvasMirror
+      // T3b: a linha passa pelo formatador puro (inclui o papel quando o nó tem um) — ver ./list.
+      const out = mirror.nodes.map(formatListLine).join('\n')
       return { code: 0, out }
     }
     if (cmd === 'context') {
@@ -144,10 +170,13 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
     }
     if (cmd === 'recruit') {
       const [preset, role] = rest
+      // from = o nó deste terminal (ORKESTRA_NODE_ID), igual a `note write`: o renderer usa esse id
+      // para posicionar o recruta ABAIXO do Maestro e auto-conectá-lo (T3). Ausente/vazio → o
+      // renderer cai no fallback de cascata (comportamento legado).
       const res = await fetch(`${base}/recruit`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ name: sub, preset, role })
+        body: JSON.stringify({ name: sub, preset, role, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
@@ -155,7 +184,20 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       const res = await fetch(`${base}/dismiss`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ target: sub })
+        body: JSON.stringify({ target: sub, from: env.ORKESTRA_NODE_ID ?? '' })
+      })
+      return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+    }
+    if (cmd === 'reassign') {
+      // orq reassign "<nome>" "<papel>" — troca o papel de um recruta SEM dispensá-lo: o nó
+      // (posição/nome/conexões) fica intacto e só o PROCESSO do agente reinicia, para ele nascer com
+      // o novo papel no system prompt (ORKESTRA_ROLE no env do pty → --append-system-prompt).
+      const [role] = rest
+      if (!sub || !role) return { code: 1, out: 'uso: orq reassign "<nome>" "<papel>"' }
+      const res = await fetch(`${base}/reassign`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ target: sub, role, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
@@ -164,13 +206,77 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
       const res = await fetch(`${base}/connect`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ source: sub, target })
+        body: JSON.stringify({ source: sub, target, from: env.ORKESTRA_NODE_ID ?? '' })
       })
       return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
     }
+    if (cmd === 'squad') {
+      // orq squad "<preset>" "<nota-spec>" — monta Dev+Revisor+Testador+Docs conectados à nota-spec,
+      // em SEQUÊNCIA (recrutar antes de conectar), cada op sujeita ao gating de Maestro (403). Resumo
+      // k/N como o `ask --batch`; aborta cedo num 403 (não é Maestro), com a orientação do errOut.
+      const spec = rest[0]
+      if (!sub || !spec) return { code: 1, out: 'uso: orq squad "<preset>" "<nota-spec>"' }
+      const from = env.ORKESTRA_NODE_ID ?? ''
+      const ops = planSquad({ preset: sub, spec })
+      let ok = 0
+      for (const op of ops) {
+        const res =
+          op.op === 'recruit'
+            ? await fetch(`${base}/recruit`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ name: op.name, preset: op.preset, role: op.role, from })
+              })
+            : await fetch(`${base}/connect`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ source: op.source, target: op.target, from })
+              })
+        if (res.ok) ok++
+        else if (res.status === 403) return { code: 1, out: errOut(res) }
+      }
+      return { code: ok === ops.length ? 0 : 1, out: `esquadrão montado: ${ok}/${ops.length} operações` }
+    }
+    // T4 — auto-refino do papel: o agente lê e reescreve o prompt do PRÓPRIO papel. Toda a decisão
+    // de parsing mora no parseRoleCommand puro (./role); aqui só o transporte.
+    //
+    // T4c — o alvo continua sendo por NOME, mas a escrita agora é gated no servidor: o próprio papel
+    // é sempre livre; o de um TERCEIRO exige Maestro (depois da T4b, o sidecar é o prompt com que o
+    // alvo arranca — escrever o do colega é controlar o comportamento dele). Por isso mandamos
+    // `caller` = ORKESTRA_NODE_ID. O campo NÃO pode se chamar `from`: no corpo do `role edit`, `from`
+    // já é o trecho de texto a substituir. `show` (leitura) segue livre.
+    if (cmd === 'role') {
+      const parsed = parseRoleCommand(argv)
+      if (parsed.action === 'usage') return { code: 2, out: ROLE_USAGE }
+      if (parsed.action === 'show') {
+        const res = await fetch(`${base}/role?name=${encodeURIComponent(parsed.name)}`, { headers })
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { prompt?: string }
+        const prompt = (data.prompt ?? '').trim()
+        // Papel livre (sem instrução) e terminal sem papel dão prompt vazio: dizer isso é melhor do
+        // que imprimir nada e deixar o agente achar que o comando falhou.
+        return { code: 0, out: prompt || 'orq: este terminal não tem papel definido (nada a mostrar).' }
+      }
+      const caller = env.ORKESTRA_NODE_ID ?? ''
+      const body =
+        parsed.action === 'write'
+          ? { name: parsed.name, prompt: parsed.prompt, caller }
+          : { name: parsed.name, from: parsed.from, to: parsed.to, caller }
+      const res = await fetch(`${base}/role`, { method: 'POST', headers, body: JSON.stringify(body) })
+      return {
+        code: res.ok ? 0 : 1,
+        out: res.ok
+          ? 'ok'
+          : errOut(
+              res,
+              'orq: escrever o papel de outro agente exige Modo Maestro — este terminal é um recruta comum. Refine o SEU papel (use o seu próprio nome) ou peça ao Maestro para ajustar o papel dele.'
+            )
+      }
+    }
     if (cmd === 'portal') {
-      // sub aqui é a ação (open/navigate/click/fill/eval/snapshot); rest[0] é o nome do portal
-      // alvo, o resto são os argumentos específicos da ação (url/selector/texto/js).
+      // sub aqui é a ação (open/navigate/click/fill/eval/snapshot/back/forward/reload/scroll/create);
+      // rest[0] é o nome do portal alvo (para create, o nome do portal A CRIAR), o resto são os
+      // argumentos específicos da ação (url/selector/texto/js/coords).
       const [target, ...args] = rest
       if (sub === 'open' || sub === 'navigate') {
         const url = args.join(' ')
@@ -188,7 +294,13 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, selector })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+        // T1: click deixou de ser cego. HTTP 200 = transporte ok (code 0); o corpo {ok:boolean}
+        // diz se a ação achou o elemento e agiu — imprime `ok: true`/`ok: false` (elimina o
+        // `orq portal snapshot` extra só para descobrir "cliquei em nada"). Não-ok de transporte
+        // (503 sem janela, 409 projeto) segue a orientação padrão do errOut, com code 1.
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { ok?: boolean }
+        return { code: 0, out: `ok: ${data.ok === true}` }
       }
       if (sub === 'fill') {
         const [selector, ...textWords] = args
@@ -198,7 +310,11 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
           headers,
           body: JSON.stringify({ target, selector, text })
         })
-        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+        // T1: idem click — fill confirma se o campo existia e foi preenchido (fillScript retorna
+        // false quando o seletor não casa) via o mesmo corpo {ok:boolean}.
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { ok?: boolean }
+        return { code: 0, out: `ok: ${data.ok === true}` }
       }
       if (sub === 'eval') {
         const js = args.join(' ')
@@ -209,22 +325,100 @@ export async function runOrq(argv: string[], env: NodeJS.ProcessEnv): Promise<{ 
         })
         return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
       }
-      if (sub === 'snapshot') {
-        const res = await fetch(`${base}/portal?name=${encodeURIComponent(target ?? '')}`, { headers })
+      // T8: console — os últimos logs/erros que o SITE do portal imprimiu (ring-buffer no main,
+      // alimentado pelo console-message do webview). 404 = sem logs bufferizados (portal
+      // desconhecido, ou a página não logou nada desde que montou) — mensagem orientativa.
+      if (sub === 'console') {
+        const res = await fetch(`${base}/portal/console?name=${encodeURIComponent(target ?? '')}`, {
+          headers
+        })
+        if (res.status === 404) {
+          return { code: 1, out: 'orq: sem logs de console para este portal (o site não logou nada, ou o portal não existe).' }
+        }
         if (!res.ok) return { code: 1, out: errOut(res) }
-        const data = (await res.json()) as { url: string; title: string; text: string }
-        return { code: 0, out: `url: ${data.url}\ntitle: ${data.title}\ntext: ${data.text}` }
+        const data = (await res.json()) as { lines?: string[] }
+        return { code: 0, out: (data.lines ?? []).join('\n') }
+      }
+      // T7: screenshot — o agente multimodal "vê" a página. O main captura via capturePage, grava
+      // um PNG em tmpdir e devolve o CAMINHO (nunca o base64 no stdout — pode passar de 1MB); o
+      // agente abre o arquivo com a própria ferramenta de leitura de imagem. ok:false (webview
+      // morto/timeout) é código 1: sem arquivo não há o que abrir, o "ok: false" explica.
+      if (sub === 'screenshot') {
+        const res = await fetch(`${base}/portal/screenshot`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ target })
+        })
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { ok?: boolean; path?: string }
+        if (data.ok === true && typeof data.path === 'string' && data.path.length > 0) {
+          return { code: 0, out: data.path }
+        }
+        return { code: 1, out: 'ok: false (captura falhou — o portal existe e terminou de carregar?)' }
+      }
+      // T2: navegação dedicada — back/forward/reload usam os métodos NATIVOS do WebviewTag no
+      // renderer (sem injeção de script). A action vai numa união fechada (validada no servidor).
+      if (sub === 'back' || sub === 'forward' || sub === 'reload') {
+        const res = await fetch(`${base}/portal/nav`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ target, action: sub })
+        })
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+      }
+      // T3: rolagem dedicada — `orq portal scroll "<nome>" <dx> <dy>`. Coage os args a números aqui
+      // (NaN → 0): o corpo carrega números, o servidor valida typeof number, e o renderer re-coage no
+      // scrollScript (barreira anti-injeção final). dy omitido = 0.
+      if (sub === 'scroll') {
+        const nx = Number(args[0])
+        const ny = Number(args[1])
+        const x = Number.isFinite(nx) ? nx : 0
+        const y = Number.isFinite(ny) ? ny : 0
+        const res = await fetch(`${base}/portal/scroll`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ target, x, y })
+        })
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+      }
+      // T5: o agente cria um portal. `target` é o NOME do portal a criar; o resto é a URL opcional.
+      // O guard isSafePortalUrl roda no renderer ANTES de navegar (SEC-3): url insegura cria o
+      // portal mas não navega. url vazia → corpo só com {name} (portal em branco).
+      if (sub === 'create') {
+        const url = args.join(' ')
+        const res = await fetch(`${base}/portal/create`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(url ? { name: target, url } : { name: target })
+        })
+        return { code: res.ok ? 0 : 1, out: res.ok ? 'ok' : errOut(res) }
+      }
+      if (sub === 'snapshot') {
+        // T4: --dom/--html (aceito em QUALQUER posição, como o --wait do ask) pede a seção de
+        // elementos interativos (seletores utilizáveis direto em click/fill). Pelo mesmo motivo do
+        // ask, a flag é filtrada de TODAS as palavras após a ação (`rest`) ANTES de separar o nome
+        // do portal — usar `target`/`args` (desestruturados posicionalmente acima) trataria "--dom"
+        // como o próprio nome do portal quando ele viesse logo após "snapshot". Sem a flag, a saída
+        // fica inalterada (só url/title/text) — retrocompat.
+        const dom = rest.includes('--dom') || rest.includes('--html')
+        const [name] = rest.filter((w) => w !== '--dom' && w !== '--html')
+        const res = await fetch(`${base}/portal?name=${encodeURIComponent(name ?? '')}`, { headers })
+        if (!res.ok) return { code: 1, out: errOut(res) }
+        const data = (await res.json()) as { url: string; title: string; text: string; dom?: string }
+        let out = `url: ${data.url}\ntitle: ${data.title}\ntext: ${data.text}`
+        if (dom) out += `\ndom:\n${data.dom ?? '(sem snapshot de DOM — recarregue a página do portal)'}`
+        return { code: 0, out }
       }
       return {
         code: 2,
         out:
-          'orq: subcomando de portal desconhecido.\nUso: orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"'
+          'orq: subcomando de portal desconhecido.\nUso: orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal screenshot "<nome>" | orq portal console "<nome>" | orq portal snapshot "<nome>" [--dom]'
       }
     }
     return {
       code: 2,
       out:
-        'orq: comando desconhecido.\nUso: orq list | orq context | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" "<preset>" ["<papel>"] | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal snapshot "<nome>"\nNota: recruit/connect/dismiss são best-effort por nome; comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. Automação de portal é fire-and-forget (open/click/fill/eval não confirmam sucesso); use "orq portal snapshot" para inspecionar o estado após. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
+        'orq: comando desconhecido.\nUso: orq list [--me] | orq whoami | orq context | orq role show|write|edit "<nome>" [...] | orq note write [--to "<nome/id>"] "<conteúdo>" | orq ask "<nome>" "<prompt>" ["--wait" | "--raw" | "--batch"] | orq check "<nome>" | orq recruit "<nome>" ["<preset>"] ["<papel>"] | orq squad "<preset>" "<nota-spec>" | orq reassign "<nome>" "<papel>" | orq dismiss "<nome>" | orq connect "<A>" "<B>" | orq portal open|navigate "<nome>" "<url>" | orq portal click "<nome>" "<seletor>" | orq portal fill "<nome>" "<seletor>" "<texto>" | orq portal eval "<nome>" "<js>" | orq portal back|forward|reload "<nome>" | orq portal scroll "<nome>" <dx> <dy> | orq portal create "<nome>" ["<url>"] | orq portal screenshot "<nome>" | orq portal console "<nome>" | orq portal snapshot "<nome>" [--dom]\nNota: recruit/squad/connect/reassign/dismiss são verbos de gerência (Modo Maestro): o Orkestra só os RECUSA se este terminal estiver marcado como comum (Modo Maestro desligado no bloco) — terminais sem essa marcação executam normalmente; se vier uma recusa, peça ao usuário para ligar o Modo Maestro aqui. São best-effort por nome; em recruit, o preset é opcional (omitido, o recruta herda o preset do Maestro); squad monta Dev+Revisor+Testador+Docs de uma vez, cada um conectado à nota-spec; reassign troca o papel de um recruta mid-task (o nó e as conexões ficam, só o processo do agente reinicia com o novo papel). role show/write/edit lê e refina o PROMPT de um papel (auto-refino: normalmente o seu, pelo seu próprio nome); write troca o prompt inteiro, edit troca só um trecho. Refinar o SEU papel funciona em qualquer terminal (não precisa de Maestro); já ESCREVER o papel de outro agente é verbo de gerência (o papel vira o prompt com que ele arranca na próxima sessão) e só tem efeito num Maestro. role show (leitura) é livre para qualquer papel. Comandos executam em sequência (seguro encadear), nunca em paralelo (sem &). Use "orq list" para confirmar a escalação antes de conectar. portal click/fill confirmam a ação (imprimem "ok: true" quando acharam o elemento e agiram, "ok: false" quando não) — sem precisar de snapshot extra; portal open/eval/back/forward/reload/scroll/create seguem fire-and-forget. Use "orq portal snapshot "<nome>" --dom" para listar os elementos interativos (seletores prontos para click/fill), ou sem flag para o texto da página. ask é fire-and-forget por padrão; com --wait (em qualquer posição), bloqueia até o agente ficar ocioso e imprime o output acumulado; com --raw, envia bytes brutos (interpreta \\x03, \\e[B, \\r, ...) para controlar TUIs/pagers, sem \\n final; com --batch, o 1º argumento é uma lista de nomes por vírgula ("Dev,Revisor") e o mesmo prompt vai para todos.'
     }
   } catch (err) {
     return { code: 1, out: `orq: falha de conexão: ${String(err)}` }

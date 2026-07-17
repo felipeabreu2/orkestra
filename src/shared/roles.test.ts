@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { PRESET_ROLES, roleMeta } from './roles'
 
 describe('PRESET_ROLES', () => {
-  it('tem os quatro papéis prontos com campos completos', () => {
+  it('tem os cinco papéis prontos com campos completos (inclui Docs p/ o esquadrão)', () => {
     const ids = PRESET_ROLES.map((r) => r.id)
-    expect(ids).toEqual(['lider', 'dev', 'revisor', 'testador'])
+    expect(ids).toEqual(['lider', 'dev', 'revisor', 'testador', 'docs'])
     for (const r of PRESET_ROLES) {
       expect(r.label.length).toBeGreaterThan(0)
       expect(r.color).toMatch(/^var\(--/)
@@ -13,14 +13,37 @@ describe('PRESET_ROLES', () => {
   })
 })
 
+describe('Role.prompt', () => {
+  it('todos os presets carregam uma instrução de arranque não vazia', () => {
+    for (const r of PRESET_ROLES) {
+      expect(r.prompt.length).toBeGreaterThan(0)
+    }
+  })
+  it('o prompt é serializável e sobrevive a um round-trip de JSON', () => {
+    const round = JSON.parse(JSON.stringify(PRESET_ROLES[1]))
+    expect(round.prompt).toBe(PRESET_ROLES[1].prompt)
+    expect(typeof round.prompt).toBe('string')
+  })
+})
+
 describe('roleMeta', () => {
+  it('expõe o prompt do preset e vazio para papel livre', () => {
+    const dev = PRESET_ROLES.find((r) => r.id === 'dev')!
+    expect(roleMeta('dev').prompt).toBe(dev.prompt)
+    expect(roleMeta('Arquiteto').prompt).toBe('')
+  })
   it('resolve um preset pelo label (case-insensitive)', () => {
     expect(roleMeta('Líder').color).toBe('var(--accent)')
-    expect(roleMeta('revisor').color).toBe('var(--warn)')
+    expect(roleMeta('revisor').color).toBe('var(--paper-orange)')
     expect(roleMeta('DEV').label).toBe('Dev')
   })
   it('resolve um preset pelo id', () => {
-    expect(roleMeta('testador').color).toBe('var(--err)')
+    expect(roleMeta('testador').color).toBe('var(--paper-pink)')
+  })
+  it('inclui o papel Docs (T8, esquadrão)', () => {
+    expect(roleMeta('docs').label).toBe('Docs')
+    expect(roleMeta('docs').color).toBe('var(--paper-purple)')
+    expect(roleMeta('docs').prompt.length).toBeGreaterThan(0)
   })
   it('papel personalizado tem cor neutra e mantém o texto como label', () => {
     const m = roleMeta('Arquiteto')

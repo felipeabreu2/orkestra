@@ -251,4 +251,42 @@ describe('PtyManager', () => {
     f.emitExit(0)
     expect(mgr.getBuffer(id)).toBe('')
   })
+
+  // ── Resiliência · T5: cap de memória do scrollback configurável + trim retroativo ────────────
+  it('maxBufferBytes configurável: o buffer nunca passa do cap e mantém a CAUDA', () => {
+    const f = makeFakePty()
+    const mgr = new PtyManager(() => f.pty, { maxBufferBytes: 64 })
+    const id = mgr.spawn({})
+    f.emit('x'.repeat(100))
+    f.emit('FIM')
+    const buf = mgr.getBuffer(id)
+    expect(buf.length).toBeLessThanOrEqual(64)
+    expect(buf.endsWith('FIM')).toBe(true)
+  })
+
+  it('trimBuffers reduz TODOS os buffers retroativamente sem matar os ptys', () => {
+    const f1 = makeFakePty()
+    const f2 = makeFakePty()
+    const fakes = [f1, f2]
+    const mgr = new PtyManager(() => fakes.shift()!.pty)
+    const a = mgr.spawn({})
+    const b = mgr.spawn({})
+    f1.emit('a'.repeat(100))
+    f2.emit('b'.repeat(100))
+    mgr.trimBuffers(16)
+    expect(mgr.getBuffer(a).length).toBeLessThanOrEqual(16)
+    expect(mgr.getBuffer(b).length).toBeLessThanOrEqual(16)
+    // nenhum kill: o alívio de memória preserva o processo/trabalho
+    expect(f1.pty.kill).not.toHaveBeenCalled()
+    expect(f2.pty.kill).not.toHaveBeenCalled()
+  })
+
+  it('setMaxBuffer muda o cap dali em diante (sem reconstruir o manager)', () => {
+    const f = makeFakePty()
+    const mgr = new PtyManager(() => f.pty)
+    const id = mgr.spawn({})
+    mgr.setMaxBuffer(32)
+    f.emit('y'.repeat(100))
+    expect(mgr.getBuffer(id).length).toBeLessThanOrEqual(32)
+  })
 })

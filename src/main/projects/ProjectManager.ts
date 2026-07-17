@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import type { CanvasSnapshot } from '../../shared/canvasSnapshot'
 import type { Project, ProjectIndex } from '../../shared/project'
+import type { ProjectCanvasForIndex } from '../../shared/crossProjectIndex'
 
 function emptyCanvas(): CanvasSnapshot {
   return { version: 2, nodes: [], edges: [] }
@@ -379,6 +380,47 @@ export class ProjectManager {
   // precisa salvar o canvas do projeto que está SAINDO por id, sem depender da ordem entre esse
   // flush e a mudança do ativo — diferente de saveActiveCanvas, que sempre mira o ativo do
   // momento em que roda. Retorna se a gravação de fato aconteceu (INT-3).
+  // Badge da sidebar (2026-07-14): nº de terminais por projeto. Lê cada canvas e conta os nós
+  // type==='terminal'. Best-effort — projeto sem arquivo/ilegível conta 0. Para o projeto ATIVO,
+  // o renderer sobrepõe com a contagem ao vivo do canvasStore (aqui é o valor em disco).
+  // Batuta · T5 (índice cross-projeto): lê os canvas de TODOS os projetos como entrada CRUA do
+  // índice puro (buildCrossProjectIndex, shared). SOMENTE LEITURA — nunca grava e nunca troca o
+  // ativo (o incidente cross-project exige que nada aqui cruze o limite de um projeto por escrita).
+  // Cada canvas ausente/corrupto entra como `nodes: null` (a função pura ignora), então um projeto
+  // com disco quebrado não derruba a busca dos demais. Só os campos que o índice usa (id/type/data)
+  // atravessam — o resto do nó (position/width/…) fica de fora.
+  crossProjectCanvases(): ProjectCanvasForIndex[] {
+    return this.list().projects.map((p) => {
+      const snap = this.readCanvas(this.canvasPath(p.id))
+      return {
+        project: { id: p.id, name: p.name },
+        nodes: snap ? snap.nodes.map((n) => ({ id: n.id, type: n.type, data: n.data })) : null
+      }
+    })
+  }
+
+  // Resiliência · T6 (hibernação): os nodeIds dos TERMINAIS de um projeto, por id EXPLÍCITO —
+  // espelha a coleta de removedNodeIds do remove() e a leitura de terminalCounts(), sem nenhum
+  // efeito colateral. O escopo é a razão de existir: lê SÓ projects/<id>.json (id validado pelo
+  // mesmo guard de traversal), nunca o projeto ativo por engano — hibernar B com A ativo não pode
+  // tocar A (incidente cross-project). Nunca lança: id hostil/projeto inexistente/canvas
+  // missing/corrupt → [] (hibernar nada é um no-op seguro).
+  terminalNodeIds(id: string): string[] {
+    if (!isValidProjectId(id)) return []
+    const snap = this.readCanvas(this.canvasPath(id))
+    return (snap?.nodes ?? []).filter((n) => n.type === 'terminal').map((n) => n.id)
+  }
+
+  terminalCounts(): Record<string, number> {
+    const idx = this.list()
+    const counts: Record<string, number> = {}
+    for (const p of idx.projects) {
+      const snap = this.readCanvas(this.canvasPath(p.id))
+      counts[p.id] = (snap?.nodes ?? []).filter((n) => n.type === 'terminal').length
+    }
+    return counts
+  }
+
   saveCanvas(id: string, snapshot: CanvasSnapshot): boolean {
     // INT-8: rejeita id que não seja UUID-like (path traversal via id='../projects') — nunca
     // compõe um caminho fora de projects/ a partir de entrada do renderer.
