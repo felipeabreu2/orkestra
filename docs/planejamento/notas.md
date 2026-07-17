@@ -1,6 +1,30 @@
 # Plano de Implementação — Notas
 
-> **Origem:** `docs/analise-maestri-360/notas.md` · **Status:** Rascunho pronto para revisão · **Onda(s):** 1 → 3
+> **Origem:** `docs/analise-maestri-360/notas.md` · **Status:** ✅ **CONCLUÍDO (2026-07-17)** — T1–T10 entregues (T9 no incremento 1; follow-ups abaixo) · **Onda(s):** 1 → 3
+
+**Registro da Onda 3 (2026-07-17)** — T6, T8, T10 e T9 fecharam o plano; decisões além do escrito:
+- **T10:** o `caseSensitive` precisou entrar no ESTADO da extensão (não só na barra): as decorations
+  recalculam os matches por conta própria — sem o flag lá, contador e destaque divergiriam.
+- **T6:** allowlist raster EXPLÍCITA no `isImageDataUri` — **SVG fora de propósito** (pode carregar
+  script; o data.html volta do disco sem sanitização — SEC-1). Teto `MAX_IMAGE_BYTES=2MB` (o data
+  URI vive dentro do snapshot JSON). Inserção por transação ProseMirror, nunca innerHTML. Recusa
+  mostra aviso transiente (nunca silêncio).
+- **T8:** `.txt` também passa pelo `markdownToHtml` de propósito (HTML sempre escapado). Conteúdo
+  COPIADO — vínculo vivo é a T9; o ramo de arquivos externos entrou no `onDrop` do Canvas ao lado
+  do payload interno da árvore.
+- **T9 · incremento 1 (nota ↔ arquivo `.md`):** decisão de arquitetura — **nenhum código novo no
+  main**: reusa a superfície endurecida da Árvore (`filetree.write` atômico com guard de raiz,
+  `filetree.read`, `filetree.watch` com debounce/escopo; o watch já ignora `.orktmp`, então a
+  própria escrita atômica não se auto-acorda pelo tmp). Três pernas no NoteNode: **adoção** (no
+  mount o DISCO vence), **escrita** (debounce 600ms, raiz = cwd do projeto ativo resolvido a cada
+  gravação), **watch** (eco da própria escrita cortado por `lastMd`; round-trip md→html→md pode
+  normalizar UMA vez — estabilidade dali em diante garantida pelos testes da T7). Exportar nunca
+  sobrescreve arquivo existente (sufixo `-n`); excluir/desvincular NUNCA apaga o arquivo. O
+  `orq context` expõe o caminho no cabeçalho do bloco (`[contexto — nota: X — arquivo: /p/x.md]`)
+  — o agente lê/edita a memória com as próprias ferramentas.
+- **Follow-ups do T9 (incrementos futuros):** "Mover para…" (realocar o arquivo), migração de
+  imagens data URI → arquivo ao lado, migração assistida de notas legadas (HTML-no-JSON → `.md`),
+  e resolução de conflito mais fina que "última escrita vence" se o caso real aparecer.
 
 ---
 
