@@ -28,7 +28,7 @@ find-replace + cores nas notas; escopo de projeto fail-closed no servidor.
 | # | Funcionalidade | Plano | Status | Ondas | Achado-chave |
 |---|----------------|-------|--------|-------|--------------|
 | 1 | O Canvas | [canvas.md](canvas.md) | 🟢 paridade alta | 1–2 | Falta `⇧T` grade, renomear grupo, navegação por conexão, Configurações |
-| 2 | Batuta Search | [batuta-search.md](batuta-search.md) | 🟡 núcleo | 1, 3 | `rankItems` fuzzy/multi-palavra/sem-acento (TDD puro, maior retorno isolado) |
+| 2 | Batuta Search | [batuta-search.md](batuta-search.md) | ✅ plano concluído (2026-07-17) | 1–3 | T1–T5: fuzzy/multi-palavra/sem-acento, indexa corpo das notas, realce, ações globais, **índice cross-projeto** |
 | 3 | Terminais e Agentes | [terminais-agentes.md](terminais-agentes.md) | 🟢 forte | 2–3 | **Gap crítico:** papel que **injeta instruções** (`prompt` no `Role`) |
 | 4 | Notas | [notas.md](notas.md) | ✅ plano concluído (2026-07-17) | 1–3 | T1–T10: nome/renomear, HTML↔MD, cadeia navegável, indexação, imagem colada, raw, drop .md, **nota vinculada a `.md` em disco** |
 | 5 | Conexões | [conexoes.md](conexoes.md) | 🟢 alta | 1–2 | **Travessia transitiva** da cadeia de notas no `/context` |
@@ -94,8 +94,10 @@ Objetivo: recursos que definem a categoria e exigem investimento dedicado.
 - ✅ **Portais multimodais** (concluído 2026-07-17) — `orq portal screenshot` (o agente multimodal VÊ a página: capturePage → PNG em tmpdir, caminho no stdout), `orq portal console` (ring-buffer de logs/erros do site) e `portalStates`/`portalConsoles` escopados por projeto (fecha o gap #8). Pipelines de automação web sem MCP completos. → [portais](portais.md)
 - ✅ **Cadeia de notas como memória navegável** (concluído 2026-07-17) — cadeia nota→nota no `orq context` (entregue nas Ondas 1–2) + **notas vinculadas a `.md` em disco** (T9 incremento 1: exportar, auto-sync bidirecional via watch, caminho exposto ao agente no `/context`; sem código novo no main — reusa a infra da Árvore). Follow-ups anotados no plano (Mover para…, migração de legadas/imagens). → [notas](notas.md) + [conexoes](conexoes.md)
 - ✅ **Resiliência como produto** (concluído 2026-07-17) — reset de foco (⌘Esc + primeiro Menu de aplicação), logger rotativo, export de diagnóstico REDIGIDO (Ajuda → Reportar um Problema), cap de scrollback configurável + trim, hibernação de projeto escopada ("Descarregar" na sidebar) e painel de saúde dos agentes (⇧H). Follow-ups P2 anotados no plano. → [solucao-problemas](solucao-problemas.md)
-- **Busca cross-projeto** — indexar e saltar entre projetos. → [batuta-search](batuta-search.md)
+- ✅ **Busca cross-projeto** (concluído 2026-07-17) — a command palette (⌘K) busca nós de TODOS os projetos, não só o ativo: índice read-only escopado por id (`buildCrossProjectIndex` puro, o ativo vem do canvasStore ao vivo); selecionar um nó de outro projeto troca o projeto ativo e enquadra o nó. Prioridade ao projeto atual via o tie-break do `rankItems`, sem tocá-lo. → [batuta-search](batuta-search.md)
 - **Sob demanda concreta** — reintroduzir [Floors](andares-floors.md) escopado por projeto, túnel reverso SSH e LLM local do Ombro — **apenas** se orquestração paralela cross-máquina ou privacidade on-device virarem prioridade.
+
+> **🎉 Onda 3 concluída (2026-07-17):** todas as apostas grandes entregues (Árvore-IDE, Portais multimodais, Notas como memória `.md`, Resiliência como produto, Busca cross-projeto). As 3 ondas do roadmap estão completas.
 
 ---
 

@@ -1,5 +1,25 @@
 # Plano de Implementação — Batuta Search
-> **Origem:** `docs/analise-maestri-360/batuta-search.md` · **Status:** Proposto (pronto para TDD) · **Onda(s):** 1 (foco), 2, 3
+> **Origem:** `docs/analise-maestri-360/batuta-search.md` · **Status:** ✅ **CONCLUÍDO (2026-07-17)** — T1–T5 entregues · **Onda(s):** 1, 2, 3
+
+**Registro da T5 (2026-07-17)** — índice cross-projeto, decisões além do plano:
+- A função pura + o tipo (`buildCrossProjectIndex`, `CrossProjectNode`) foram para **`src/shared/`**
+  (não `src/main/`, como o caminho literal do plano): o tipo cruza main↔renderer (o main gera, a
+  paleta consome), mesmo motivo de `contextResolver`. O main só provê os dados crus
+  (`ProjectManager.crossProjectCanvases`, read-only, só `id/type/data` de cada nó).
+- **Texto de nota SEM DOM:** o main não tem `DOMParser`, então o índice usa um strip de tags por
+  regex + decode das entidades comuns (`& < > " '`, `&nbsp;`) — a versão "sem DOM" do `noteText`.
+  Aceitável porque alimenta **busca** (texto plano em memória, nunca renderizado), não segurança.
+- **Projeto ativo é PULADO** do índice (vem do canvasStore ao vivo — o disco pode estar atrás de
+  edições não-flushadas); assim não há duplicação nem estado velho.
+- **"Prioridade ao projeto atual" sem tocar no `rankItems`:** o nome do projeto vai **anexado ao
+  label** do item cross-projeto (`Dev · Backend`), então o tie-break existente ("label mais curto
+  vence no empate de score") favorece naturalmente o nó local (`Dev`) sobre o homônimo de outro
+  projeto. Zero risco ao ranqueamento testado.
+- **Execução assíncrona segura:** selecionar um item cross-projeto emite `SWITCH_PROJECT_EVENT`; a
+  `ProjectsSidebar` (dona do `switchTo`: flush + switch + hydrate) troca e só então emite
+  `FRAME_NODE_EVENT` (com `requestAnimationFrame` para o React Flow montar os nós hidratados); o
+  `Canvas` enquadra pelo mesmo caminho do `onAgentFrame`. Read-only e escopado por id — cobre a
+  regressão do incidente cross-project.
 
 ## 1. Objetivo & valor
 
