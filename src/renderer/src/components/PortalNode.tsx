@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useRef, useState } from 'react'
 import type { WebviewTag } from 'electron'
 import { registerPortal, unregisterPortal, subscribePortalDriving } from '../portalRegistry'
 import { snapshotScript, domSnapshotScript } from '../../../shared/portalScripts'
+import { pushConsole } from '../../../shared/portalConsoleBuffer'
 import type { PortalState } from '../../../shared/orchestration'
 import './PortalNode.css'
 
@@ -70,6 +71,44 @@ export const PortalNode = forwardRef<
       return () => {
         disposed = true
         el.removeEventListener('did-finish-load', onFinishLoad)
+      }
+    }, [name])
+
+    // T8 (console do portal): assina o console-message do webview e repassa ao main em BATCHES
+    // (throttle de 300ms) pelo IPC portal:console — uma página verborrágica (log em loop) não pode
+    // virar tempestade de IPC. O acúmulo entre flushes usa o MESMO pushConsole do main (cap de
+    // linhas e de tamanho por linha): a mangueira é fechada nas duas pontas. O buffer canônico
+    // vive no main (servido em GET /portal/console); aqui só a fila do próximo batch.
+    useEffect(() => {
+      const el = localRef.current
+      if (!el) return
+      let pending: string[] = []
+      let timer: ReturnType<typeof setTimeout> | null = null
+      const flush = (): void => {
+        timer = null
+        if (pending.length === 0) return
+        const entries = pending
+        pending = []
+        window.orkestra.portalConsole({ name, entries })
+      }
+      const onConsole = (e: Event): void => {
+        // O shape do evento vem do CONTEÚDO do site (não confiável): level pode ser número
+        // (Electron clássico: 0..3) ou string; message pode faltar. Tudo coerido.
+        const ev = e as { level?: unknown; message?: unknown }
+        const level =
+          typeof ev.level === 'number'
+            ? (['debug', 'log', 'warn', 'error'][ev.level] ?? 'log')
+            : typeof ev.level === 'string'
+              ? ev.level
+              : 'log'
+        const message = typeof ev.message === 'string' ? ev.message : String(ev.message ?? '')
+        pushConsole(pending, `[${level}] ${message}`)
+        if (!timer) timer = setTimeout(flush, 300)
+      }
+      el.addEventListener('console-message', onConsole)
+      return () => {
+        el.removeEventListener('console-message', onConsole)
+        if (timer) clearTimeout(timer)
       }
     }, [name])
 

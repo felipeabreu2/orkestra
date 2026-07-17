@@ -48,6 +48,10 @@ interface Opts {
   // vivo para receber (mesma semântica BLD-6 do onCommand → 503). Ausente (fakes de teste antigos,
   // orq legado) → o servidor cai no emit síncrono de sempre (fallback retrocompatível).
   runPortalAction?: (cmd: OrchestrationCommand) => Promise<PortalActionResult | null>
+  // T8 (console do portal): linhas bufferizadas pelo main (ring-buffer alimentado pelo IPC
+  // portal:console do renderer). null/vazio → 404 na rota (sem logs não é erro do servidor).
+  // Ausente (fakes antigos) → mesma degradação 404 de getPortalState.
+  getPortalConsole?: (name: string) => string[] | null
   // T4 (orq role): I/O do sidecar `role.json` do nó (~/.orkestra/agents/<nodeId>/role.json),
   // INJETADO — este servidor não faz fs, e assim as rotas /role são testáveis sem tocar no disco
   // do usuário. `readRoleSidecar` devolve o conteúdo cru (null = sem arquivo/ilegível — as rotas
@@ -580,6 +584,20 @@ export class OrchestrationServer {
         if (result) {
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify(result))
+        } else {
+          res.writeHead(404).end('not found')
+        }
+        return
+      }
+      if (url.pathname === '/portal/console') {
+        // T8: linhas de console/erros bufferizadas do portal (ring-buffer alimentado pelo
+        // console-message do webview, via IPC portal:console). Vazio/desconhecido → 404, mesma
+        // degradação do /portal e do /check; servidor legado sem a opt idem.
+        const name = url.searchParams.get('name') ?? ''
+        const lines = this.opts.getPortalConsole?.(name) ?? null
+        if (lines && lines.length > 0) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ lines }))
         } else {
           res.writeHead(404).end('not found')
         }

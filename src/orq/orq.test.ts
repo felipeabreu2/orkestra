@@ -20,6 +20,7 @@ async function startServer(
     getActiveProjectId?: () => string | undefined
     onCommand?: (cmd: OrchestrationCommand) => boolean
     runPortalAction?: (cmd: OrchestrationCommand) => Promise<{ ok: boolean; path?: string } | null>
+    getPortalConsole?: (name: string) => string[] | null
     readRoleSidecar?: (nodeId: string) => string | null
     writeRoleSidecar?: (nodeId: string, json: string) => boolean
   } = {}
@@ -468,6 +469,29 @@ describe('runOrq', () => {
   it('portal screenshot sem runPortalAction (servidor legado) responde 503, não um ok mentiroso', async () => {
     const env = await startServer({ nodes: [] }, [])
     const { code } = await runOrq(['portal', 'screenshot', 'P'], env)
+    expect(code).not.toBe(0)
+  })
+
+  // T8 (console): GET /portal/console?name= devolve as linhas bufferizadas pelo main (ring-buffer
+  // alimentado pelo console-message do webview) — o agente lê erros/logs do site sem DevTools.
+  it('portal console imprime as linhas bufferizadas do portal', async () => {
+    const getPortalConsole = vi.fn((name: string) => (name === 'P' ? ['[error] boom', '[warn] aviso'] : null))
+    const env = await startServer({ nodes: [] }, [], { getPortalConsole })
+    const { code, out } = await runOrq(['portal', 'console', 'P'], env)
+    expect(code).toBe(0)
+    expect(out).toContain('[error] boom')
+    expect(out).toContain('[warn] aviso')
+  })
+
+  it('portal console sem buffer (portal desconhecido/sem logs) responde 404 e código != 0', async () => {
+    const env = await startServer({ nodes: [] }, [], { getPortalConsole: () => null })
+    const { code } = await runOrq(['portal', 'console', 'Nada'], env)
+    expect(code).not.toBe(0)
+  })
+
+  it('portal console em servidor legado (sem a opt) responde 404, não trava', async () => {
+    const env = await startServer({ nodes: [] }, [])
+    const { code } = await runOrq(['portal', 'console', 'P'], env)
     expect(code).not.toBe(0)
   })
 

@@ -219,6 +219,11 @@ const api = {
   // do seu <webview> — o main guarda por nome, servindo de estado para `orq portal snapshot`
   // (GET /portal?name=...). Fire-and-forget: sem retorno/confirmação.
   portalState: (state: { name: string } & PortalState): void => ipcRenderer.send('portal:state', state),
+  // T8 (console do portal): o PortalNode repassa em batches (throttle no renderer) as linhas de
+  // console-message do webview — o main as acumula num ring-buffer por nome (cap no
+  // portalConsoleBuffer), servido em GET /portal/console. Fire-and-forget, como o portalState.
+  portalConsole: (payload: { name: string; entries: string[] }): void =>
+    ipcRenderer.send('portal:console', payload),
   // T1 (round-trip do booleano): canal de VOLTA (renderer -> main) para o resultado de uma ação de
   // portal click/fill. Quando o comando chega com requestId (ver orchestration.onCommand), o
   // renderer roda o script no <webview>, lê o booleano de sucesso e o devolve aqui, correlacionado

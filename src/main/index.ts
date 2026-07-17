@@ -20,6 +20,7 @@ import { registerRolesIpc } from './roles/registerRolesIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { screenshotFilename, isScreenshotOf } from './orchestration/portalScreenshot'
+import { pushConsole } from '../shared/portalConsoleBuffer'
 import { installOrq } from './orchestration/installOrq'
 import { buildEnvPath, resolveNvmBinDirs } from './orchestration/envPath'
 import { AgentBus } from './orchestration/AgentBus'
@@ -120,6 +121,10 @@ let resolveActiveProjectId: () => string | undefined = () => undefined
 // Estado reportado por cada portal (nome -> {url,title,text}), atualizado via IPC 'portal:state'
 // a cada did-finish-load do <webview> correspondente (PortalNode); servido em GET /portal.
 const portalStates = new Map<string, PortalState>()
+// T8: console de cada portal (nome -> últimas linhas), alimentado via IPC 'portal:console' pelos
+// batches do PortalNode; ring-buffer com cap no pushConsole (uma página com log em loop não cresce
+// sem teto). Servido em GET /portal/console.
+const portalConsoles = new Map<string, string[]>()
 // T1 (round-trip do booleano de portal click/fill): pendências de ação por requestId. A ponte
 // main->renderer é unidirecional (webContents.send), então o resultado da ação volta pelo canal
 // separado 'portal:result' (ipcMain.on lá embaixo) e resolve a promise correspondente. Timeout
@@ -203,6 +208,8 @@ const orchestration = new OrchestrationServer({
     return p ? { output: agentBus.read(p) } : null
   },
   getPortalState: (name) => portalStates.get(name) ?? null,
+  // T8: linhas de console bufferizadas do portal (null → 404 na rota).
+  getPortalConsole: (name) => portalConsoles.get(name) ?? null,
   // T1: variante ASSÍNCRONA do relay para as ações que confirmam sucesso (click/fill). Gera um
   // requestId, registra a pendência e carimba o comando com ele no MESMO canal unidirecional
   // 'orchestration:command' (sem abrir canal novo por ação — minimiza a superfície); o renderer
@@ -405,6 +412,15 @@ app.whenReady().then(async () => {
     // GET /portal e impresso por `orq portal snapshot --dom`. Opcional (estados/portais legados sem
     // o campo continuam válidos).
     portalStates.set(s.name, { url: s.url, title: s.title, text: s.text, dom: s.dom })
+  })
+  // T8: batches de console-message vindos do PortalNode. O pushConsole re-aplica os tetos AQUI
+  // (cap de linhas e de tamanho por linha) — o renderer também os aplica, mas o main não confia
+  // no formato do que atravessa a ponte (entries é coerido item a item).
+  ipcMain.on('portal:console', (_e, p: { name?: unknown; entries?: unknown }) => {
+    if (typeof p?.name !== 'string' || !Array.isArray(p.entries)) return
+    const buf = portalConsoles.get(p.name) ?? []
+    for (const entry of p.entries) pushConsole(buf, typeof entry === 'string' ? entry : String(entry))
+    portalConsoles.set(p.name, buf)
   })
   // T1: canal de volta do round-trip de portal click/fill. O renderer devolve aqui o booleano de
   // sucesso da ação (via window.orkestra.portalResult), correlacionado pelo requestId que o main
