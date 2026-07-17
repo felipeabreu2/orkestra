@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron'
 import type { ProjectManager } from './ProjectManager'
 import type { CanvasSnapshot } from '../../shared/canvasSnapshot'
+import { buildCrossProjectIndex } from '../../shared/crossProjectIndex'
 
 // Fase 17 (Task 1): abre o diálogo nativo de escolha de pasta -> path escolhido, ou null se o
 // usuário cancelar. Injetável para manter este módulo livre de `electron.dialog` em teste
@@ -41,6 +42,12 @@ export function registerProjectIpc(
   })
   // Badge da sidebar (2026-07-14): nº de terminais por projeto.
   ipcMain.handle('projects:terminalCounts', () => pm.terminalCounts())
+  // Batuta · T5 (índice cross-projeto): índice READ-ONLY dos nós de todos os projetos para a
+  // command palette buscar além do canvas ativo. A parte pura (buildCrossProjectIndex) pula o
+  // projeto ATIVO (vem do canvasStore ao vivo). Nada aqui grava nem troca de projeto.
+  ipcMain.handle('projects:crossIndex', () =>
+    buildCrossProjectIndex(pm.crossProjectCanvases(), pm.list().activeId)
+  )
   // Resiliência · T6: "Descarregar" um projeto NÃO-ativo — libera os agentes (ptys) daquele
   // projeto sem tocar índice/ativo/canvas. ESCOPO É A EXIGÊNCIA DURA (incidente cross-project):
   // terminalNodeIds lê SÓ projects/<id>.json por id explícito; matar é por nodeId daquele canvas.

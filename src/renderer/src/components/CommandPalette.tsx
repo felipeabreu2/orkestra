@@ -5,7 +5,8 @@ import { rankItems, matchRanges } from '../search'
 import { buildPaletteItems, type PaletteItem } from '../palette/paletteCommands'
 import { nextEdgeStyle } from '../edges/edgeStyle'
 import { isValidSshHost } from '../../../shared/ssh'
-import { emitNewProject } from '../ui/appEvents'
+import { emitNewProject, emitSwitchProject } from '../ui/appEvents'
+import type { CrossProjectNode } from '../../../shared/crossProjectIndex'
 import { AskAgentPanel } from './AskAgentPanel'
 import { Icon } from './Icon'
 import './CommandPalette.css'
@@ -99,6 +100,23 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
   const activeCwd = useCanvasStore((s) => s.activeCwd)
   const { setCenter } = useReactFlow()
 
+  // Batuta T5: nós dos projetos NÃO-ativos, carregados UMA vez ao abrir a paleta (o main pula o
+  // projeto ativo, que já vem do canvasStore ao vivo). Read-only; falha de IPC degrada para "só o
+  // canvas atual" (a busca local segue funcionando).
+  const [crossNodes, setCrossNodes] = useState<CrossProjectNode[]>([])
+  useEffect(() => {
+    let cancelled = false
+    window.orkestra.projects
+      .crossIndex()
+      .then((idx) => {
+        if (!cancelled) setCrossNodes(idx)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Autofocus na busca ao montar — e de volta pra ela sempre que o modo input fecha (Esc), já
   // que a tela de input desmonta o <input> da busca, e remontar um elemento não devolve o foco
   // sozinho. O palette em si só existe no DOM enquanto aberto (Canvas.tsx desmonta via
@@ -140,6 +158,14 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
     if (activeCwd) void window.orkestra.ide.open(activeCwd)
   }
 
+  // Batuta T5: abrir um nó de OUTRO projeto. A troca de projeto (flush + switch + hydrate) é da
+  // ProjectsSidebar; aqui só pedimos por evento (com o nó a focar) e fechamos a paleta. A sidebar
+  // troca e, quando o canvas do alvo estiver montado, emite o frame que o Canvas enquadra.
+  const openNodeInProject = (projectId: string, nodeId: string): void => {
+    emitSwitchProject(projectId, nodeId)
+    onClose()
+  }
+
   const items = useMemo(
     () =>
       buildPaletteItems({
@@ -149,6 +175,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           .filter((n) => n.selected)
           .map((n) => ({ id: n.id, type: n.type, data: n.data as Record<string, unknown>, selected: true })),
         edgeStyle,
+        crossProjectNodes: crossNodes,
         actions: {
           addTerminalNode,
           addNoteNode,
@@ -164,7 +191,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
           toggleEdgeStyle: () => setEdgeStyle(nextEdgeStyle(edgeStyle)),
           removeEdgesForNode,
           openInEditor,
-          newProject: emitNewProject
+          newProject: emitNewProject,
+          openNodeInProject
         }
       }),
     [
@@ -183,7 +211,8 @@ export function CommandPalette({ onClose }: CommandPaletteProps): JSX.Element {
       openInEditor,
       edgeStyle,
       setEdgeStyle,
-      removeEdgesForNode
+      removeEdgesForNode,
+      crossNodes
     ]
   )
 

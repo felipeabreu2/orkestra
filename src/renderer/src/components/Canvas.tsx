@@ -24,7 +24,7 @@ import { TypedEdge } from './TypedEdge'
 import { CommandPalette } from './CommandPalette'
 import { NewTerminalModal } from './NewTerminalModal'
 import { Topbar } from './Topbar'
-import { emitNewProject } from '../ui/appEvents'
+import { emitNewProject, FRAME_NODE_EVENT } from '../ui/appEvents'
 import { NodeToolbar } from './NodeToolbar'
 import { AttentionHud } from './AttentionHud'
 import { CreateOverlay } from './CreateOverlay'
@@ -208,6 +208,21 @@ export function Canvas(): JSX.Element {
     })
     return off
   }, [])
+
+  // Batuta T5 — foco de nó pós-troca de projeto (cross-projeto): a ProjectsSidebar troca o projeto
+  // e emite FRAME_NODE_EVENT quando o canvas do alvo já montou; aqui só enquadramos/selecionamos,
+  // reusando o MESMO caminho do onAgentFrame acima. Nó ausente = no-op seguro.
+  useEffect(() => {
+    const onFrame = (e: Event): void => {
+      const nodeId = (e as CustomEvent<{ nodeId: string }>).detail?.nodeId
+      if (!nodeId) return
+      fitView({ nodes: [{ id: nodeId }], duration: 300 })
+      const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, nodeId)
+      if (changes.length) onNodesChange(changes)
+    }
+    window.addEventListener(FRAME_NODE_EVENT, onFrame)
+    return () => window.removeEventListener(FRAME_NODE_EVENT, onFrame)
+  }, [fitView, onNodesChange])
 
   // Fix border-beam preso — tentativa 3 (2026-07-15): `generating` é 100% derivado por CONTEÚDO
   // da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) — ver

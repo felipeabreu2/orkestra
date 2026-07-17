@@ -35,7 +35,9 @@ function fakeMgr() {
     // Fase 18 (Task 4): ícone (emoji) do projeto.
     setIcon: vi.fn((_id: string, _icon: string): void => {}),
     // Resiliência T6: hibernação (terminais por id explícito).
-    terminalNodeIds: vi.fn((_id: string): string[] => [])
+    terminalNodeIds: vi.fn((_id: string): string[] => []),
+    // Batuta T5: leitura crua para o índice cross-projeto.
+    crossProjectCanvases: vi.fn(() => [])
   }
 }
 
@@ -201,6 +203,20 @@ describe('registerProjectIpc', () => {
     const ipc = fakeIpcMain()
     registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
     expect(() => ipc.handlers.get('projects:hibernate')!({}, 'p1')).not.toThrow()
+  })
+
+  // Batuta T5: o handler compõe crossProjectCanvases + buildCrossProjectIndex (pula o ativo).
+  it('projects:crossIndex devolve entradas dos projetos NÃO-ativos, cada uma com projectId', async () => {
+    const mgr = fakeMgr()
+    mgr.crossProjectCanvases = vi.fn(() => [
+      { project: { id: 'p1', name: 'A' }, nodes: [{ id: 't1', type: 'terminal', data: { name: 'Dev' } }] },
+      { project: { id: 'p2', name: 'B' }, nodes: [{ id: 't2', type: 'terminal', data: { name: 'Rev' } }] }
+    ])
+    mgr.list = vi.fn(() => ({ projects: [{ id: 'p1', name: 'A' }], activeId: 'p1' }))
+    const ipc = fakeIpcMain()
+    registerProjectIpc(ipc as any, mgr as unknown as ProjectManager)
+    const idx = (await ipc.handlers.get('projects:crossIndex')!({})) as Array<{ projectId: string }>
+    expect(idx.map((e) => e.projectId)).toEqual(['p2']) // p1 é o ativo → pulado
   })
 
   // Fase 15 (Task 3): flush explícito por id na troca de projeto — precisa ser awaitable

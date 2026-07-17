@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import type { CanvasSnapshot } from '../../shared/canvasSnapshot'
 import type { Project, ProjectIndex } from '../../shared/project'
+import type { ProjectCanvasForIndex } from '../../shared/crossProjectIndex'
 
 function emptyCanvas(): CanvasSnapshot {
   return { version: 2, nodes: [], edges: [] }
@@ -382,6 +383,22 @@ export class ProjectManager {
   // Badge da sidebar (2026-07-14): nº de terminais por projeto. Lê cada canvas e conta os nós
   // type==='terminal'. Best-effort — projeto sem arquivo/ilegível conta 0. Para o projeto ATIVO,
   // o renderer sobrepõe com a contagem ao vivo do canvasStore (aqui é o valor em disco).
+  // Batuta · T5 (índice cross-projeto): lê os canvas de TODOS os projetos como entrada CRUA do
+  // índice puro (buildCrossProjectIndex, shared). SOMENTE LEITURA — nunca grava e nunca troca o
+  // ativo (o incidente cross-project exige que nada aqui cruze o limite de um projeto por escrita).
+  // Cada canvas ausente/corrupto entra como `nodes: null` (a função pura ignora), então um projeto
+  // com disco quebrado não derruba a busca dos demais. Só os campos que o índice usa (id/type/data)
+  // atravessam — o resto do nó (position/width/…) fica de fora.
+  crossProjectCanvases(): ProjectCanvasForIndex[] {
+    return this.list().projects.map((p) => {
+      const snap = this.readCanvas(this.canvasPath(p.id))
+      return {
+        project: { id: p.id, name: p.name },
+        nodes: snap ? snap.nodes.map((n) => ({ id: n.id, type: n.type, data: n.data })) : null
+      }
+    })
+  }
+
   // Resiliência · T6 (hibernação): os nodeIds dos TERMINAIS de um projeto, por id EXPLÍCITO —
   // espelha a coleta de removedNodeIds do remove() e a leitura de terminalCounts(), sem nenhum
   // efeito colateral. O escopo é a razão de existir: lê SÓ projects/<id>.json (id validado pelo

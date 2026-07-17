@@ -20,7 +20,8 @@ function noopActions(): PaletteActions {
     toggleEdgeStyle: vi.fn(),
     removeEdgesForNode: vi.fn(),
     openInEditor: vi.fn(),
-    newProject: vi.fn()
+    newProject: vi.fn(),
+    openNodeInProject: vi.fn()
   }
 }
 
@@ -249,5 +250,44 @@ describe('buildPaletteItems', () => {
     const items = buildPaletteItems({ nodes: [a, b], edges, selectedNodes: [a, b], actions: noopActions() })
     const discIds = items.filter((i) => i.kind === 'disconnect').map((i) => i.id)
     expect(new Set(discIds).size).toBe(discIds.length) // todos únicos
+  })
+
+  // ── Batuta · T5: itens de nós de OUTROS projetos ─────────────────────────────────────────────
+  it('crossProjectNodes viram itens kind=node com o projeto no label e o projectId carregado', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({
+      nodes: [],
+      edges: [],
+      selectedNodes: [],
+      crossProjectNodes: [
+        { nodeId: 'x1', projectId: 'p2', projectName: 'Backend', type: 'note', label: 'Nota: kube', searchText: 'kubernetes deploy' }
+      ],
+      actions
+    })
+    const item = items.find((i) => i.id === 'xnode:p2:x1')!
+    expect(item.kind).toBe('node')
+    expect(item.label).toBe('Nota: kube · Backend') // projeto anexado (tie-break favorece o local)
+    expect(item.projectId).toBe('p2')
+    expect(item.searchText).toBe('kubernetes deploy')
+  })
+
+  it('run de um item cross-projeto chama openNodeInProject(projectId, nodeId)', () => {
+    const actions = noopActions()
+    const items = buildPaletteItems({
+      nodes: [],
+      edges: [],
+      selectedNodes: [],
+      crossProjectNodes: [
+        { nodeId: 'x1', projectId: 'p2', projectName: 'Backend', type: 'terminal', label: 'Dev' }
+      ],
+      actions
+    })
+    items.find((i) => i.id === 'xnode:p2:x1')!.run!()
+    expect(actions.openNodeInProject).toHaveBeenCalledWith('p2', 'x1')
+  })
+
+  it('sem crossProjectNodes (undefined) nada muda — retrocompatível', () => {
+    const items = buildPaletteItems({ nodes: [], edges: [], selectedNodes: [], actions: noopActions() })
+    expect(items.some((i) => i.id.startsWith('xnode:'))).toBe(false)
   })
 })

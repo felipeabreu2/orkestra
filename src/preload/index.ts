@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { CanvasSnapshot } from '../shared/canvasSnapshot'
 import type { CanvasMirror, OrchestrationCommand, PortalState } from '../shared/orchestration'
 import type { Project, ProjectIndex } from '../shared/project'
+import type { CrossProjectNode } from '../shared/crossProjectIndex'
 import type {
   ContentSearchResult,
   FileEntry,
@@ -98,7 +99,10 @@ const api = {
     // Resiliência T6: "Descarregar" um projeto NÃO-ativo — o main mata os ptys DAQUELE projeto
     // (por id explícito, escopo garantido no ProjectManager) sem tocar índice/ativo/canvas. Ao
     // reabrir o projeto, os terminais re-spawnam: o canvas volta de onde parou, agentes reiniciam.
-    hibernate: (id: string): Promise<void> => ipcRenderer.invoke('projects:hibernate', id)
+    hibernate: (id: string): Promise<void> => ipcRenderer.invoke('projects:hibernate', id),
+    // Batuta T5: índice READ-ONLY dos nós dos projetos NÃO-ativos, para a command palette buscar
+    // além do canvas atual. O main pula o projeto ativo (vem do canvasStore ao vivo).
+    crossIndex: (): Promise<CrossProjectNode[]> => ipcRenderer.invoke('projects:crossIndex')
   },
   // Fase 19 (Task 1): árvore de arquivos (canvas file-explorer node) — read-only, delega tudo ao
   // FileTreeService no main (ver registerFileTreeIpc). O renderer nunca importa `fs`/`child_process`

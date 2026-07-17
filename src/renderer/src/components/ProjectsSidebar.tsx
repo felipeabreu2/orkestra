@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Project } from '../../../shared/project'
 import { useCanvasStore } from '../store/canvasStore'
 import { basename } from '../ui/paths'
-import { NEW_PROJECT_EVENT } from '../ui/appEvents'
+import { NEW_PROJECT_EVENT, SWITCH_PROJECT_EVENT, emitFrameNode, type SwitchProjectDetail } from '../ui/appEvents'
 import { ThemeToggle } from './ThemeToggle'
 import { Icon } from './Icon'
 import './ProjectsSidebar.css'
@@ -203,6 +203,28 @@ export function ProjectsSidebar(): JSX.Element | null {
     const onNew = (): void => void handleCreate()
     window.addEventListener(NEW_PROJECT_EVENT, onNew)
     return () => window.removeEventListener(NEW_PROJECT_EVENT, onNew)
+  })
+
+  // Batuta T5: a command palette pede para abrir um nó de OUTRO projeto. A sidebar é a dona da
+  // troca (switchTo: flush do atual + switch + hydrate), então ela executa; o foco do nó só pode
+  // rodar DEPOIS que o canvas do alvo montar, então emitimos o frame após a troca (o Canvas o
+  // enquadra). Já no projeto certo → só foca. requestAnimationFrame dá um tick para o React Flow
+  // montar os nós recém-hidratados antes do fitView.
+  useEffect(() => {
+    const onSwitch = (e: Event): void => {
+      const detail = (e as CustomEvent<SwitchProjectDetail>).detail
+      if (!detail?.projectId) return
+      const frameAfter = (): void => {
+        if (detail.focusNodeId) requestAnimationFrame(() => emitFrameNode(detail.focusNodeId!))
+      }
+      if (detail.projectId === useCanvasStore.getState().activeProjectId) {
+        frameAfter()
+        return
+      }
+      void switchTo(detail.projectId).then(frameAfter)
+    }
+    window.addEventListener(SWITCH_PROJECT_EVENT, onSwitch)
+    return () => window.removeEventListener(SWITCH_PROJECT_EVENT, onSwitch)
   })
 
   const handleSetCwd = async (id: string): Promise<void> => {

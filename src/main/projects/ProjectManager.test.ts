@@ -307,6 +307,25 @@ describe('ProjectManager', () => {
     expect(pm.terminalNodeIds('../projects')).toEqual([])
   })
 
+  // ── Batuta · T5 (índice cross-projeto): leitura crua de TODOS os projetos ─────────────────────
+  it('crossProjectCanvases lê os nós (id/type/data) de todos os projetos; canvas vazio → nodes []', () => {
+    const pm = new ProjectManager(dir); pm.bootstrap()
+    const a = pm.list().activeId
+    const b = pm.create('B')
+    pm.saveCanvas(a, {
+      version: 2,
+      nodes: [{ id: 'ta', type: 'terminal', data: { name: 'Dev' } } as never],
+      edges: []
+    })
+    const all = pm.crossProjectCanvases()
+    const forA = all.find((c) => c.project.id === a)!
+    const forB = all.find((c) => c.project.id === b.id)!
+    expect(forA.nodes).toEqual([{ id: 'ta', type: 'terminal', data: { name: 'Dev' } }])
+    expect(forB.nodes).toEqual([]) // criado com canvas vazio (não null: o arquivo existe e é válido)
+    // só id/type/data atravessam (não position/width/height do PersistedNode)
+    expect(Object.keys(forA.nodes![0])).toEqual(['id', 'type', 'data'])
+  })
+
   // Badge da sidebar (2026-07-14): terminalCounts conta os nós type=terminal de cada projeto.
   it('terminalCounts conta os terminais de cada projeto (0 quando ausente)', () => {
     const pm = new ProjectManager(dir); pm.bootstrap()
