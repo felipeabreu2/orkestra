@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, Notification, shell, session } from 'electron'
 import { randomUUID } from 'crypto'
 import { join } from 'path'
-import { homedir, tmpdir } from 'os'
+import { homedir, tmpdir, freemem, totalmem } from 'os'
 import { mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { readdir, unlink, writeFile } from 'fs/promises'
 import { isSafeNodeId } from '../shared/roleSidecar'
@@ -22,6 +22,8 @@ import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { screenshotFilename, isScreenshotOf } from './orchestration/portalScreenshot'
 import { buildAppMenu } from './menu'
 import { Logger } from './diagnostics/Logger'
+import { registerDiagnosticsIpc } from './diagnostics/registerDiagnosticsIpc'
+import { buildDiagnosticReport } from './diagnostics/collectDiagnostics'
 import { pushConsole } from '../shared/portalConsoleBuffer'
 import { PortalStateStore } from './orchestration/portalStateStore'
 import { installOrq } from './orchestration/installOrq'
@@ -551,6 +553,56 @@ app.whenReady().then(async () => {
       portalConsoles.clearProject(projectId)
     }
   })
+  // Resiliência T4 — export de diagnóstico ("Ajuda → Reportar um Problema" / IPC do renderer).
+  // As deps reais vivem SÓ aqui (dialog/fs); a composição coleta→REDIGE→salva é o módulo testado.
+  // NADA é enviado a lugar nenhum: grava um JSON local e o usuário decide o destino.
+  const gatherDiagnosticInput = (): import('./diagnostics/collectDiagnostics').DiagnosticInput => {
+    const counts: Record<string, number> = projectManager.terminalCounts()
+    return {
+      appVersion: app.getVersion(),
+      versions: {
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        node: process.versions.node
+      },
+      platform: process.platform,
+      arch: process.arch,
+      memory: {
+        rssBytes: process.memoryUsage().rss,
+        freeBytes: freemem(),
+        totalBytes: totalmem()
+      },
+      env: process.env,
+      // o token desta sessão é aleatório por boot — redigido por VALOR exato, além dos regexes
+      knownSecrets: [orchestrationEnv.ORKESTRA_TOKEN ?? ''].filter(Boolean),
+      logs: logger.recent(),
+      projectCount: projectManager.list().projects.length,
+      // contagens, nunca conteúdo: nº de terminais por projeto agregado em um total simples
+      nodeCounts: { terminal: Object.values(counts).reduce((a, b) => a + b, 0) }
+    }
+  }
+  const diagnosticsDeps = {
+    gatherInput: gatherDiagnosticInput,
+    saveDialog: async (): Promise<string | null> => {
+      const r = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, { defaultPath: 'orkestra-diagnostico.json' })
+        : await dialog.showSaveDialog({ defaultPath: 'orkestra-diagnostico.json' })
+      return r.canceled || !r.filePath ? null : r.filePath
+    },
+    writeFile: (path: string, content: string): void => writeFileSync(path, content)
+  }
+  registerDiagnosticsIpc(ipcMain, diagnosticsDeps)
+  // O item de menu (T1) roda a MESMA composição do IPC, com as MESMAS deps — coleta → redige →
+  // salva. Best-effort: falha aqui não pode derrubar o menu.
+  runDiagnosticsExport = async () => {
+    try {
+      const report = buildDiagnosticReport(diagnosticsDeps.gatherInput())
+      const path = await diagnosticsDeps.saveDialog()
+      if (path) diagnosticsDeps.writeFile(path, JSON.stringify(report, null, 2))
+    } catch (err) {
+      obs('[DIAGNOSTICS] export pelo menu falhou:', String(err))
+    }
+  }
   // Árvore de arquivos (Fase 19 Task 1): serviço de fs + git para o nó de file-explorer do canvas
   // (renderer, Task 2). Sem estado próprio — não precisa de bootstrap. A dep `trash` (Onda 3 ·
   // T13) liga o remove() do menu de contexto à LIXEIRA do sistema (shell.trashItem): excluir pela

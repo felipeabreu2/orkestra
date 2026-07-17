@@ -240,6 +240,12 @@ const api = {
   // terminal-agente produziu saída e depois ficou ocioso. onAgentAttention segue o mesmo padrão
   // de assinatura com unsubscribe de orchestration.onCommand acima; clearAgentAttention é
   // fire-and-forget, chamado ao focar o terminal daquele nó (Task 2, renderer).
+  // Resiliência T4: export do diagnóstico REDIGIDO (menu "Ajuda → Reportar um Problema" também
+  // dispara o mesmo fluxo no main). Grava um JSON local (o usuário escolhe onde); nada é enviado
+  // a lugar nenhum. {ok:false} = cancelado ou falha de escrita — nunca um ok sem arquivo.
+  diagnostics: {
+    export: (): Promise<{ ok: boolean; path?: string }> => ipcRenderer.invoke('diagnostics:export')
+  },
   // Resiliência T1: push do menu "Visualizar → Resetar Foco" (view:reset-focus). O renderer solta
   // o xterm/webview que prende o teclado e devolve o foco ao canvas — mesmo padrão de
   // assinatura-com-unsubscribe dos demais pushes.
