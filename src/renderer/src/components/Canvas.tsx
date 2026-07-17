@@ -36,6 +36,7 @@ import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type Distribu
 import { readDroppedPaths } from '../terminal/dropPaths'
 import { isPathDrop, isDropOnNode, fileNodeDropPositions } from './canvasDrop'
 import { mdFileToNoteData } from '../notes/mdDropToNote'
+import { resetFocus } from '../ui/resetFocus'
 
 // REN-3 (auditoria 2026-07-14): cada nó renderiza dentro do seu próprio ErrorBoundary. Um
 // data.scene do Excalidraw (DrawNode) ou html do TipTap (NoteNode) corrompido faz o componente
@@ -196,6 +197,15 @@ export function Canvas(): JSX.Element {
     return off
   }, [fitView, onNodesChange])
 
+  // Resiliência T1 — o item de menu "Visualizar → Resetar Foco" chega por aqui (view:reset-focus).
+  // Mesmo efeito do atalho ⌘Esc: solta xterm/webview prendendo o teclado, foco volta ao pane.
+  useEffect(() => {
+    const off = window.orkestra.view.onResetFocus(() => {
+      resetFocus(document.querySelector<HTMLElement>('.react-flow__pane'))
+    })
+    return off
+  }, [])
+
   // Fix border-beam preso — tentativa 3 (2026-07-15): `generating` é 100% derivado por CONTEÚDO
   // da tela (marca "esc to interrupt" no buffer VISÍVEL do xterm) — ver
   // src/renderer/src/terminal/generatingSignal.ts e a varredura em TerminalNode.tsx (dentro do
@@ -302,6 +312,14 @@ export function Canvas(): JSX.Element {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((o) => !o)
+        return
+      }
+      // Resiliência T1 — Cmd/Ctrl+Esc: RESET DE FOCO. Comando, não texto: precisa rodar ANTES do
+      // guard isTypingTarget justamente porque o caso de uso é um xterm/webview PRENDENDO o
+      // teclado. Puramente foco (resetFocus não toca em nós/edges).
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Escape') {
+        e.preventDefault()
+        resetFocus(document.querySelector<HTMLElement>('.react-flow__pane'))
         return
       }
       // Cmd/Ctrl+G (agrupar) / Cmd/Ctrl+Shift+G (desagrupar) — Fase 18 Task 3: mesmo raciocínio

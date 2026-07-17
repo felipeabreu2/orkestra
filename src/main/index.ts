@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Notification, shell, session } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, Notification, shell, session } from 'electron'
 import { randomUUID } from 'crypto'
 import { join } from 'path'
 import { homedir, tmpdir } from 'os'
@@ -20,6 +20,7 @@ import { registerRolesIpc } from './roles/registerRolesIpc'
 import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { screenshotFilename, isScreenshotOf } from './orchestration/portalScreenshot'
+import { buildAppMenu } from './menu'
 import { pushConsole } from '../shared/portalConsoleBuffer'
 import { PortalStateStore } from './orchestration/portalStateStore'
 import { installOrq } from './orchestration/installOrq'
@@ -135,6 +136,10 @@ const portalConsoles = new PortalStateStore<string[]>()
 const portalActions = new PortalActionRegistry()
 // Env extra injetado em todo pty spawnado; populado após orchestration.start() (porta+token).
 let orchestrationEnv: Record<string, string> = {}
+// Resiliência T1/T4 — "Ajuda → Reportar um Problema" no menu chama isto. Late-bound (mesmo padrão
+// do resolveActiveProjectId acima): o menu nasce no whenReady, o fluxo real de export (T4, com
+// dialog + coleta redigida) é plugado quando o registro de diagnóstico sobe. Antes disso, no-op.
+let runDiagnosticsExport: () => Promise<void> = async () => {}
 
 // Resolve um terminal pelo nome atual no espelho do canvas -> ptyId (via PtyManager). Nomes
 // duplicados resolvem para o primeiro nó encontrado; renomear é responsabilidade do usuário.
@@ -587,6 +592,15 @@ app.whenReady().then(async () => {
     console.error('[orchestration] falha ao instalar o orq:', err)
   }
   createWindow()
+  // Resiliência T1 — primeiro Menu de aplicação do app (Visualizar → Resetar Foco, Ajuda →
+  // Reportar um Problema). Papéis nativos preservados (⌘C/⌘V/⌘Q no macOS vêm deles). O
+  // exportDiagnostics chama o MESMO fluxo do IPC diagnostics:export (T4) — late-bound via
+  // runDiagnosticsExport, preenchido quando o registro de diagnóstico sobe.
+  if (mainWindow) {
+    Menu.setApplicationMenu(
+      buildAppMenu(mainWindow, { exportDiagnostics: () => void runDiagnosticsExport() })
+    )
+  }
   // Otimização (Bloco 3): a janela aparece ANTES de esperar o servidor de orquestração (HTTP local
   // + token), que sobe em paralelo e, quando pronto, COMPLETA o env com PORT/TOKEN. orchestrationEnv
   // é late-bound (registerPtyIpc relê a cada spawn) — um terminal aberto antes disso apenas nasce sem
