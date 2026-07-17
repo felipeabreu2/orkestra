@@ -282,4 +282,31 @@ describe('AgentBus.waitForIdle — cap e fast-path de saída', () => {
     const out = await p
     expect(out.length).toBeLessThanOrEqual(256 * 1024)
   })
+
+  // Resiliência · T7: snapshot agregado do estado que o bus já mantém (nada novo é computado).
+  it('snapshot lista os ptys rastreados com o flag de atividade recente (sawOutput)', () => {
+    const fa = fakePty()
+    const fb = fakePty()
+    const fakes = [fa, fb]
+    const mgr = new PtyManager(() => fakes.shift()!.pty)
+    const bus = new AgentBus(mgr)
+    const a = mgr.spawn({})
+    const b = mgr.spawn({})
+    bus.track(a)
+    bus.track(b)
+    fa.emit('trabalhando…')
+    const snap = bus.snapshot()
+    expect(snap).toContainEqual({ ptyId: a, sawOutput: true })
+    expect(snap).toContainEqual({ ptyId: b, sawOutput: false })
+  })
+
+  it('snapshot esquece ptys que saíram (auto-untrack)', () => {
+    const f = fakePty()
+    const mgr = new PtyManager(() => f.pty)
+    const bus = new AgentBus(mgr)
+    const id = mgr.spawn({})
+    bus.track(id)
+    f.emitExit(0)
+    expect(bus.snapshot().some((s) => s.ptyId === id)).toBe(false)
+  })
 })

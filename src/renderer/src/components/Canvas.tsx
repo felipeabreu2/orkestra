@@ -37,6 +37,7 @@ import { readDroppedPaths } from '../terminal/dropPaths'
 import { isPathDrop, isDropOnNode, fileNodeDropPositions } from './canvasDrop'
 import { mdFileToNoteData } from '../notes/mdDropToNote'
 import { resetFocus } from '../ui/resetFocus'
+import { AgentHealthPanel } from './AgentHealthPanel'
 
 // REN-3 (auditoria 2026-07-14): cada nó renderiza dentro do seu próprio ErrorBoundary. Um
 // data.scene do Excalidraw (DrawNode) ou html do TipTap (NoteNode) corrompido faz o componente
@@ -148,6 +149,8 @@ export function Canvas(): JSX.Element {
   // Enquanto != null, o CreateOverlay captura o gesto e cria o item com a posição/tamanho arrastados.
   const [pendingTool, setPendingTool] = useState<'note' | 'portal' | 'filetree' | 'draw' | null>(null)
   const [minimapOn, setMinimapOn] = useState(true)
+  // Resiliência T7: painel de saúde dos agentes (⇧H) — overlay derivado dos Sets do store.
+  const [healthOpen, setHealthOpen] = useState(false)
   // Cor da máscara do MiniMap derivada do --bg-0 em runtime (ver readBgMask acima, §4.11). Um
   // MutationObserver no data-theme do <html> (o flip de tema vive em theme.ts/ThemeToggle, fora
   // deste arquivo) rederiva a cor no flip — mantém a máscara alinhada ao fundo do canvas nos dois
@@ -382,6 +385,14 @@ export function Canvas(): JSX.Element {
       if (e.shiftKey && e.key.toLowerCase() === 'm') {
         e.preventDefault()
         setMinimapOn((o) => !o)
+        return
+      }
+      // Resiliência T7 — ⇧H: painel de saúde dos agentes (gerando/aguardando/ocioso). Mesmo grupo
+      // de atalhos de VISÃO do ⇧M/⇧A acima (guardados por isTypingTarget — digitar "H" numa nota
+      // não pode abrir painel).
+      if (e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault()
+        setHealthOpen((o) => !o)
         return
       }
       // Shift+A (Fase 20 Task 2): foca o próximo nó em `attention` (agentes ociosos aguardando o
@@ -660,6 +671,18 @@ export function Canvas(): JSX.Element {
       </ReactFlow>
       {ctxMenu && (
         <CanvasContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenuItems()} onClose={() => setCtxMenu(null)} />
+      )}
+      {/* Resiliência T7: painel de saúde (⇧H). Clicar numa linha enquadra e seleciona o agente —
+          o mesmíssimo gesto do Shift+A/notificação clicável. */}
+      {healthOpen && (
+        <AgentHealthPanel
+          onFocusNode={(nodeId) => {
+            fitView({ nodes: [{ id: nodeId }], duration: 300 })
+            const changes = selectionChangesToFocus(useCanvasStore.getState().nodes, nodeId)
+            if (changes.length) onNodesChange(changes)
+          }}
+          onClose={() => setHealthOpen(false)}
+        />
       )}
     </div>
   )

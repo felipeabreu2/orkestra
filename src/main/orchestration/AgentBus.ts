@@ -62,6 +62,17 @@ export class AgentBus {
     // Auto-untrack: quando o pty sai (sozinho ou via kill), o buffer não deve sobreviver a ele.
     this.pty.onExit(ptyId, () => this.untrack(ptyId))
   }
+  // Resiliência · T7: visão agregada do estado que o bus JÁ mantém — quem está rastreado e se
+  // "falou recentemente" (sawOutput, zerado por clearAttention). Nada novo é computado; é a base
+  // de uma futura coluna "última atividade" do painel de saúde (o painel primário deriva dos Sets
+  // do canvasStore, sem IPC).
+  snapshot(): Array<{ ptyId: string; sawOutput: boolean }> {
+    return [...this.tracked].map((ptyId) => ({
+      ptyId,
+      sawOutput: this.sawOutput.get(ptyId) ?? false
+    }))
+  }
+
   ask(ptyId: string, prompt: string): void {
     this.pty.write(ptyId, prompt + '\n')
   }
