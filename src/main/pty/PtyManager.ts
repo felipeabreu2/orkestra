@@ -21,11 +21,35 @@ export class PtyManager {
   private ptyByNode = new Map<string, string>()
   private exitSubs = new Map<string, Array<(e: { exitCode: number }) => void>>()
   // Fase 31: buffer de saída por pty — permite restaurar o visual do terminal ao re-montar o
-  // TerminalNode (ex.: voltar a um projeto). Cap em MAX_BUFFER (descarta o começo).
+  // TerminalNode (ex.: voltar a um projeto). Cap em this.maxBuffer (descarta o começo).
   private buffers = new Map<string, string>()
   private nextId = 1
+  // Resiliência · T5: o cap virou campo de INSTÂNCIA configurável (default = o MAX_BUFFER de
+  // sempre — retrocompatível com todo chamador/teste existente). Com N agentes vivos, N × 256KB
+  // de scrollback é a parcela de memória que o main de fato controla; o modo "economizar
+  // memória" ajusta isto e/ou chama trimBuffers.
+  private maxBuffer: number
 
-  constructor(private spawner: PtySpawner) {}
+  constructor(
+    private spawner: PtySpawner,
+    opts: { maxBufferBytes?: number } = {}
+  ) {
+    this.maxBuffer = opts.maxBufferBytes ?? MAX_BUFFER
+  }
+
+  // Muda o cap dali em diante (buffers já cheios só encolhem no próximo append ou num trim).
+  setMaxBuffer(bytes: number): void {
+    this.maxBuffer = bytes
+  }
+
+  // Alívio RETROATIVO: encolhe todos os buffers para <= bytes (mantendo a cauda — o que está na
+  // tela), sem tocar nos processos. O re-attach depois de um trim devolve menos scrollback;
+  // trocar histórico por memória é exatamente o gesto pedido.
+  trimBuffers(bytes: number = this.maxBuffer): void {
+    for (const [id, buf] of this.buffers) {
+      if (buf.length > bytes) this.buffers.set(id, buf.slice(buf.length - bytes))
+    }
+  }
 
   spawn(opts: {
     file?: string
@@ -58,11 +82,11 @@ export class PtyManager {
     })
     this.ptys.set(id, pty)
     if (opts.nodeId) this.ptyByNode.set(opts.nodeId, id)
-    // Fase 31: acumula a saída num buffer (cap MAX_BUFFER) para restaurar o terminal ao re-attach.
+    // Fase 31: acumula a saída num buffer (cap this.maxBuffer, T5) p/ restaurar no re-attach.
     this.buffers.set(id, '')
     this.onData(id, (data) => {
       const cur = (this.buffers.get(id) ?? '') + data
-      this.buffers.set(id, cur.length > MAX_BUFFER ? cur.slice(cur.length - MAX_BUFFER) : cur)
+      this.buffers.set(id, cur.length > this.maxBuffer ? cur.slice(cur.length - this.maxBuffer) : cur)
     })
     // Único listener bruto de exit por pty (o IPtyLike/fakes de teste nem sempre suportam
     // múltiplas assinaturas). Assinantes externos (ex.: AgentBus) entram via onExit(id, cb)
