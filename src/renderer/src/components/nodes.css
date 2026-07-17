@@ -821,3 +821,9 @@
   padding: 0 8px;
   font-weight: var(--weight-medium);
 }
+/* T10: toggle Aa (case-sensitive) ligado — mesmo vocabulário de estado ativo dos icon-buttons. */
+.ork-find-btn--on {
+  color: var(--accent);
+  background: var(--accent-weak);
+  border-color: var(--border-strong);
+}

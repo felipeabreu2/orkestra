@@ -10,6 +10,9 @@ export function NoteFindBar({ editor, onClose }: { editor: Editor; onClose: () =
   const [find, setFind] = useState('')
   const [replace, setReplace] = useState('')
   const [index, setIndex] = useState(0)
+  // T10: sensibilidade a maiúsculas — o findMatches sempre soube (parâmetro testado desde a
+  // origem); isto só EXPÕE o que existia. Default false = comportamento de sempre.
+  const [caseSensitive, setCaseSensitive] = useState(false)
   const findRef = useRef<HTMLInputElement>(null)
   // Re-render a cada transação do editor — necessário para recomputar os matches depois de uma
   // substituição (o doc mudou). A digitação no campo `find` já re-renderiza por si (setFind).
@@ -29,15 +32,16 @@ export function NoteFindBar({ editor, onClose }: { editor: Editor; onClose: () =
   }, [editor])
 
   // Matches calculados AQUI, direto do doc atual + termo — não dependem de re-ler o estado do plugin.
-  const results = collectMatches(editor.state.doc, find)
+  const results = collectMatches(editor.state.doc, find, caseSensitive)
   const total = results.length
   const clampedIndex = total ? ((index % total) + total) % total : 0
   const currentMatch = total ? results[clampedIndex] : null
 
-  // Informa a extensão o termo + índice atual para ela desenhar os destaques.
+  // Informa a extensão o termo + índice atual (e a sensibilidade — T10: barra e destaque precisam
+  // calcular os MESMOS matches) para ela desenhar os destaques.
   useEffect(() => {
-    editor.commands.setSearchHighlight(find, clampedIndex)
-  }, [editor, find, clampedIndex])
+    editor.commands.setSearchHighlight(find, clampedIndex, caseSensitive)
+  }, [editor, find, clampedIndex, caseSensitive])
 
   // Ao fechar (desmontar), limpa o destaque.
   useEffect(
@@ -116,6 +120,19 @@ export function NoteFindBar({ editor, onClose }: { editor: Editor; onClose: () =
         <span className="ork-find-count" aria-live="polite">
           {total ? `${clampedIndex + 1}/${total}` : '0/0'}
         </span>
+        <button
+          type="button"
+          className={`ork-find-btn ork-find-btn--text${caseSensitive ? ' ork-find-btn--on' : ''}`}
+          onClick={() => {
+            setCaseSensitive((v) => !v)
+            setIndex(0) // os matches mudam de conjunto — recomeça do primeiro
+          }}
+          aria-pressed={caseSensitive}
+          title={caseSensitive ? 'Ignorar maiúsculas/minúsculas' : 'Diferenciar maiúsculas/minúsculas'}
+          aria-label="Diferenciar maiúsculas e minúsculas"
+        >
+          Aa
+        </button>
         <button
           type="button"
           className="ork-find-btn"

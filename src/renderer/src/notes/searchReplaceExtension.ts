@@ -25,6 +25,10 @@ export function collectMatches(doc: PMNode, term: string, caseSensitive = false)
 interface HighlightState {
   term: string
   index: number
+  // T10: sensibilidade a maiúsculas do destaque — precisa viver AQUI (e não só na barra) porque as
+  // decorations recalculam os matches por conta própria; sem o flag, barra e destaque divergiriam
+  // (contador diria 1 e a nota destacaria 2).
+  caseSensitive: boolean
 }
 
 const highlightKey = new PluginKey<HighlightState>('orkSearchHighlight')
@@ -33,7 +37,8 @@ declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     orkSearchReplace: {
       // Atualiza o destaque: termo buscado + índice do match "atual". null/'' limpa os destaques.
-      setSearchHighlight: (term: string, index: number) => ReturnType
+      // T10: caseSensitive opcional (default false = comportamento de sempre).
+      setSearchHighlight: (term: string, index: number, caseSensitive?: boolean) => ReturnType
     }
   }
 }
@@ -46,18 +51,24 @@ export const SearchReplace = Extension.create({
       new Plugin<HighlightState>({
         key: highlightKey,
         state: {
-          init: (): HighlightState => ({ term: '', index: 0 }),
+          init: (): HighlightState => ({ term: '', index: 0, caseSensitive: false }),
           apply(tr, prev): HighlightState {
-            const meta = tr.getMeta(highlightKey) as { term?: string; index?: number } | undefined
+            const meta = tr.getMeta(highlightKey) as
+              | { term?: string; index?: number; caseSensitive?: boolean }
+              | undefined
             if (!meta) return prev
-            return { term: meta.term ?? prev.term, index: meta.index ?? prev.index }
+            return {
+              term: meta.term ?? prev.term,
+              index: meta.index ?? prev.index,
+              caseSensitive: meta.caseSensitive ?? prev.caseSensitive
+            }
           }
         },
         props: {
           decorations(state) {
             const hl = highlightKey.getState(state)
             if (!hl || !hl.term) return DecorationSet.empty
-            const results = collectMatches(state.doc, hl.term)
+            const results = collectMatches(state.doc, hl.term, hl.caseSensitive)
             if (results.length === 0) return DecorationSet.empty
             return DecorationSet.create(
               state.doc,
@@ -74,9 +85,9 @@ export const SearchReplace = Extension.create({
   addCommands() {
     return {
       setSearchHighlight:
-        (term: string, index: number) =>
+        (term: string, index: number, caseSensitive = false) =>
         ({ tr, dispatch }) => {
-          if (dispatch) dispatch(tr.setMeta(highlightKey, { term, index }))
+          if (dispatch) dispatch(tr.setMeta(highlightKey, { term, index, caseSensitive }))
           return true
         }
     }
