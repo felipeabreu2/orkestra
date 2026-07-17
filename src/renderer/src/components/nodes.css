@@ -827,3 +827,11 @@
   background: var(--accent-weak);
   border-color: var(--border-strong);
 }
+
+/* T6 (notas): aviso transiente de colagem de imagem recusada (teto de bytes/formato). */
+.ork-note-imgmsg {
+  padding: var(--space-0-5) var(--space-1-5);
+  font-size: var(--fs-2xs);
+  color: var(--warn);
+  background: var(--warn-weak);
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { NodeResizer, type NodeProps } from '@xyflow/react'
+import type { EditorView } from '@tiptap/pm/view'
 import { NodeHandles } from './NodeHandles'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -13,6 +14,7 @@ import { useNoteRaw } from '../notes/noteRawModeRegistry'
 import { noteHtmlToRaw, noteRawToHtml } from '../notes/noteRawSync'
 import { SearchReplace } from '../notes/searchReplaceExtension'
 import { normalizeNoteName } from '../notes/noteRename'
+import { pickImageFile, isImageDataUri, MAX_IMAGE_BYTES } from '../notes/imagePaste'
 import { NoteFindBar } from './NoteFindBar'
 import { Icon } from './Icon'
 import './nodes.css'
@@ -53,10 +55,68 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
     if (raw) setRawDraft(noteHtmlToRaw(d.html ?? ''))
   }, [raw])
 
+  // T6 (colar imagem): aviso transiente quando a colagem é recusada (teto de bytes / formato).
+  // Recusar em silêncio faria o usuário colar de novo achando que falhou por acaso.
+  const [imgMsg, setImgMsg] = useState('')
+  useEffect(() => {
+    if (!imgMsg) return undefined
+    const t = setTimeout(() => setImgMsg(''), 4000)
+    return () => clearTimeout(t)
+  }, [imgMsg])
+
+  // Insere um File de imagem como nó image do editor, via TRANSAÇÃO ProseMirror (nunca innerHTML —
+  // SEC-1). FileReader → data URI raster validado (isImageDataUri: allowlist, SVG fora) → nó image
+  // no lugar da seleção. O dispatch atravessa o dispatchTransaction do TipTap, então o onUpdate
+  // acima roda e o data.html persiste sozinho. Teto de bytes: data URI vive dentro do snapshot
+  // JSON do projeto — ver MAX_IMAGE_BYTES.
+  const insertImageFromFile = (view: EditorView, file: File): void => {
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImgMsg(
+        `imagem grande demais (${Math.round(file.size / 1024)}KB — teto ${Math.round(MAX_IMAGE_BYTES / 1024)}KB)`
+      )
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const src = typeof reader.result === 'string' ? reader.result : ''
+      if (!isImageDataUri(src)) {
+        setImgMsg('formato de imagem não suportado')
+        return
+      }
+      const node = view.state.schema.nodes.image?.create({ src })
+      if (!node) return
+      view.dispatch(view.state.tr.replaceSelectionWith(node))
+    }
+    reader.readAsDataURL(file)
+  }
+
   const editor = useEditor({
     extensions: NOTE_EXTENSIONS,
     content: initialHtml,
-    onUpdate: ({ editor }) => updateNoteHtml(id, editor.getHTML())
+    onUpdate: ({ editor }) => updateNoteHtml(id, editor.getHTML()),
+    // T6: colar (⌘V de um print) ou soltar um arquivo de imagem DENTRO do editor insere a imagem
+    // inline. `false` devolve o evento ao fluxo normal (texto cola como sempre; drop de caminho da
+    // árvore continua com quem já o tratava).
+    editorProps: {
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items
+        const file = items ? pickImageFile(Array.from(items)) : null
+        if (!file) return false
+        event.preventDefault()
+        insertImageFromFile(view, file)
+        return true
+      },
+      handleDrop: (view, event) => {
+        const files = event.dataTransfer?.files
+        const file = files
+          ? pickImageFile(Array.from(files).map((f) => ({ type: f.type, getAsFile: () => f })))
+          : null
+        if (!file) return false
+        event.preventDefault()
+        insertImageFromFile(view, file)
+        return true
+      }
+    }
   })
 
   // Se a migração converteu algo, persiste o HTML já na montagem (senão o `content` seguiria sendo
@@ -145,6 +205,12 @@ export function NoteNode({ id, selected, data }: NodeProps): JSX.Element {
           />
         ) : (
           <EditorContent editor={editor} className="nodrag nowheel ork-note-editor" />
+        )}
+        {/* T6: aviso transiente de colagem recusada (some sozinho em 4s). */}
+        {imgMsg && (
+          <div className="ork-note-imgmsg" role="status">
+            {imgMsg}
+          </div>
         )}
       </div>
       {/* Botão de localizar + barra ficam FORA do .ork-note (que tem overflow:hidden e cortaria a
