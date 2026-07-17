@@ -35,6 +35,7 @@ import { useOrchestrationSync } from '../hooks/useOrchestrationSync'
 import { alignNodes, distributeNodes, gridArrange, type AlignAxis, type DistributeAxis, type PosNode } from '../layout/arrange'
 import { readDroppedPaths } from '../terminal/dropPaths'
 import { isPathDrop, isDropOnNode, fileNodeDropPositions } from './canvasDrop'
+import { mdFileToNoteData } from '../notes/mdDropToNote'
 
 // REN-3 (auditoria 2026-07-14): cada nó renderiza dentro do seu próprio ErrorBoundary. Um
 // data.scene do Excalidraw (DrawNode) ou html do TipTap (NoteNode) corrompido faz o componente
@@ -536,22 +537,46 @@ export function Canvas(): JSX.Element {
         // — mais robusto que ler defaultPrevented, porque App.tsx já dá preventDefault global no
         // drop (anti-navegação p/ file://), o que tornaria esse flag sempre ambíguo.
         onDragOver={(e) => {
-          if (!isPathDrop(e.dataTransfer.types)) return
+          // T8 (notas): além do payload interno da árvore, aceitamos arquivos EXTERNOS do Finder
+          // ('Files') — .md/.markdown/.txt viram notas no drop.
+          if (!isPathDrop(e.dataTransfer.types) && !e.dataTransfer.types.includes('Files')) return
           if (isDropOnNode(e.target as Element)) return // o nó (ex.: terminal) trata o seu drop
           e.preventDefault()
           e.dataTransfer.dropEffect = 'copy'
         }}
         onDrop={(e) => {
-          if (!isPathDrop(e.dataTransfer.types)) return
           if (isDropOnNode(e.target as Element)) return
+          if (isPathDrop(e.dataTransfer.types)) {
+            e.preventDefault()
+            // Sem resolveFile: aqui só tratamos o payload interno (isPathDrop já garantiu), que
+            // traz o caminho absoluto pronto — o ramo de File externo do readDroppedPaths não roda.
+            const paths = readDroppedPaths(e.dataTransfer)
+            if (paths.length === 0) return
+            const origin = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+            const positions = fileNodeDropPositions(origin, paths.length)
+            paths.forEach((path, i) => addFileNode(positions[i], { path }))
+            return
+          }
+          // T8 (notas): arquivo EXTERNO do Finder — .md/.markdown/.txt viram NOTAS preenchidas
+          // (mdFileToNoteData: conteúdo COPIADO; o vínculo vivo com o arquivo é a T9). Outros
+          // tipos são ignorados aqui (imagem em NOTA entra pelo editor — T6; o preventDefault
+          // global do App já impede a navegação para file://). Lê via File.text() — o renderer
+          // não toca em fs.
+          const files = Array.from(e.dataTransfer.files ?? [])
+          if (files.length === 0) return
           e.preventDefault()
-          // Sem resolveFile: aqui só tratamos o payload interno (isPathDrop já garantiu), que
-          // traz o caminho absoluto pronto — o ramo de File externo do readDroppedPaths não roda.
-          const paths = readDroppedPaths(e.dataTransfer)
-          if (paths.length === 0) return
           const origin = screenToFlowPosition({ x: e.clientX, y: e.clientY })
-          const positions = fileNodeDropPositions(origin, paths.length)
-          paths.forEach((path, i) => addFileNode(positions[i], { path }))
+          const positions = fileNodeDropPositions(origin, files.length)
+          files.forEach((file, i) => {
+            void file
+              .text()
+              .then((text) => {
+                const nota = mdFileToNoteData(file.name, text)
+                if (!nota) return
+                addNoteNode(positions[i], { html: nota.html, name: nota.name })
+              })
+              .catch(() => {}) // leitura falhou (arquivo sumiu no meio) — sem nota, sem quebra
+          })
         }}
         // R4: botão direito no vazio abre o menu de "criar aqui" (posição convertida pro canvas);
         // no nó, o menu de ações do nó. onMoveStart fecha o menu ao começar um pan/zoom.

@@ -357,7 +357,10 @@ interface CanvasState {
   // devolve o id do novo terminal. fromId inexistente → cascata legada (sem edge). Usado por
   // useOrchestrationSync ao aplicar o comando recruit quando o `from` resolve a um terminal.
   recruitBelow: (fromId: string, opts?: { preset?: string; role?: string; name?: string }) => string
-  addNoteNode: (position?: { x: number; y: number }, opts?: { width?: number; height?: number }) => void
+  addNoteNode: (
+    position?: { x: number; y: number },
+    opts?: { width?: number; height?: number; html?: string; name?: string }
+  ) => void
   addPortalNode: (
     position?: { x: number; y: number } | undefined,
     opts?: { name?: string; url?: string; width?: number; height?: number }
@@ -581,7 +584,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           id: `note-${crypto.randomUUID()}`,
           type: 'note',
           position,
-          data: { html: '', color: undefined },
+          // T8: html/name iniciais opcionais — drop de um .md do Finder cria a nota já preenchida
+          // (name entra só quando veio: data.name vazio significa "nomear pela 1ª linha").
+          data: {
+            html: opts?.html ?? '',
+            color: undefined,
+            ...(opts?.name ? { name: opts.name } : {})
+          },
           width: opts?.width ?? 240,
           height: opts?.height ?? 180
         }

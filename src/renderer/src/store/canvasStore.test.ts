@@ -243,6 +243,13 @@ describe('canvasStore', () => {
     expect(n.height).toBe(180)
   })
 
+  it('addNoteNode aceita html/name iniciais (T8: drop de .md do Finder vira nota preenchida)', () => {
+    useCanvasStore.getState().addNoteNode({ x: 5, y: 5 }, { html: '<h1>Plano</h1>', name: 'plano' })
+    const n = useCanvasStore.getState().nodes.find((x) => x.type === 'note')!
+    expect((n.data as { html?: string }).html).toBe('<h1>Plano</h1>')
+    expect((n.data as { name?: string }).name).toBe('plano')
+  })
+
   it('updateNoteContent (legado/migração) ainda seta o content', () => {
     useCanvasStore.getState().addNoteNode()
     const id = useCanvasStore.getState().nodes[0].id
