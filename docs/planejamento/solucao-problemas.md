@@ -1,6 +1,31 @@
 # Plano de Implementação — Solução de Problemas / Resiliência
 
-> **Origem:** `docs/analise-maestri-360/solucao-problemas.md` · **Status:** Rascunho pronto para revisão · **Onda(s):** 3 (com pré-requisito compartilhado: logger)
+> **Origem:** `docs/analise-maestri-360/solucao-problemas.md` · **Status:** ✅ **CONCLUÍDO (2026-07-17)** — T1–T7 entregues; T-opcional (memória por pid) fica como follow-up P2 · **Onda(s):** 3
+
+**Registro da entrega (2026-07-17)** — decisões além do plano:
+- **T1:** primeiro `Menu` de aplicação do app (papéis nativos preservados — sem eles o macOS perde
+  ⌘C/⌘V/⌘Q); o item "Ajuda → Reportar um Problema" já nasceu com o seam late-bound do export
+  (`runDiagnosticsExport`, preenchido na T4). Atalho ⌘Esc roda ANTES do guard `isTypingTarget`
+  (o caso de uso é exatamente um terminal focado).
+- **T2:** ring de 500 linhas SEMPRE funciona (mesmo com disco falhando) — é o que o diagnóstico
+  coleta; `obs()` faz o eco duplo (console.error de sempre + arquivo) nos 6 eventos de
+  observabilidade existentes.
+- **T3/T4:** redação por VALOR conhecido (o ORKESTRA_TOKEN é aleatório por boot — regex nenhuma o
+  pegaria) + padrões genéricos varrendo DENTRO das linhas de log; env por allowlist
+  (PATH/LANG/SHELL); o shape do relatório nem tem onde carregar conteúdo do usuário. O menu roda a
+  MESMA composição do IPC, com as MESMAS deps.
+- **T5:** cap default 256KB inalterado (nenhum chamador/teste tocado); `trimBuffers` mantém a cauda
+  e nunca mata processo.
+- **T6:** `terminalNodeIds(id)` valida o id com o MESMO guard de traversal do resto do
+  ProjectManager; hibernate não é switch/remove (índice/ativo/canvas intactos); o teste de escopo
+  cobre a regressão do incidente cross-project. UI: MoonStar só em projeto não-ativo; estado
+  `hibernatedIds` é efêmero de propósito (ao reiniciar o app tudo já nasce sem pty).
+- **T7:** painel 100% derivado dos Sets `generating`/`attention` do canvasStore (nenhum estado
+  novo, nenhum IPC); toggle ⇧H; clique = mesmo gesto do Shift+A. `AgentBus.snapshot()` entregue
+  como base da futura coluna "última atividade".
+- **Follow-ups:** T-opcional (memória por pid, P2); persistir `hibernatedIds`/hibernação
+  automática por ociosidade (P2); botão de trim/“economizar memória” na UI consumindo
+  `pty:setMemoryLimit` (o núcleo T5 está pronto; o canal IPC fica para quando houver a UI).
 
 ---
 
