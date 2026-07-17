@@ -21,6 +21,7 @@ import { OrchestrationServer } from './orchestration/OrchestrationServer'
 import { PortalActionRegistry } from './orchestration/portalActionRegistry'
 import { screenshotFilename, isScreenshotOf } from './orchestration/portalScreenshot'
 import { buildAppMenu } from './menu'
+import { Logger } from './diagnostics/Logger'
 import { pushConsole } from '../shared/portalConsoleBuffer'
 import { PortalStateStore } from './orchestration/portalStateStore'
 import { installOrq } from './orchestration/installOrq'
@@ -140,6 +141,16 @@ let orchestrationEnv: Record<string, string> = {}
 // do resolveActiveProjectId acima): o menu nasce no whenReady, o fluxo real de export (T4, com
 // dialog + coleta redigida) é plugado quando o registro de diagnóstico sobe. Antes disso, no-op.
 let runDiagnosticsExport: () => Promise<void> = async () => {}
+
+// Resiliência T2 — logger rotativo em userData/logs (SUBPASTA própria; nunca varrer o userData,
+// compartilhado com o Cache do Chromium). O construtor não toca o disco (lazy) — seguro no
+// top-level. `obs()` é o eco DUPLO dos eventos de observabilidade: console.error continua (dev/
+// stderr de sempre) e a mesma linha vai ao arquivo/ring, que é o que o diagnóstico (T3/T4) coleta.
+const logger = new Logger(join(app.getPath('userData'), 'logs'))
+function obs(...parts: unknown[]): void {
+  console.error(...parts)
+  logger.write(parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' '))
+}
 
 // Resolve um terminal pelo nome atual no espelho do canvas -> ptyId (via PtyManager). Nomes
 // duplicados resolvem para o primeiro nó encontrado; renomear é responsabilidade do usuário.
@@ -282,13 +293,13 @@ function createWindow(): void {
   // Ecoá-los no log do processo principal ajuda a diagnosticar tela preta/travamento tanto em dev
   // quanto em builds empacotados (onde o log vai para o arquivo de log do app, não para a tela).
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    console.error('[RENDERER-GONE]', JSON.stringify(details))
+    obs('[RENDERER-GONE]', JSON.stringify(details))
   })
-  mainWindow.webContents.on('unresponsive', () => console.error('[RENDERER-UNRESPONSIVE]'))
+  mainWindow.webContents.on('unresponsive', () => obs('[RENDERER-UNRESPONSIVE]'))
   mainWindow.webContents.on(
     'console-message',
     (_e, level, message, line, sourceId) => {
-      if (level >= 2) console.error('[RENDERER-CONSOLE]', message, `@ ${sourceId}:${line}`)
+      if (level >= 2) obs('[RENDERER-CONSOLE]', message, `@ ${sourceId}:${line}`)
     }
   )
   // BLD-4 (auditoria 2026-07-14): sem isto, uma falha de load do renderer (pacote quebrado,
@@ -297,7 +308,7 @@ function createWindow(): void {
   // o motivo, em vez do estado zumbi. errorCode -3 = ABORTED (navegações/redirects normais) → ignora.
   mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return
-    console.error('[RENDERER-LOAD-FAILED]', errorCode, errorDescription, validatedURL)
+    obs('[RENDERER-LOAD-FAILED]', errorCode, errorDescription, validatedURL)
     mainWindow?.show()
     try {
       dialog.showErrorBox(
@@ -349,7 +360,7 @@ if (process.env.ORKESTRA_NO_GPU === '1') app.disableHardwareAcceleration()
 // Observabilidade: se o processo de GPU/utility morrer, o compositor para de desenhar e a janela
 // fica preta sem erro no renderer. Logar o motivo ajuda a diagnosticar esse caso silencioso.
 app.on('child-process-gone', (_e, details) => {
-  console.error('[CHILD-PROCESS-GONE]', JSON.stringify(details))
+  obs('[CHILD-PROCESS-GONE]', JSON.stringify(details))
 })
 
 // SEC-1/SEC-4 (auditoria 2026-07-14): Content-Security-Policy no renderer privilegiado. SÓ em
@@ -629,7 +640,7 @@ app.whenReady().then(async () => {
   // BLD-3 (auditoria 2026-07-14): sem este .catch, um throw síncrono no boot (ex.: mkdirSync EACCES
   // em ProjectManager.bootstrap, falha em createWindow) vira unhandled rejection → app zumbi (ícone
   // no Dock, nenhuma janela, nenhum diálogo). Aqui logamos e mostramos o erro ao usuário.
-  console.error('[BOOT] falha fatal no whenReady:', err)
+  obs('[BOOT] falha fatal no whenReady:', String(err))
   try {
     dialog.showErrorBox('Orkestra', `Falha ao iniciar o aplicativo:\n${err instanceof Error ? err.message : String(err)}`)
   } catch {
